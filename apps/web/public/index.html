@@ -16,7 +16,7 @@
 }
 </script>
 </head>
-<body>
+<body class="auth-pending">
 <div class="desktop-only-gate" id="desktopOnlyGate" aria-labelledby="desktopOnlyTitle">
   <div class="desktop-only-card">
     <div class="logo" aria-hidden="true">S</div>
@@ -29,19 +29,21 @@
   <div class="card auth-card">
     <div class="logo">S</div>
     <h1>Segment</h1>
-    <p data-auth="subtitle">Вход по электронной почте</p>
+    <div class="auth-progress" aria-hidden="true"><span data-progress="1"></span><span data-progress="2"></span><span data-progress="3"></span></div>
+    <small class="auth-kicker" data-auth="kicker">Шаг 1 из 3</small>
+    <p data-auth="subtitle">Введите почту — мы отправим одноразовый код</p>
     <div class="auth-step" data-step="email">
       <input id="emailInput" type="email" placeholder="name@example.com" autocomplete="email">
       <button id="sendCodeBtn">Получить код</button>
     </div>
-    <div class="auth-step hidden" data-step="code">
+    <div class="auth-step" data-step="code" hidden>
       <input id="codeInput" inputmode="numeric" placeholder="Код из письма" maxlength="6" autocomplete="one-time-code">
       <button id="verifyCodeBtn">Продолжить</button>
       <button class="auth-link" id="changeEmailBtn">Изменить почту</button>
     </div>
-    <div class="auth-step hidden" data-step="profile">
+    <div class="auth-step" data-step="profile" hidden>
       <label class="auth-avatar" for="avatarInput"><span id="avatarPreview">+</span><small>Добавить фото</small></label>
-      <input class="hidden" id="avatarInput" type="file" accept="image/png,image/jpeg,image/webp">
+      <input id="avatarInput" type="file" accept="image/png,image/jpeg,image/webp" hidden>
       <input id="usernameInput" placeholder="username" maxlength="24" autocomplete="username">
       <input id="displayNameInput" placeholder="Имя" maxlength="40" autocomplete="name">
       <small class="auth-hint">Username: 3–24 символа, латиница, цифры и _</small>
