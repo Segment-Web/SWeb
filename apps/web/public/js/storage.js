@@ -1,8 +1,8 @@
-// Платформенное хранилище веб-клиента.
+
 //
-// Реализует интерфейс, который ждёт @segment/core (getName/setName/getNotes/
-// setNotes). Для нативных приложений вместо localStorage подставляется свой
-// адаптер (напр. AsyncStorage) — ядро об этом не знает.
+
+
+
 
 const KEYS = { name: 'segment_name', username: 'segment_username', avatar: 'segment_avatar', notes: 'segment_saved', pinned: 'segment_pinned', color: 'segment_color', general: 'segment_general', muted: 'segment_muted', archived: 'segment_archived', folders: 'segment_folders' };
 const NOTES_LIMIT = 200;

@@ -1,8 +1,8 @@
-// Веб-клиент: бутстрап. Собирает ядро, панели и рабочую область.
+
 //
-// Логики здесь нет — только сборка. Состояние и работу с сервером держит ядро
-// (@segment/core), интерфейс собран из самостоятельных панелей, а раскладкой
-// (перетаскивание, ресайз, перестановка) занимается Workspace.
+
+
+
 
 import { SegmentClient } from '@segment/core';
 import { webStorage } from './js/storage.js';
@@ -15,7 +15,7 @@ import { Workspace } from './js/workspace/workspace.js';
 
 const client = new SegmentClient({ storage: webStorage });
 
-// Реестр панелей — сюда же будут подключаться пользовательские модификации.
+
 const registry = createRegistry();
 registry.register(profilePanel(client));
 registry.register(chatListPanel(client));
@@ -94,7 +94,7 @@ segmentApi.cancelForward = () => {
   document.querySelector('.fwd-modal')?.classList.add('hidden');
 };
 
-// ── пересылка: выбор нескольких чатов в модалке ──
+
 const fwd = document.createElement('div');
 fwd.className = 'fwd-modal hidden';
 fwd.innerHTML = `
@@ -163,7 +163,7 @@ segmentApi.startForward = (message) => {
   fwdSearch.focus();
 };
 
-// ── просмотрщик медиа (лайтбокс): фото и видео ──
+
 const lightbox = document.createElement('div');
 lightbox.className = 'lightbox hidden';
 const ICON_PLAY = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
@@ -213,7 +213,7 @@ const lbAuthorAvatar = lightbox.querySelector('.lightbox-author-avatar');
 const lbCaption = lightbox.querySelector('.lightbox-caption');
 const lbThumbs = lightbox.querySelector('.lightbox-thumbs');
 
-// ── кастомный видеоплеер ──
+
 const vPlayBtn = lightbox.querySelector('.vplayer-play');
 const vCenterBtn = lightbox.querySelector('.vplayer-center');
 const vSeek = lightbox.querySelector('.vplayer-seek');
@@ -276,13 +276,13 @@ const toggleFullscreen = () => {
 vFullBtn.onclick = (e) => { e.stopPropagation(); toggleFullscreen(); };
 lightboxVideo.ondblclick = (e) => { e.stopPropagation(); toggleFullscreen(); };
 
-// ── зум фото колёсиком + перетаскивание ──
+
 let zoom = 1;
 let panX = 0;
 let panY = 0;
 let rotation = 0;
-// Не даём картинке уехать за пределы: в каждую сторону сдвиг ограничен «излишком»
-// увеличенного изображения над его исходным размером.
+
+
 const clampPan = () => {
   const stage = lightbox.querySelector('.lightbox-stage');
   const maxX = Math.max(0, (lightboxImg.offsetWidth * zoom - stage.clientWidth) / 2);
@@ -314,7 +314,7 @@ lightbox.querySelector('.lightbox-stage').addEventListener('wheel', (e) => {
   }
   applyZoom();
 }, { passive: false });
-// перетаскивание при увеличении
+
 let dragging = false; let dragX = 0; let dragY = 0;
 const pinchPoints = new Map(); let pinchStart = null;
 const pinchDistance = () => { const p = [...pinchPoints.values()]; return p.length < 2 ? 0 : Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y); };
@@ -344,7 +344,7 @@ lightboxImg.addEventListener('pointerup', () => { dragging = false; if (zoom > 1
 
 let lbList = [];
 let lbIndex = 0;
-// нормализуем к { type, src, poster }; строки трактуем как фото
+
 const lbNorm = (x) => (typeof x === 'string' ? { type: 'photo', src: x } : x);
 const lbRenderThumbs = () => {
   lbThumbs.innerHTML = lbList.map((x, i) => `<button class="lightbox-thumb${i === lbIndex ? ' active' : ''}" data-index="${i}">${x.type === 'video' ? '<span>▶</span>' : ''}<img src="${x.poster || x.src || ''}" alt=""></button>`).join('');
@@ -427,7 +427,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === ' ' && lbList[lbIndex]?.type === 'video') { e.preventDefault(); vToggle(); }
 });
 
-// ── демо-диалог для скриншотов: Segment.demo() в консоли ──
+
 segmentApi.demo = async () => {
   const room = 'general';
   const paint = (w, h, draw) => {
@@ -443,7 +443,7 @@ segmentApi.demo = async () => {
   });
   const photo = (w, h, col, label) => ({ kind: 'photo', name: label || 'photo.png', size: 42000, mime: 'image/png', data: solid(w, h, col, label), w, h });
 
-  // короткое настоящее видео
+
   const makeVideo = async () => {
     try {
       const c = document.createElement('canvas'); c.width = 320; c.height = 200;
@@ -466,7 +466,7 @@ segmentApi.demo = async () => {
   };
   const blobData = (blob) => new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(blob); });
 
-  // короткое голосовое (тон-генератор)
+
   const makeVoice = async () => {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -487,7 +487,7 @@ segmentApi.demo = async () => {
     } catch { return null; }
   };
 
-  // кружок-видеосообщение
+
   const makeCircle = async () => {
     try {
       const c = document.createElement('canvas'); c.width = 240; c.height = 240;
@@ -549,16 +549,16 @@ segmentApi.demo = async () => {
   return 'ok';
 };
 
-// автосохранение диалога «Общий» при новых сообщениях
+
 client.on('append', ({ roomId }) => { if (roomId === 'general') client.saveDialog('general'); });
 
-// бейдж непрочитанных в заголовке вкладки (без учёта приглушённых чатов)
+
 client.on('chats', () => {
   const total = client.chats.reduce((n, c) => n + (client.muted.has(c.id) ? 0 : (client.unread[c.id] || 0)), 0);
   document.title = total > 0 ? `(${total}) Segment` : 'Segment';
 });
 
-// ── аккаунт и вход по email ──
+
 const gate = $('gate');
 let authEmail = '';
 let registrationToken = '';
@@ -694,11 +694,9 @@ $('registerBtn').onclick = async () => {
 showAuthStep('email');
 authApi('me').then(({ user }) => enterApp(user)).catch(() => showAuthStep('email'));
 
-// Esc — отменить выбор чата (вернуться к «ничего не выбрано»).
+
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (segmentApi.forwardDraft) segmentApi.cancelForward();
   else client.closeRoom();
 });
-
-// Глобальная точка доступа — основа будущего API модификаций.

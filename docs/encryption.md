@@ -1,171 +1,60 @@
-# Шифрование сообщений — план на будущее
+# Segment Secure Layer
 
-> Черновик-ориентир. Сейчас Segment шифрования не имеет (сообщения идут по
-> WebSocket в открытом виде и хранятся в памяти сервера). Здесь — варианты, к
-> которым идти, что считается лучшим в индустрии и как это устроено у Telegram.
+Segment Secure Layer is an experimental end-to-end encryption protocol built with standard WebCrypto primitives.
 
-## Как у Telegram (для сравнения)
+> This is a working prototype and has not received an independent security audit. Do not treat it as production-grade cryptography.
 
-Telegram использует свой протокол **MTProto 2.0** (AES-256 + SHA-256 + 2048-бит
-RSA + Diffie–Hellman) и делит чаты на два вида:
+## Goals
 
-- **Облачные чаты** (по умолчанию, включая группы) — шифрование только
-  **клиент↔сервер**. Сообщения хранятся на серверах Telegram в зашифрованном
-  виде, но ключи у серверов есть — то есть сервер технически может прочитать
-  переписку. Ключи размазаны по разным дата-центрам, но это не E2EE.
-- **Секретные чаты** — настоящий **end-to-end** (ключ только у участников,
-  общий секрет через Diffie–Hellman), не хранятся на сервере, привязаны к
-  устройству, только 1-на-1, без групп и без синхронизации между устройствами.
+- Keep plaintext messages away from the relay server.
+- Provide a reusable browser and Node implementation.
+- Provide forward secrecy for message chains.
+- Provide post-compromise recovery through a Double Ratchet design.
+- Support asynchronous session setup with signed and one-time prekeys.
 
-**Критика:** большинство пользователей никогда не включают секретные чаты и
-думают, что защищены, хотя облачные читаемы сервером. Плюс собственный
-протокол критикуют за меньшую внешнюю проверку по сравнению с Signal.
+## Primitives
 
-Вывод для нас: **не повторять «читаемый сервером по умолчанию»**. Лучше сразу
-целиться в E2EE как норму.
+- AES-256-GCM for authenticated encryption.
+- ECDH P-256 for classical key agreement.
+- ECDSA P-256 for signed prekeys.
+- HKDF-SHA-256 for root, chain and message-key derivation.
 
-## Что считается лучшим сейчас (2026)
+No custom cryptographic primitive is implemented.
 
-- **Signal Protocol (Double Ratchet + X3DH)** — золотой стандарт для личных и
-  небольших групповых чатов. Каждое сообщение — свой ключ; компрометация одного
-  ключа не раскрывает прошлые и будущие сообщения (forward secrecy +
-  post-compromise security). В 2025 Signal добавил пост-квантовый «Triple
-  Ratchet» (SPQR) — классическая + квантовая стойкость.
-- **MLS (Messaging Layer Security, RFC 9420)** — новый стандарт для **больших
-  групп** (до десятков тысяч) за счёт дерева ключей вместо попарных обменов. В
-  2026 его катят Google Messages, Apple Messages (по RCS), Wire.
+## Session setup
 
-Практика: Signal-подход — для 1-на-1 и малых групп, MLS — когда нужны большие
-комнаты.
+Each account publishes an identity key, a signed prekey and a set of one-time prekeys. The initiator verifies the signed prekey, consumes one one-time prekey and derives an X3DH-style shared secret. The first encrypted message carries the public handshake header required by the recipient.
 
-## Варианты для Segment (по возрастанию сложности)
+## Double Ratchet
 
-### Вариант 0 — транспортное шифрование (минимум, сделать первым)
-Просто поднять сайт по **HTTPS/WSS** (TLS). Защищает канал от прослушки в сети,
-но сервер видит открытый текст. Это не E2EE — база гигиены, а не приватность.
-Малая цена, делать в любом случае.
+Direct peer channels use root and chain keys. Every message advances its sending chain. Direction changes mix in a new ECDH result. Skipped message keys allow limited out-of-order delivery.
 
-### Вариант 1 — E2EE для 1-на-1 через Signal Protocol
-Взять готовую аудированную библиотеку **libsignal** (есть WASM-сборки) на
-клиенте. Сервер становится «слепым» ретранслятором: раздаёт публичные ключи
-(prekeys) и гоняет шифртекст, содержимого не видит.
-- Плюсы: лучший в классе, forward secrecy, проверенная крипта.
-- Минусы: нужна доставка ключей, управление устройствами, история только на
-  клиенте (сервер не может её хранить в открытом виде).
-- Ложится на нашу архитектуру: крипта — в `@segment/core` (портируемо между
-  веб/мобилой), сервер — только транспорт.
+## Group messages
 
-### Вариант 2 — E2EE-группы через MLS
-Для комнат (Общий, Флудилка…) — библиотека **OpenMLS** (Rust→WASM). Дерево
-ключей масштабируется на большие комнаты, есть безопасное добавление/удаление
-участников.
-- Плюсы: правильный путь для групп, будущий стандарт индустрии.
-- Минусы: сложнее, нужен сервер доставки (Delivery Service) и хранение
-  публичных пакетов ключей.
+Each sender owns a sender-key chain. Sender-key state is shared only through encrypted direct sessions. Membership changes rotate room key material so a removed participant cannot decrypt future messages.
 
-### Вариант 3 — гибрид (реалистичная цель)
-1-на-1 и небольшие приватные комнаты — Signal Protocol; крупные публичные
-комнаты — MLS. Ровно так индустрия и разделяет.
+## Post-quantum extension point
 
-## Выбранный путь: Segment Secure Layer (наш слой)
+The code defines an optional KEM interface for a future hybrid handshake. No real ML-KEM implementation is currently bundled because WebCrypto does not expose one. The mock KEM used by the self-test validates integration plumbing only and provides no security.
 
-Реализуем **Вариант 3, но своей реализацией** — без сторонних крипто-библиотек
-(libsignal/OpenMLS). Наш слой `Segment Secure Layer` (пакет `packages/crypto`)
-пишем сами, но **поверх стандартных примитивов** из WebCrypto, которые есть и в
-браузере, и в Node:
+## Server visibility
 
-- **AES-256-GCM** — шифрование сообщений (конфиденциальность + аутентичность);
-- **ECDH P-256** — обмен ключами между устройствами;
-- **HKDF-SHA-256** — вывод ключей и ratchet-цепочки.
+The relay receives encrypted envelopes rather than plaintext message bodies. It still observes account, room, membership, IP, timing and typing metadata. Authentication and public prekey records are also server-side.
 
-Схема:
-- **1-на-1:** ECDH-рукопожатие → корневой ключ → **симметричный ratchet**: у
-  каждого сообщения свой ключ, цепочка проматывается вперёд (forward secrecy —
-  вскрытие одного ключа не раскрывает прошлые сообщения).
-- **Комнаты:** **sender-key** — у каждого участника своя ratchet-цепочка, её
-  начальное состояние раздаётся остальным **по личным E2EE-каналам** (тем самым
-  1-на-1). Сервер видит только шифртекст, ключей группы не знает.
+## Current limitations
 
-> ⚠️ Важное и честное предупреждение. Мы не изобретаем криптопримитивы — только
-> собираем протокол из проверенных (это безопасная часть). Но **любая своя
-> реализация протокола обязана пройти независимый аудит** перед продакшеном.
-> Текущий код `packages/crypto` — **рабочий прототип-фундамент**, не
-> «готовая к бою» крипта: пока это симметричный ratchet (даёт forward secrecy),
-> без DH-ratchet (полный post-compromise security — в TODO) и без пост-квантовой
-> части. Закрытость кода защитой не считаем: стойкость — на ключах.
+- No independent audit.
+- No persisted server-side message history.
+- No multi-device key model.
+- No recovery or key-verification interface.
+- No real post-quantum KEM.
 
-### План развития нашего слоя
-1. ✅ Примитивы + 1-на-1 симметричный ratchet + sender-key для комнат.
-2. ✅ Вкручено в реальный поток: сервер стал **слепым ретранслятором**
-   шифртекста (не хранит и не видит открытый текст), обмен ключами идёт по
-   протоколу (`Roster`/`Peer`/`KeyShare`/`Cipher`), комнаты E2EE через sender-key.
-3. ✅ **DH-ratchet (двойной храповик)** — post-compromise security в парном
-   канале: на смену направления подмешивается новый DH, канал
-   «самовосстанавливается» после утечки ключей. Есть обработка сообщений вне
-   очереди (skipped message keys).
-4. ✅ **X3DH + каталог prekeys** — сессию можно установить без онлайна
-   собеседника: каждый публикует prekey-бандл (идентификационные ключи +
-   подписанный prekey + одноразовые prekeys), сервер выдаёт по одному
-   одноразовому prekey. Подпись signed-prekey проверяется (защита от MITM).
-5. ✅ **Ротация sender-key по составу комнаты** — при выходе участника
-   оставшиеся меняют свой sender-key и раздают новый друг другу, чтобы ушедший
-   не мог прочитать будущие сообщения (проверено: старый ключ ушедшего новое
-   сообщение не расшифровывает).
-6. 🟡 **Гибридная пост-квантовая обвязка (PQXDH) — задел.** Место подмешивания
-   пост-квантового секрета в вывод ключа готово и покрыто тестами (через
-   подключаемый интерфейс `kem`), НО настоящего ML-KEM здесь нет: в WebCrypto его
-   не существует, а писать пост-квантовые примитивы вручную нельзя. Когда появится
-   проверенная реализация ML-KEM — подключается как объект `kem` без изменения
-   протокола, и гибрид включается. Пока — классика (ECDH).
+## Testing
 
-### Как теперь устроено рукопожатие
-- При входе клиент публикует prekey-бандл (сервер хранит; одноразовые prekeys
-  отдаёт по запросу, каждый — один раз).
-- Из пары участников X3DH инициирует тот, у кого меньше id: запрашивает у сервера
-  одноразовый prekey собеседника, выводит общий секрет (X3DH) и открывает
-  двойной храповик, первым сообщением отдавая свой sender-key.
-- Второй участник восстанавливает тот же секрет из X3DH-заголовка и отвечает
-  своим sender-key по тому же храповику.
-- Дальше сообщения в комнаты шифруются sender-key каждого; сервер видит только
-  шифртекст.
+Run:
 
-### Что даёт текущая реализация
-- Сервер видит только `iv`+`ct` (проверено: в ретрансляции нет поля `text`).
-- Участники обмениваются публичными ключами через сервер, выводят общий секрет
-  по ECDH и раздают друг другу sender-key по личным зашифрованным каналам.
-- Forward secrecy: каждое сообщение — свой ключ.
+```bash
+npm run check
+```
 
-### Известные ограничения (честно)
-- Нет истории: новый участник видит сообщения только с момента входа (сервер
-  ничего не хранит) — это ожидаемо для E2EE-групп.
-- Нет DH-ratchet → нет полного post-compromise security (в плане, п.3).
-- Метаданные (кто, когда, в какой комнате писал, «печатает…») сервер видит.
-- Прототип, **нужен аудит** перед продом.
-
-## Где это живёт в нашей архитектуре
-
-- **`@segment/core`** — вся крипта клиента (генерация/хранение ключей, шифр/
-  дешифр). Портируется на будущие мобильные/десктоп-клиенты как есть.
-- **`packages/protocol`** — добавить типы для обмена ключами (prekeys, key
-  packages) и пометку «сообщение зашифровано» + поднять `PROTOCOL_VERSION`.
-- **Сервер** — из хранилища истории превращается в: (а) слепой ретранслятор
-  шифртекста, (б) каталог публичных ключей. Открытый текст он больше не видит.
-- **Хранилище устройства** (`storage.js`) — приватные ключи и локальная история
-  (на мобиле — защищённое хранилище/Keychain).
-
-## Связь с идеей модов
-
-Часть модов будет менять формат сообщений — их нужно применять **до**
-шифрования (иначе сервер-ретранслятор их не поймёт, и не должен). Значит
-«моды, требующие установки у всех участников» логично согласовывать тем же
-механизмом, что и версию протокола/набор ключей — это часть будущего дизайна
-E2EE-слоя.
-
-## Источники
-
-- [End-to-End Encrypted Messaging: Why It Matters in 2026 (BSG)](https://bsg.tech/blog/end-to-end-encrypted-messaging/)
-- [Top 5 Secure Messaging Apps of 2026 (Deepak Gupta)](https://guptadeepak.com/tools/top-5-secure-messaging-apps-2026/)
-- [Messenger comparison 2026 (SoftMaker)](https://www.softmaker.com/en/blog/friday-chat/blog-messenger-comparison-privacy-2026)
-- [Telegram — End-to-End Encryption, Secret Chats](https://core.telegram.org/api/end-to-end)
-- [MTProto 2.0: Cloud chats](https://core.telegram.org/mtproto/2-0)
-- [Telegram Privacy Explained (ESET)](https://www.eset.com/blog/en/home-topics/privacy-and-identity-protection/telegram-privacy-explained/)
+The self-test covers direct sessions, sender keys, X3DH-style setup, Double Ratchet direction changes, out-of-order messages, signed-prekey rejection and hybrid KEM plumbing.

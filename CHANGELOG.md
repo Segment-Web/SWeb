@@ -1,16 +1,13 @@
-# История изменений
+# Changelog
 
-Здесь перечислены пользовательские и технические изменения каждой версии
-Segment. Новые версии располагаются сверху.
+User-visible and technical changes are listed by release, newest first.
 
-## 0.0.1-beta — 13 июля 2026
+## 0.0.1-beta — July 13, 2026
 
-- Первая публичная версия Segment.
-- Реалтайм-чат по WebSocket и панельный интерфейс.
-- Прототип E2EE: sender keys, Double Ratchet и X3DH.
-- Подготовлены Docker, Caddy, HTTPS-конфигурация и GitHub Actions.
-- Добавлены AGPL-3.0-only, правила бренда и политика безопасности.
-- Добавлены аккаунты с входом по одноразовому коду электронной почты.
-- Пользователи и сессии сохраняются в PostgreSQL.
-- Регистрация разделена на три шага: почта, код и профиль.
-- Веб-версия временно доступна только на компьютерах.
+- Added email sign-in with one-time codes.
+- Added PostgreSQL-backed accounts and sessions.
+- Added display name, username and profile photo setup.
+- Added a staged registration interface with segmented code input.
+- Added movable and resizable chat panels.
+- Added real-time WebSocket messaging and the Segment Secure Layer prototype.
+- Limited the early web beta to desktop browsers.

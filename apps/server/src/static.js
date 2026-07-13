@@ -1,9 +1,6 @@
-// Раздача статики: веб-клиент и общие пакеты.
-//
-// Отдаёт файлы из apps/web/public по `/`, а каталог packages/ — по `/shared/`,
-// чтобы браузер импортировал ровно те же исходники @segment/protocol и
-// @segment/core, что и Node (единый источник правды, без сборки и дублирования).
-// Имена пакетов в браузере разрешает import map в index.html.
+// Static delivery for the web client and shared packages.
+// The browser imports the same protocol and core source files as Node through
+// the import map in index.html, avoiding a separate browser copy.
 
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
@@ -23,7 +20,7 @@ const MIME = {
   '.ico': 'image/x-icon',
 };
 
-// Защита от выхода за пределы каталога (path traversal).
+// Keep normalized paths inside the selected static root.
 function safeJoin(base, urlPath) {
   const rel = normalize(urlPath).replace(/^([/\\]|\.\.[/\\])+/, '');
   return join(base, rel);

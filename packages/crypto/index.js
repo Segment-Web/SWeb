@@ -1,18 +1,18 @@
-// Segment Secure Layer — собственный слой E2EE.
+
 //
-// ⚠️ ПРОТОТИП-ФУНДАМЕНТ, НЕ ГОТОВАЯ К БОЮ КРИПТА. Требует независимого аудита
-// перед использованием в проде. Мы НЕ изобретаем криптопримитивы — только
-// собираем протокол из стандартных, проверенных примитивов WebCrypto:
-//   • AES-256-GCM  — шифрование (конфиденциальность + аутентичность);
-//   • ECDH P-256   — обмен ключами между устройствами;
-//   • HKDF-SHA-256 — вывод ключей и ratchet-цепочки.
+
+
+
+
+
+
 //
-// Работает и в браузере, и в Node 20+ (глобальный WebCrypto). Никаких сторонних
-// крипто-библиотек — это «наш» слой.
+
+
 //
-// Что уже есть: forward secrecy (у каждого сообщения свой ключ, цепочка
-// проматывается вперёд). Чего пока нет (TODO): DH-ratchet (post-compromise
-// security), prekeys без онлайна, ротация ключей комнаты, пост-квантовая часть.
+
+
+
 
 const subtle = globalThis.crypto.subtle;
 const enc = new TextEncoder();
@@ -40,7 +40,7 @@ async function importVerify(raw) {
   return subtle.importKey('raw', a2b(raw), SIGN, true, ['verify']);
 }
 
-// ── примитивы ──
+
 
 export async function generateIdentity() {
   return subtle.generateKey(ECDH, true, ['deriveBits']);
@@ -58,7 +58,7 @@ async function ecdh(privateKey, publicKey) {
   return new Uint8Array(await subtle.deriveBits({ name: 'ECDH', public: publicKey }, privateKey, 256));
 }
 
-// HKDF: из ключевого материала выводим нужное число байт под метку (с солью).
+
 async function hkdfBits(ikm, info, salt, bytes) {
   const base = await subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']);
   const bits = await subtle.deriveBits(
@@ -69,18 +69,18 @@ async function hkdfBits(ikm, info, salt, bytes) {
   return new Uint8Array(bits);
 }
 
-// 32 байта под метку (нулевая соль) — для sender-key и вывода общего секрета.
+
 async function hkdf(ikm, info) {
   return hkdfBits(ikm, info, ZERO32, 32);
 }
 
-// KDF корневого ключа (Double Ratchet): соль = текущий root, ikm = выход DH.
+
 async function kdfRoot(rk, dhOut) {
   const out = await hkdfBits(dhOut, 'segment-dr-root', rk, 64);
   return [out.slice(0, 32), out.slice(32, 64)]; // [newRootKey, chainKey]
 }
 
-// KDF цепочки: из ключа цепочки — ключ сообщения и следующий ключ цепочки.
+
 async function kdfChain(ck) {
   const messageKey = await hkdfBits(ck, 'segment-dr-msg', ZERO32, 32);
   const nextChain = await hkdfBits(ck, 'segment-dr-chain', ZERO32, 32);
@@ -91,7 +91,7 @@ async function aesKey(raw) {
   return subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
 }
 
-// Шифрование одним ключом (низкий уровень). Возвращает переносимый объект.
+
 export async function seal(keyRaw, plaintext) {
   const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
   const key = await aesKey(keyRaw);
@@ -105,8 +105,8 @@ export async function open(keyRaw, box) {
   return dec.decode(pt);
 }
 
-// Одна ступень храповика: из состояния цепочки выводим ключ сообщения и
-// следующее состояние. Старое состояние затирается вызывающим — отсюда forward
+
+
 // secrecy.
 async function ratchetStep(chain) {
   const messageKey = await hkdf(chain, 'segment-msg');
@@ -114,11 +114,11 @@ async function ratchetStep(chain) {
   return { messageKey, nextChain };
 }
 
-// ── 1-на-1: сессия с симметричным храповиком ──
+
 
 export class Session {
-  // sharedSecret — общий секрет ECDH; initiator — кто начал (для разведения
-  // направлений send/recv у двух сторон).
+
+
   static async establish(sharedSecret, initiator) {
     const root = await hkdf(sharedSecret, 'segment-root');
     const a2bChain = await hkdf(root, 'segment-a2b');
@@ -131,7 +131,7 @@ export class Session {
     return s;
   }
 
-  // Удобный конструктор: сразу из ключей ECDH.
+
   static async fromKeys(myPrivate, theirPublic, initiator) {
     return Session.establish(await ecdh(myPrivate, theirPublic), initiator);
   }
@@ -144,7 +144,7 @@ export class Session {
   }
 
   async decrypt(msg) {
-    // догоняем цепочку до номера сообщения (простая обработка пропусков)
+
     while (this._recvN < msg.n) {
       this._recv = (await ratchetStep(this._recv)).nextChain;
       this._recvN++;
@@ -156,10 +156,10 @@ export class Session {
   }
 }
 
-// ── комнаты: sender-key ──
+
 //
-// У каждого отправителя своя цепочка. Её стартовое состояние (export()) он
-// раздаёт остальным участникам по личным Session-каналам — сервер его не видит.
+
+
 
 export class SenderKey {
   static create() {
@@ -169,7 +169,7 @@ export class SenderKey {
     return s;
   }
 
-  // Стартовое состояние для раздачи участникам (передавать только через E2EE).
+
   export() {
     return { chain: b2a(this._chain), n: this._n };
   }
@@ -202,16 +202,16 @@ export class SenderKeyView {
   }
 }
 
-// ── Double Ratchet (двойной храповик) ──
+
 //
-// Даёт не только forward secrecy, но и post-compromise security: на каждый
-// обмен направлениями подмешивается новый DH — после утечки ключей канал
-// «самовосстанавливается». Сообщение несёт заголовок { dh, pn, n }.
+
+
+
 
 const MAX_SKIP = 256;
 
 export class DoubleRatchet {
-  // Инициатор: знает общий секрет sk (из X3DH) и публичный signed-prekey ответчика.
+
   static async initInitiator(sk, theirSignedPreKeyPub) {
     const r = new DoubleRatchet();
     r.DHs = await subtle.generateKey(ECDH, true, ['deriveBits']);
@@ -222,7 +222,7 @@ export class DoubleRatchet {
     return r;
   }
 
-  // Ответчик: sk (тот же) и его signed-prekey ПАРА (её публичную часть использовал инициатор).
+
   static async initResponder(sk, signedPreKeyPair) {
     const r = new DoubleRatchet();
     r.DHs = signedPreKeyPair;
@@ -285,15 +285,15 @@ export class DoubleRatchet {
   }
 }
 
-// ── X3DH: установление сессии без онлайна собеседника ──
-//
-// Каждый публикует prekey-бандл (идентификационные ключи + подписанный prekey +
-// одноразовые prekeys). Инициатор берёт бандл (сервер отдаёт один одноразовый
-// prekey) и выводит общий секрет; ответчик выводит тот же секрет из первого
-// сообщения — быть онлайн ему не нужно.
 
-// Создаёт бандл. Приватная часть (secret) хранится у владельца, публичная
-// (bundle) — публикуется. oneTime — сколько одноразовых prekeys сгенерировать.
+//
+
+
+
+
+
+
+
 export async function createPreKeyBundle(oneTime = 8, kem = null) {
   const idDh = await subtle.generateKey(ECDH, true, ['deriveBits']);
   const idSign = await subtle.generateKey(SIGN, true, ['sign', 'verify']);
@@ -315,7 +315,7 @@ export async function createPreKeyBundle(oneTime = 8, kem = null) {
     opks: await Promise.all(opks.map(async (o) => ({ id: o.id, key: await exportRaw(o.pair.publicKey) }))),
   };
 
-  // гибрид: если передан пост-квантовый KEM — кладём его публичный ключ в бандл
+
   if (kem) {
     const pair = await kem.generate();
     secret.kem = pair.secret;
@@ -324,22 +324,22 @@ export async function createPreKeyBundle(oneTime = 8, kem = null) {
   return { secret, bundle };
 }
 
-// Общий секрет X3DH. `pq` — необязательный пост-квантовый секрет (гибрид PQXDH):
-// подмешивается к классическим DH, чтобы стойкость держалась, даже если один из
-// механизмов будет взломан (в т.ч. квантовым компьютером).
+
+
+
 async function x3dhSecret(dhs, pq) {
   return hkdf(pq ? concat(...dhs, pq) : concat(...dhs), 'segment-x3dh');
 }
 
-// Инициатор: из своего secret и бандла собеседника (bundle с одним opk от сервера).
-// `kem` — необязательный пост-квантовый механизм инкапсуляции (см. ниже).
-// Возвращает готовый Double Ratchet и заголовок x3dh для первого сообщения.
+
+
+
 export async function x3dhInitiate(mySecret, theirBundle, kem = null) {
   const idSignPub = await importVerify(theirBundle.idSign);
   const good = await subtle.verify(
     { name: 'ECDSA', hash: 'SHA-256' }, idSignPub, a2b(theirBundle.spkSig), a2b(theirBundle.spk),
   );
-  if (!good) throw new Error('подпись signed-prekey неверна');
+  if (!good) throw new Error('invalid signed-prekey signature');
 
   const theirIdDh = await importPublic(theirBundle.idDh);
   const theirSpk = await importPublic(theirBundle.spk);
@@ -353,7 +353,7 @@ export async function x3dhInitiate(mySecret, theirBundle, kem = null) {
   const opk = theirBundle.opks && theirBundle.opks[0];
   if (opk) dhs.push(await ecdh(ek.privateKey, await importPublic(opk.key))); // DH4: EK_a · OPK_b
 
-  // гибрид: инкапсулируем пост-квантовый секрет против PQ-ключа собеседника
+
   let pq = null;
   let kemCt = null;
   if (kem && theirBundle.kem) {
@@ -373,7 +373,7 @@ export async function x3dhInitiate(mySecret, theirBundle, kem = null) {
   return { ratchet, x3dh };
 }
 
-// Ответчик: из своего secret и заголовка x3dh инициатора выводит тот же секрет.
+
 export async function x3dhRespond(mySecret, x3dh, kem = null) {
   const theirIdDh = await importPublic(x3dh.idDh);
   const theirEk = await importPublic(x3dh.ek);
@@ -388,7 +388,7 @@ export async function x3dhRespond(mySecret, x3dh, kem = null) {
     if (opk) dhs.push(await ecdh(opk.pair.privateKey, theirEk)); // DH4
   }
 
-  // гибрид: восстанавливаем тот же пост-квантовый секрет декапсуляцией
+
   let pq = null;
   if (kem && x3dh.kemCt && mySecret.kem) {
     pq = await kem.decapsulate(mySecret.kem, a2b(x3dh.kemCt));
@@ -398,17 +398,16 @@ export async function x3dhRespond(mySecret, x3dh, kem = null) {
   return DoubleRatchet.initResponder(sk, mySecret.spk);
 }
 
-// ── Гибридный пост-квантовый механизм (PQXDH) ──
+
 //
-// ⚠️ ЧЕСТНО: настоящего пост-квантового KEM здесь НЕТ. В WebCrypto нет ML-KEM
-// (Kyber), а писать пост-квантовые примитивы вручную нельзя — это было бы хуже
-// классики. Ниже — только ИНТЕРФЕЙС и точка подключения: когда появится
-// проверенная реализация ML-KEM (вставленная как объект `kem`), гибрид включится
-// без изменения протокола. Объект `kem` должен реализовать:
-//   generate()            -> { publicKey: Uint8Array, secret: <приват> }
+
+
+
+
+
+
 //   encapsulate(pubRaw)   -> { ciphertext: Uint8Array, shared: Uint8Array }
 //   decapsulate(secret,ct)-> shared: Uint8Array
-// Публичный ключ кладётся в бандл (createPreKeyBundle с kem), инкапсуляция едет в
-// x3dh.kemCt, а общий секрет подмешивается к классическим DH в HKDF.
+
+
 //
-// Пока `kem` не передан, всё работает на классике (ECDH) — как сейчас в ядре.

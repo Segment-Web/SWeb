@@ -1,5 +1,5 @@
-// Единый набор иконок интерфейса: outline, 24×24, наследуют currentColor.
-// Один источник правды, чтобы меню чата и меню сообщения выглядели одинаково.
+
+
 
 const ico = (d, size = 20) =>
   `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;

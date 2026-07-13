@@ -1,118 +1,65 @@
-<div align="center">
-
 # Segment
 
-**Расширяемый мессенджер со сквозным шифрованием и открытым исходным кодом.**
+Segment is an extensible open-source messenger with a panel-based interface and end-to-end encryption.
 
-Тёмный неон-интерфейс, живой WebSocket-чат, комнаты, «Избранное»
-и кнопка входа, которая убегает от курсора.
+Current release: **0.0.1-beta** · [Changelog](CHANGELOG.md) · [Versioning](VERSIONING.md)
 
-</div>
+## Features
 
----
+- Real-time messaging over WebSocket.
+- Email sign-in with one-time codes.
+- PostgreSQL-backed accounts and sessions.
+- Independent panels that can be moved, resized and rearranged.
+- Photo, video, voice message, attachment and pinned-message interfaces.
+- An experimental end-to-end encryption layer based on WebCrypto.
 
-Текущая версия: **0.1.0** · [История изменений](CHANGELOG.md) ·
-[Правила версий](VERSIONING.md)
+The public web client currently supports desktop browsers only.
 
-## Что это
+## Repository layout
 
-Segment — ранний прототип рабочего мессенджера с открытым кодом.
-Открой в двух вкладках (или на телефоне и ноуте) — сообщения летают в реальном
-времени. Проект специально устроен так, чтобы из общего ядра можно было собрать
-не только сайт, но и мобильные / десктоп-приложения.
-
-Главная идея — **расширяемость модификациями**: интерфейс собран из
-самостоятельных панелей, которые можно двигать, менять размер и местами, а в
-перспективе — подключать пользовательские моды из общей библиотеки (часть модов
-будет требовать установки у всех участников чата). Панельный каркас и реестр —
-первый шаг к этому. Подробнее — в [ARCHITECTURE.md](ARCHITECTURE.md).
-
-## Возможности
-
-- 💬 Реалтайм-чат по WebSocket с автопереподключением
-- 🗂 Несколько комнат (Общий, Флудилка, Мемы) со счётчиком непрочитанных
-- ⭐ «Избранное» — личные заметки, хранятся только у тебя (localStorage)
-- ✍️ Индикатор «печатает…» и список онлайна
-- 🧩 Панельный интерфейс: части приложения — самостоятельные панели, их можно
-  двигать, менять размер и местами (фундамент для модификаций)
-- 🎛 Спокойная тёмная тема, без лишней пестроты
-
-## Структура
-
-Проект — монорепозиторий на npm workspaces, устроенный по мотивам открытого
-кода Telegram: **протокол** (аналог TL-схемы) → **ядро** (аналог TDLib) →
-**тонкие клиенты**. Подробнее — в [ARCHITECTURE.md](ARCHITECTURE.md).
-
-```
-segment/
-├─ packages/
-│  ├─ protocol/        # аналог TL-схемы: типы сообщений, комнаты, лимиты, версия
-│  └─ core/            # аналог TDLib: соединение, состояние, поток обновлений
-│                      # без DOM — переиспользуется любым клиентом
-├─ apps/
-│  ├─ server/          # HTTP (раздача статики) + WebSocket-чат
-│  │  └─ src/
-│  │     ├─ index.js   # точка входа
-│  │     ├─ static.js  # раздача веб-клиента и пакетов
-│  │     ├─ gateway.js # WebSocket-логика
-│  └─ web/             # тонкий UI поверх ядра — ES-модули, без сборщика
-│     └─ public/
-│        ├─ index.html # + import map для имён пакетов
-│        ├─ styles.css
-│        ├─ app.js     # бутстрап: собирает ядро, панели и раскладку
-│        └─ js/
-│           ├─ panels/    # самостоятельные панели UI (+ реестр = зачаток модов)
-│           ├─ workspace/ # тайлинг-раскладка: ресайз и перестановка панелей
-│           ├─ storage.js # адаптер localStorage для ядра
-│           └─ ui.js·util.js
-├─ ARCHITECTURE.md
-├─ package.json        # workspaces + скрипты
-└─ LICENSE             # AGPL-3.0-only
+```text
+packages/protocol  Shared message types, rooms and limits
+packages/core      Platform-independent client state and connection logic
+packages/crypto    Segment Secure Layer encryption prototype
+apps/server        HTTP server and WebSocket ciphertext relay
+apps/web           Browser client
 ```
 
-Ключевая идея — ядро `@segment/core`: вся логика чата живёт в нём, а клиент
-только рисует и принимает ввод. И Node, и браузер импортируют пакеты по
-одинаковым именам (в браузере — через import map), так что форматы не расходятся
-и код ядра переиспользуется как есть.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the design and package boundaries.
 
-## Запуск
+## Local development
 
-Нужен [Node.js](https://nodejs.org) 22.13+ и PostgreSQL.
+Requirements:
+
+- Node.js 22.13 or later
+- PostgreSQL
 
 ```bash
 npm install
+cp .env.example .env
 npm start
 ```
 
-Открой <http://localhost:3000>. Чтобы зайти с телефона в той же сети —
-узнай IP компьютера и открой `http://<IP>:3000`.
+Open <http://localhost:3000>.
 
-Для публичной ранней беты через Docker, HTTPS и домен см.
-[инструкцию по развёртыванию](docs/DEPLOYMENT.md).
+Run the encryption self-test with:
 
-> Аккаунты и сессии хранятся в PostgreSQL, вход выполняется одноразовым кодом
-> из email. Сервер пока не хранит историю сообщений: после перезапуска она
-> остаётся только на устройствах. E2EE —
-> рабочий прототип без независимого аудита.
+```bash
+npm run check
+```
 
-## Куда развивать
+## Production deployment
 
-Ядро (`@segment/core`) не зависит от платформы, поэтому дальше можно:
+The supported early-beta deployment uses Docker Compose, PostgreSQL and an external HTTPS reverse proxy. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
-- **Мобильное приложение** — новый клиент в `apps/mobile` (React Native /
-  Expo): переиспользует `@segment/core` как есть, нужно лишь реализовать
-  адаптер хранилища и рендер (см. границы в [ARCHITECTURE.md](ARCHITECTURE.md)).
-- **Десктоп** — обёртка `apps/desktop` (Tauri / Electron) поверх веб-клиента.
-- **Постоянное хранение** — хранить только зашифрованные конверты и вложения,
-  не раскрывая серверу содержание сообщений.
-- **Аккаунты, личные сообщения, реакции, картинки** — расширяя протокол
-  (не забыв поднять `PROTOCOL_VERSION`).
+## Security status
 
-## Лицензия
+The encryption layer is a working prototype, not an audited production protocol. The server relays ciphertext but can still observe metadata such as participants, rooms and timing. Message history is not currently persisted on the server.
 
-Код распространяется по [GNU AGPL-3.0-only](LICENSE): при публичном изменённом
-сетевом сервисе пользователям нужно предоставить соответствующий исходный код.
-Название, логотип и фирменный стиль отдельно защищены правилами
-[TRADEMARKS.md](TRADEMARKS.md); форки могут свободно менять код, но должны
-избегать выдачи себя за официальный Segment.
-Как вносить вклад — см. [CONTRIBUTING.md](CONTRIBUTING.md).
+See [docs/encryption.md](docs/encryption.md) and [SECURITY.md](SECURITY.md).
+
+## License and trademarks
+
+The source code is licensed under [GNU AGPL-3.0-only](LICENSE). The Segment name, logo and visual identity are covered separately by [TRADEMARKS.md](TRADEMARKS.md).
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).

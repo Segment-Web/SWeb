@@ -1,20 +1,20 @@
-// Мелкие помощники для работы с DOM и текстом.
+
 
 export const $ = (id) => document.getElementById(id);
 
-/** Экранирует пользовательский текст перед вставкой в innerHTML. */
+
 export function esc(str) {
   return String(str).replace(/[&<>"']/g, (c) => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
   ));
 }
 
-/** Первая буква имени для аватарки. */
+
 export function initials(name) {
   return (String(name ?? '').trim()[0] || '·').toUpperCase();
 }
 
-/** Метка вложений для превью («📷 Фото» / «📎 Файл»). */
+
 export function attachLabel(message) {
   const a = message.attachments;
   if (!a?.length) return '';
@@ -27,13 +27,13 @@ export function attachLabel(message) {
   return `📎 ${a[0].name || 'Файл'}`;
 }
 
-/** Строка предпросмотра сообщения для списка чатов. */
+
 export function previewOf(message) {
   const body = message.poll ? `📊 ${message.poll.question}` : (message.text || attachLabel(message));
   return message.name ? `${message.name}: ${body}` : body;
 }
 
-/** Человекочитаемый размер файла. */
+
 export function fmtSize(bytes) {
   if (!bytes && bytes !== 0) return '';
   if (bytes < 1024) return `${bytes} Б`;

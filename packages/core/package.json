@@ -1,7 +1,7 @@
 {
   "name": "@segment/core",
   "version": "0.0.1-beta",
-  "description": "Ядро клиента Segment (аналог TDLib): соединение, состояние и поток обновлений. Портируется между веб, мобильными и десктоп-клиентами.",
+  "description": "Platform-independent Segment client state, connection and update stream.",
   "type": "module",
   "private": true,
   "license": "AGPL-3.0-only",

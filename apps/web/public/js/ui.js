@@ -1,33 +1,33 @@
-// Рендер интерфейса. Чистые функции: получают данные, рисуют DOM,
-// ничего не знают о сети и состоянии приложения.
+
+
 
 import { esc, initials, previewOf, fmtSize } from './util.js';
 
-// Лёгкая разметка текста сообщений. Сначала экранируем (безопасность), затем
-// накладываем форматирование на уже безопасную строку. Порядок важен: сперва
-// блоки кода (внутри них форматирование не применяется), потом остальное.
+
+
+
 export function formatText(raw) {
   const codes = [];
-  // уникальный сентинел, которого не может быть в экранированном тексте
+
   const hold = (html) => `${codes.push(html) - 1}`;
   let s = esc(raw);
-  // ```блок кода``` и `код в строке` — прячем, чтобы внутри ничего не форматировалось
+
   s = s.replace(/```\n?([\s\S]+?)```/g, (_, c) => hold(`<pre class="code-block">${c.replace(/\n$/, '')}</pre>`));
   s = s.replace(/`([^`\n]+?)`/g, (_, c) => hold(`<code>${c}</code>`));
-  // ссылки
+
   s = s.replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
-  // ||спойлер||
+
   s = s.replace(/\|\|([\s\S]+?)\|\|/g, '<span class="spoiler" data-spoiler>$1</span>');
-  // **жирный**  __курсив__  ~~зачёркнутый~~
+
   s = s.replace(/\*\*([^*\n]+?)\*\*/g, '<b>$1</b>');
   s = s.replace(/__([^_\n]+?)__/g, '<i>$1</i>');
   s = s.replace(/~~([^~\n]+?)~~/g, '<s>$1</s>');
-  // возвращаем спрятанные блоки кода
+
   s = s.replace(/(\d+)/g, (_, i) => codes[+i]);
   return s;
 }
 
-// Сколько эмодзи в тексте, если он состоит ТОЛЬКО из эмодзи (иначе 0).
+
 function emojiOnly(text) {
   try {
     const rest = text.replace(/[\s‍️\u{1f3fb}-\u{1f3ff}]/gu, '').replace(/\p{Extended_Pictographic}/gu, '');
@@ -36,7 +36,7 @@ function emojiOnly(text) {
   } catch { return 0; }
 }
 
-// Опрос: вопрос, варианты с полосами процентов, счётчик голосов.
+
 function pollHtml(m, myName) {
   const p = m.poll;
   if (!p) return '';
@@ -62,8 +62,8 @@ function pollHtml(m, myName) {
   </div>`;
 }
 
-// Карточка-превью ссылки. Настоящие OG-метаданные без сервера-прокси не получить
-// (CORS + E2EE), поэтому показываем домен и адрес; для картинок — саму картинку.
+
+
 function linkCardHtml(m) {
   if (m.image || (m.attachments || []).length) return '';
   const url = (m.text || '').match(/https?:\/\/[^\s]+/)?.[0];
@@ -85,7 +85,7 @@ const PLAY_GLYPH = '<svg viewBox="0 0 24 24" width="26" height="26" fill="curren
 const PLAY_SM = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
 const PAUSE_SM = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
 
-// голосовое сообщение: столбики волны + плей + таймер
+
 function voiceHtml(v) {
   const peaks = (v.waveform && v.waveform.length ? v.waveform : Array.from({ length: 28 }, () => 0.3));
   const bars = peaks.map((p) => `<span style="height:${Math.max(8, Math.round(p * 100))}%"></span>`).join('');
@@ -97,7 +97,7 @@ function voiceHtml(v) {
   </div>`;
 }
 
-// видеосообщение-кружок: круглое видео, играет по клику
+
 function circleHtml(c) {
   const badge = c.duration ? `<span class="circle-time">${esc(fmtDuration(c.duration))}</span>` : '';
   return `<div class="msg-circle" data-circle>
@@ -113,7 +113,7 @@ const fmtDuration = (s) => {
   return `${m}:${String(sec).padStart(2, '0')}`;
 };
 
-// Одна ячейка медиа-мозаики: фото или видео (постер + play + таймкод).
+
 function mediaCellHtml(item, i) {
   if (item.kind === 'video') {
     const badge = item.duration ? `<span class="media-duration">${esc(fmtDuration(item.duration))}</span>` : '';
@@ -142,13 +142,13 @@ function attachmentsHtml(m) {
     const layout = `m${n}`;
     const cells = media.slice(0, 10).map((item, i) => {
       let cell = mediaCellHtml(item, i);
-      // «+N» на последней плитке, если вложений больше 10
+
       if (i === 9 && media.length > 10) {
         cell = cell.replace('</div>', `<span class="media-more">+${media.length - 10}</span></div>`);
       }
       return cell;
     }).join('');
-    // одиночное медиа — сохраняем натуральные пропорции (в разумных пределах)
+
     let style = '';
     if (n === 1 && media[0].w && media[0].h) {
       const ratio = Math.max(0.6, Math.min(1.9, media[0].w / media[0].h));
@@ -168,7 +168,7 @@ function attachmentsHtml(m) {
 const FALLBACK_COLOR = '#7c5cff';
 const IMAGE_URL_RE = /(https?:\/\/\S+\.(?:png|jpe?g|gif|webp))(?:\?\S*)?/i;
 
-// Человекочитаемая дата для разделителя: Сегодня / Вчера / 5 июля.
+
 function dateLabel(ts) {
   const d = new Date(ts);
   const today = new Date();
@@ -181,7 +181,7 @@ function dateLabel(ts) {
   return d.toLocaleDateString('ru', opts);
 }
 
-// Всплывающая подсказка «кто поставил реакцию».
+
 let reactTip;
 function showReactTip(chip) {
   if (!reactTip) {
@@ -206,7 +206,7 @@ function reactionsHtml(m, myName) {
     `<button class="reaction-chip ${names.includes(myName) ? 'mine' : ''}" data-reaction="${esc(emoji)}" data-names="${esc(names.join('|'))}">${esc(emoji)} <span>${names.length}</span></button>`).join('')}</div>`;
 }
 
-// Инлайн-плеер голосового: играет/пауза, подсвечивает столбики по прогрессу.
+
 function wireVoice(box) {
   const audio = box.querySelector('audio');
   const btn = box.querySelector('.voice-play');
@@ -235,7 +235,7 @@ function wireVoice(box) {
   };
 }
 
-// Инлайн-плеер кружка: клик — играть/пауза (со звуком).
+
 function wireCircle(box) {
   const video = box.querySelector('video');
   const glyph = box.querySelector('.circle-play');
@@ -250,15 +250,15 @@ function wireCircle(box) {
   video.addEventListener('pause', sync);
 }
 
-// Останавливает все прочие аудио/видео в ленте — играет только одно.
+
 function pauseAllMedia(except) {
   for (const el of document.querySelectorAll('.msg-voice audio, .msg-circle video')) {
     if (el !== except && !el.paused) el.pause();
   }
 }
 
-// Свайп сообщения влево — вызывает ответ. Тянем пузырь пальцем/мышью, показываем
-// стрелку, и если увели дальше порога — по отпусканию срабатывает onReply.
+
+
 function attachSwipeReply(el, id, onReply) {
   const THRESHOLD = 56;
   let startX = 0, startY = 0, dx = 0, active = false, decided = false, pointerId = null;
@@ -276,7 +276,7 @@ function attachSwipeReply(el, id, onReply) {
     const my = e.clientY - startY;
     if (!decided) {
       if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
-      // горизонтальный жест влево — берём на себя; иначе отпускаем (обычный скролл)
+
       if (Math.abs(my) > Math.abs(mx) || mx > 0) { active = false; return; }
       decided = true;
       el.classList.add('swiping');
@@ -294,7 +294,7 @@ function attachSwipeReply(el, id, onReply) {
     bubble.style.transform = '';
     el.style.removeProperty('--swipe');
     if (decided && -dx >= THRESHOLD) onReply(id);
-    // подавляем клик-выделение, если это был свайп
+
     if (decided) el.dataset.swiped = '1', setTimeout(() => delete el.dataset.swiped, 0);
   };
   el.addEventListener('pointerdown', onDown);
@@ -306,7 +306,7 @@ function attachSwipeReply(el, id, onReply) {
 
 export function renderMessage(feed, m, myName, options = {}) {
   const mine = m.name === myName;
-  // дата-разделитель, если сменился день
+
   const dateKey = new Date(m.ts).toDateString();
   const lastMsg = [...feed.querySelectorAll('.msg')].pop();
   const needDivider = !m.system && (!lastMsg || lastMsg.dataset.date !== dateKey);
@@ -316,7 +316,7 @@ export function renderMessage(feed, m, myName, options = {}) {
     d.innerHTML = `<span>${esc(dateLabel(m.ts))}</span>`;
     feed.appendChild(d);
   }
-  // группировка: предыдущее сообщение того же автора → прячем повтор имени/аватара
+
   const grouped = !m.system && !needDivider && lastMsg && lastMsg.dataset.name === (m.name || '');
   const el = document.createElement('div');
   const anim = options.animate === false ? '' : ' appear';
@@ -333,18 +333,18 @@ export function renderMessage(feed, m, myName, options = {}) {
   const imageUrl = m.image || (m.text || '').match(IMAGE_URL_RE)?.[0] || '';
   const image = imageUrl ? `<img class="msg-image" src="${esc(imageUrl)}" alt="">` : '';
   const attachments = attachmentsHtml(m);
-  // сообщение из 1–3 эмодзи — крупно, без пузыря (как в Telegram)
+
   const emojiN = (!m.deleted && m.text && !m.attachments?.length && !m.poll && !imageUrl && !m.replyTo && !forwardFrom) ? emojiOnly(m.text) : 0;
   const jumbo = emojiN >= 1 && emojiN <= 3;
   const textHtml = m.text
     ? `<div class="text${jumbo ? ` jumbo jumbo-${emojiN}` : ''}">${m.deleted ? esc(m.text) : formatText(m.text)}</div>`
     : '';
   const edited = m.edited && !m.deleted ? '<span class="edited">изменено</span>' : '';
-  // «медиа без подписи»: пузырь схлопывается вокруг картинки, время — оверлеем
+
   const mediaCount = (m.attachments || []).filter((x) => x.kind === 'photo' || x.kind === 'video').length;
   const mediaOnly = mediaCount > 0 && !m.text && !image && !m.replyTo && !forwardFrom
     && !(m.attachments || []).some((x) => x.kind === 'file');
-  // кружок в одиночку — рисуем без пузыря (как в Telegram)
+
   const circleOnly = (m.attachments || []).length === 1 && m.attachments[0].kind === 'circle'
     && !m.text && !m.replyTo && !forwardFrom;
   const link = m.deleted ? '' : linkCardHtml(m);
@@ -388,24 +388,24 @@ export function renderMessage(feed, m, myName, options = {}) {
   for (const opt of el.querySelectorAll('.poll-opt')) {
     opt.onclick = (e) => { e.stopPropagation(); options.onVote?.(m.id, Number(opt.dataset.pollOpt)); };
   }
-  // файл: подтверждаем сохранение (данные уже в памяти — скачивание мгновенно)
+
   for (const f of el.querySelectorAll('.msg-file')) {
     f.addEventListener('click', () => {
       f.classList.add('downloaded');
       setTimeout(() => f.classList.remove('downloaded'), 1400);
     });
   }
-  // спойлер раскрывается по клику
+
   for (const sp of el.querySelectorAll('.spoiler')) {
     sp.onclick = (e) => { e.stopPropagation(); sp.classList.add('revealed'); };
   }
 
-  // клик по цитате-ответу → перейти к оригиналу
+
   const rq = el.querySelector('.reply-quote');
   if (rq && m.replyTo?.id && options.onReplyJump) {
     rq.onclick = (e) => { e.stopPropagation(); options.onReplyJump(e.target.closest('[data-reply-id]')?.dataset.replyId || m.replyTo.id); };
   }
-  // двойной клик по пузырю → быстрая реакция
+
   if (options.onQuickReaction && !m.deleted) {
     el.querySelector('.bubble')?.addEventListener('dblclick', (e) => {
       if (e.target.closest('a, button, .reply-quote, .media-cell, .msg-voice, .msg-circle')) return;
@@ -413,14 +413,14 @@ export function renderMessage(feed, m, myName, options = {}) {
       options.onQuickReaction(m.id, '❤️');
     });
   }
-  // свайп влево по сообщению → ответить (работает и мышью, и на тач)
+
   if (options.onReply && !m.deleted) attachSwipeReply(el, m.id, options.onReply);
 
   for (const btn of el.querySelectorAll('.reaction-chip')) {
     if (options.onReaction) {
       btn.onclick = (e) => { e.stopPropagation(); options.onReaction(m.id, btn.dataset.reaction); };
     }
-    // подсказка «кто поставил» при наведении
+
     btn.addEventListener('mouseenter', () => showReactTip(btn));
     btn.addEventListener('mouseleave', hideReactTip);
   }
@@ -435,8 +435,8 @@ export function renderSystem(feed, text) {
 }
 
 /**
- * Прокручивает ленту вниз и удерживает низ, пока догружаются картинки/видео —
- * иначе после их загрузки высота растёт и лента «висит» выше конца.
+  *
+  *
  */
 export function scrollFeedToBottom(feed) {
   feed.scrollTop = feed.scrollHeight;
@@ -450,9 +450,9 @@ export function scrollFeedToBottom(feed) {
 }
 
 /**
- * `scrollMode`: 'bottom' — открыли чат/пришло сообщение (крутим вниз);
- * 'anchor' — перерисовка на месте (реакция, выделение): держим то же
- * сообщение под тем же пикселем, чтобы «камера» не прыгала.
+  *
+  *
+  *
  */
 export function renderFeed(feed, chat, list, myName, options = {}) {
   const mode = options.scrollMode || 'anchor';
@@ -494,7 +494,7 @@ export function renderFeed(feed, chat, list, myName, options = {}) {
 }
 
 const PIN_GLYPH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 3h6l-1 6 3 3v2H7v-2l3-3-1-6z"/></svg>';
-// статус исходящего: «часики» пока отправляется, галочка когда отправлено
+
 const CLOCK_GLYPH = '<svg viewBox="0 0 24 24" width="14" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
 const SINGLE_CHECK_GLYPH = '<svg viewBox="0 0 18 16" width="14" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.5l4 4 9-9"/></svg>';
 const statusGlyph = (m) => {
@@ -503,14 +503,14 @@ const statusGlyph = (m) => {
   if (m.status === 'read') return `<span class="msg-status read" title="Прочитано">${CHECK_GLYPH}</span>`;
   return `<span class="msg-status delivered" title="Доставлено">${CHECK_GLYPH}</span>`;
 };
-// перечёркнутый колокольчик у чатов без уведомлений
+
 const MUTE_GLYPH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-9.3-5"/><path d="M6 8c0 6-3 7-3 7h13"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/><path d="m3 3 18 18"/></svg>';
-// двойная галочка «отправлено» у исходящих (как в Telegram)
+
 const CHECK_GLYPH = '<svg viewBox="0 0 22 16" width="16" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 8.5l4 4 8-8"/><path d="M9 12.5l.5.5 8-8"/></svg>';
 
 const fmtTime = (ts) => new Date(ts).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
 
-// Палитра аватарок — цвет закреплён за чатом по его id.
+
 const AVATAR_COLORS = ['#e17076', '#7bc862', '#e5ca77', '#65aadd', '#a695e7', '#ee7aae', '#6ec9cb', '#f2846a'];
 function avatarColor(id) {
   let h = 0;
@@ -518,7 +518,7 @@ function avatarColor(id) {
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
 }
 
-/** В списке чатов: сегодня — время, вчера — «вчера», на неделе — день, дальше — дата. */
+
 function chatDate(ts) {
   const d = new Date(ts);
   const now = new Date();
@@ -530,7 +530,7 @@ function chatDate(ts) {
   return d.toLocaleDateString('ru', { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
 
-/** Слово-описание вложения для превью («Фото», «Видео», имя файла). */
+
 function mediaWord(m) {
   const a = m.attachments || [];
   if (!a.length) return '';
@@ -544,7 +544,7 @@ function mediaWord(m) {
   return a[0].name || 'Файл';
 }
 
-/** Правая часть строки превью: миниатюра медиа + текст/тип вложения. */
+
 function previewBody(m) {
   const media = (m.attachments || []).find((x) => x.kind === 'photo' || x.kind === 'video' || x.kind === 'circle');
   const src = media?.poster || media?.data || '';
@@ -560,7 +560,7 @@ function chatItemHtml(c, state, selected = false) {
   const myName = state.self?.name;
   const outgoing = !!(lastMsg && !lastMsg.system && myName && lastMsg.name === myName);
 
-  // Превью: «печатает…» приоритетнее; иначе «Вы: …» / «Имя: …».
+
   let lastHtml;
   const typer = state.typing?.[c.id];
   if (typer) {
@@ -584,7 +584,7 @@ function chatItemHtml(c, state, selected = false) {
   const muted = state.muted?.has(c.id);
   const dot = state.unreadDot?.has(c.id);
   const mute = muted ? `<span class="chat-mutemark" title="Уведомления выключены">${MUTE_GLYPH}</span>` : '';
-  // справа снизу: счётчик → ручная пометка → булавка
+
   let meta = '';
   if (unread) meta = `<span class="badge ${muted ? 'muted' : ''}">${unread}</span>`;
   else if (dot) meta = `<span class="badge dot ${muted ? 'muted' : ''}" title="Непрочитанное"></span>`;
@@ -606,7 +606,7 @@ function chatItemHtml(c, state, selected = false) {
     </div>`;
 }
 
-// Подходит ли чат под фильтр-вкладку.
+
 function matchesFilter(c, filter, state) {
   if (filter === 'unread') return !!state.unread[c.id] || state.unreadDot?.has(c.id);
   if (filter === 'dm') return c.type === 'dm';
@@ -615,7 +615,7 @@ function matchesFilter(c, filter, state) {
   return true; // all
 }
 
-// Строка результата глобального поиска: чат + фрагмент с подсветкой запроса.
+
 function searchResultHtml(c, m, q) {
   const text = m.text || mediaWord(m) || '';
   const i = text.toLowerCase().indexOf(q);
@@ -640,8 +640,8 @@ function searchResultHtml(c, m, q) {
     </div>`;
 }
 
-// FLIP-анимация: запоминаем позиции строк до перерисовки, после — плавно
-// доводим каждую строку из старого места в новое.
+
+
 function flipChatList(el, render) {
   const before = new Map();
   for (const item of el.querySelectorAll('.chat-item[data-room]')) {
@@ -678,7 +678,7 @@ export function renderChatList(el, state, opts = {}) {
     .sort((a, b) => {
       const pa = pinnedOrder.indexOf(a.id);
       const pb = pinnedOrder.indexOf(b.id);
-      // закреплённые — сверху в порядке закрепления; остальные — по свежести
+
       if (pa !== -1 && pb !== -1) return pa - pb;
       if (pa !== -1) return -1;
       if (pb !== -1) return 1;
@@ -687,7 +687,7 @@ export function renderChatList(el, state, opts = {}) {
 
   let html = '';
 
-  // строка «Архив» сверху (только в обычном режиме, если есть архивные)
+
   if (!showArchived && !q && archived.size) {
     const unread = state.chats.reduce((n, c) => n + (archived.has(c.id) ? (state.unread[c.id] || 0) : 0), 0);
     html += `
@@ -699,7 +699,7 @@ export function renderChatList(el, state, opts = {}) {
   }
 
   if (q) {
-    // режим поиска: чаты по названию + сообщения по содержимому
+
     const hits = [];
     for (const c of state.chats) {
       if (archived.has(c.id) && !showArchived) continue;
@@ -721,7 +721,7 @@ export function renderChatList(el, state, opts = {}) {
     }
   }
 
-  // при обычном списке — плавное переупорядочивание; в поиске — без анимации
+
   if (q || showArchived) el.innerHTML = html;
   else flipChatList(el, () => { el.innerHTML = html; });
 
@@ -748,7 +748,7 @@ export function renderChatList(el, state, opts = {}) {
   }
 }
 
-// Свайп строки чата: влево — архив, вправо — прочитано. Мышью и на тач.
+
 function attachChatSwipe(item, opts) {
   const id = item.dataset.room;
   let startX = 0, startY = 0, dx = 0, active = false, decided = false, pointerId = null;

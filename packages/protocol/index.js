@@ -1,17 +1,12 @@
-// Общий протокол Segment.
-//
-// Единственный источник правды о том, как общаются клиент и сервер.
-// Этот файл платформонезависим (никаких зависимостей от Node или DOM),
-// поэтому его импортируют и сервер, и веб-клиент, и любые будущие
-// приложения (мобильные, десктоп) — чтобы не расходились форматы сообщений.
+// Shared Segment protocol and the single source of truth for client/server
+// communication. This module has no Node or DOM dependency, so every client
+// imports the same wire definitions.
 
-// Версия протокола («layer» в терминах Telegram). Повышай при несовместимых
-// изменениях формата сообщений, чтобы клиент и сервер могли договориться.
-// v2 — E2EE: сервер стал слепым ретранслятором шифртекста.
+// Increase the protocol layer when a wire-format change is incompatible.
+// Layer 2 introduced encrypted envelopes and a blind ciphertext relay.
 export const PROTOCOL_VERSION = 2;
 
-/** Публичные комнаты чата. Локальные чаты (напр. «Избранное») клиент добавляет сам. */
-/** Типы чатов: заметки, личка, групповой чат, канал (вещание). */
+/** Supported chat categories. */
 export const ChatType = {
   Saved: 'saved',
   DM: 'dm',
@@ -27,32 +22,32 @@ export const ROOMS = [
 
 export const ROOM_IDS = ROOMS.map((r) => r.id);
 
-/** Ограничения, которые обязан соблюдать сервер и стоит подсказывать клиенту. */
+/** Limits enforced by the server and surfaced by clients. */
 export const LIMITS = {
-  name: 24,       // максимум символов в имени
-  message: 2000,  // максимум символов в сообщении
-  history: 50,    // сколько последних сообщений на комнату хранит сервер
+  name: 24,
+  message: 2000,
+  history: 50,
 };
 
-/** Типы сообщений в WebSocket-канале (в поле `type`). */
+/** WebSocket envelope types. */
 export const MessageType = {
-  Join: 'join',           // клиент → сервер: имя, цвет, публичный ключ
-  Roster: 'roster',       // сервер → новичку: свой id + участники (с их pub)
-  Peer: 'peer',           // сервер → остальным: новый участник (id, bundle, …)
-  PeerLeft: 'peer-left',  // сервер → остальным: участник ушёл
-  PreKeyRequest: 'prekey-request', // клиент → сервер: дай одноразовый prekey участника
-  PreKey: 'prekey',       // сервер → клиенту: одноразовый prekey участника (для X3DH)
-  KeyShare: 'keyshare',   // клиент → клиенту (через сервер): X3DH-заголовок + шифртекст sender-key
-  Cipher: 'cipher',       // клиент → всем: зашифрованное сообщение в комнату
-  Typing: 'typing',       // в обе стороны: «печатает…»
-  System: 'system',       // сервер → клиент: «зашёл/вышел», список онлайна
+  Join: 'join',
+  Roster: 'roster',
+  Peer: 'peer',
+  PeerLeft: 'peer-left',
+  PreKeyRequest: 'prekey-request',
+  PreKey: 'prekey',
+  KeyShare: 'keyshare',
+  Cipher: 'cipher',
+  Typing: 'typing',
+  System: 'system',
 };
 
 export function isValidRoom(id) {
   return ROOM_IDS.includes(id);
 }
 
-/** Приводит произвольный ввод к строке и обрезает до лимита. */
+/** Convert arbitrary input to a string and enforce a character limit. */
 export function clean(value, max) {
   return String(value ?? '').slice(0, max);
 }

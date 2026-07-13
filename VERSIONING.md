@@ -1,18 +1,12 @@
-# Версии Segment
+# Segment versioning
 
-Версия записывается как `MAJOR.MINOR.PATCH`, например `0.1.2`.
+Segment uses `MAJOR.MINOR.PATCH`, with optional pre-release identifiers such as `0.0.1-beta`.
 
-- `MAJOR` — глобальное поколение продукта. Меняется только по прямой команде
-  владельца проекта.
-- `MINOR` — самостоятельная заметная версия внутри текущего поколения. Меняется
-  только по прямой команде владельца проекта.
-- `PATCH` — исправления, полировка, небольшие улучшения, документация и другие
-  изменения без отдельной крупной версии.
+- `MAJOR` changes only on an explicit instruction from the project owner.
+- `MINOR` changes only on an explicit instruction from the project owner.
+- `PATCH` changes only when a release is explicitly prepared.
+- Ordinary commits do not change the product version.
 
-При повышении `MINOR` значение `PATCH` сбрасывается до нуля: `0.1.7 → 0.2.0`.
-При повышении `MAJOR` остальные числа также сбрасываются: `0.9.4 → 1.0.0`.
+Increasing `MINOR` resets `PATCH` to zero. Increasing `MAJOR` resets both remaining components to zero.
 
-Обычные коммиты сами по себе версию не повышают. Текущая версия хранится
-одновременно в `VERSION`, корневом `package.json` и
-пакетах монорепозитория. Каждый опубликованный выпуск получает запись в
-`CHANGELOG.md` и Git-тег вида `v0.1.2`.
+The current version must match in `VERSION`, the root `package.json`, every workspace package and `package-lock.json`. Each published release receives a matching changelog entry and Git tag such as `v0.0.1-beta`.

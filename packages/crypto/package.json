@@ -1,7 +1,7 @@
 {
   "name": "@segment/crypto",
   "version": "0.0.1-beta",
-  "description": "Segment Secure Layer — собственный слой E2EE поверх стандартных примитивов WebCrypto. Прототип, требует аудита.",
+  "description": "Experimental Segment end-to-end encryption layer built on standard WebCrypto primitives.",
   "type": "module",
   "private": true,
   "license": "AGPL-3.0-only",
