@@ -1,8 +1,8 @@
 {
   "name": "segment",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
-  "description": "Segment — вайбкод-мессенджер с реалтайм-чатом. Open source.",
+  "description": "Segment — расширяемый мессенджер с E2EE и открытым исходным кодом.",
   "type": "module",
   "license": "AGPL-3.0-only",
   "workspaces": [

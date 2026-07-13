@@ -1,6 +1,6 @@
 {
   "name": "@segment/server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Segment realtime-сервер: раздаёт веб-клиент и держит WebSocket-чат.",
   "type": "module",
   "private": true,

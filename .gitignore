@@ -8,7 +8,6 @@ npm-debug.log*
 # окружение
 .env
 .env.local
-.claude/settings.local.json
 
 # ОС / редакторы
 .DS_Store
