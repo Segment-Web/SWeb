@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Segment</title>
-<link rel="stylesheet" href="./styles.css">
+<link rel="stylesheet" href="./styles.css?v=0.0.1-auth4">
 <!-- Разрешаем имена общих пакетов к тем же исходникам, что и Node (см. static.js) -->
 <script type="importmap">
 {
@@ -56,7 +56,12 @@
 <script type="module">
   const desktop = matchMedia('(min-width: 1024px) and (hover: hover) and (pointer: fine)').matches;
   document.body.classList.toggle('desktop-required', !desktop);
-  if (desktop) import('./app.js');
+  if (desktop) {
+    document.getElementById('desktopOnlyGate')?.remove();
+    import('./app.js?v=0.0.1-auth4');
+  } else {
+    document.getElementById('gate')?.remove();
+  }
 </script>
 </body>
 </html>

@@ -38,7 +38,7 @@ body {
 /* кроме полей ввода — там текст выделять нужно */
 input, textarea, [contenteditable] { user-select: text; -webkit-user-select: text; }
 body.is-resizing { cursor: col-resize; user-select: none; }
-body.auth-pending > :not(.gate):not(.desktop-only-gate):not(script) { display: none !important; }
+body.auth-pending:not(.desktop-required) > :not(.gate):not(script) { display: none !important; }
 
 /* ── рабочая область (тайлинг панелей) ── */
 .workspace {
