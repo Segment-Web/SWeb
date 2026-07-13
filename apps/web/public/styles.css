@@ -1382,6 +1382,13 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
 .card button:disabled { opacity: .55; cursor: wait; }
 .auth-step { display: grid; gap: 0; }
 .auth-step.hidden { display: none !important; }
+.auth-code { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-bottom: 14px; }
+.card .auth-code input {
+  min-width: 0; height: 54px; margin: 0; padding: 0;
+  border-radius: 12px; font-size: 22px; font-weight: 700;
+  caret-color: var(--accent);
+}
+.card .auth-code input:not(:placeholder-shown) { border-color: var(--grip); }
 .auth-progress { display: flex; justify-content: center; gap: 6px; margin: 18px 0 12px; }
 .auth-progress span { width: 24px; height: 3px; border-radius: 999px; background: var(--stroke); transition: background .18s, width .18s; }
 .auth-progress span.active { width: 38px; background: var(--accent); }

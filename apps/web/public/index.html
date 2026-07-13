@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Segment</title>
-<link rel="stylesheet" href="./styles.css?v=0.0.1-auth4">
+<link rel="stylesheet" href="./styles.css?v=0.0.1-auth5">
 <!-- Разрешаем имена общих пакетов к тем же исходникам, что и Node (см. static.js) -->
 <script type="importmap">
 {
@@ -37,7 +37,14 @@
       <button id="sendCodeBtn">Получить код</button>
     </div>
     <div class="auth-step" data-step="code" hidden>
-      <input id="codeInput" inputmode="numeric" placeholder="Код из письма" maxlength="6" autocomplete="one-time-code">
+      <div class="auth-code" id="codeInput" aria-label="Код из письма">
+        <input data-code-digit inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="one-time-code" aria-label="Цифра 1">
+        <input data-code-digit inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Цифра 2">
+        <input data-code-digit inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Цифра 3">
+        <input data-code-digit inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Цифра 4">
+        <input data-code-digit inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Цифра 5">
+        <input data-code-digit inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Цифра 6">
+      </div>
       <button id="verifyCodeBtn">Продолжить</button>
       <button class="auth-link" id="changeEmailBtn">Изменить почту</button>
     </div>
@@ -58,7 +65,7 @@
   document.body.classList.toggle('desktop-required', !desktop);
   if (desktop) {
     document.getElementById('desktopOnlyGate')?.remove();
-    import('./app.js?v=0.0.1-auth4');
+    import('./app.js?v=0.0.1-auth5');
   } else {
     document.getElementById('gate')?.remove();
   }
