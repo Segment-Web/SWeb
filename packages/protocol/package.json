@@ -1,0 +1,9 @@
+{
+  "name": "@segment/protocol",
+  "version": "0.1.0",
+  "description": "Общий протокол Segment: типы сообщений, комнаты, лимиты. Работает и в Node, и в браузере, и в нативных клиентах.",
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "main": "index.js",
+  "exports": "./index.js"
+}

@@ -1,0 +1,23 @@
+# зависимости
+node_modules/
+
+# логи
+*.log
+npm-debug.log*
+
+# окружение
+.env
+.env.local
+
+# ОС / редакторы
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# сборки будущих приложений
+dist/
+build/
+*.apk
+*.aab
+*.ipa

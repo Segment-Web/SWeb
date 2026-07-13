@@ -1,0 +1,8 @@
+{
+  "name": "@segment/web",
+  "version": "0.1.0",
+  "description": "Веб-клиент Segment. Чистый ES-модульный фронтенд без сборки.",
+  "type": "module",
+  "private": true,
+  "license": "AGPL-3.0-only"
+}
