@@ -20,5 +20,18 @@ export function loadConfig() {
     messagesPerMinute: int('MESSAGES_PER_MINUTE', 240, 10, 10000),
     heartbeatMs: int('WS_HEARTBEAT_MS', 30000, 5000, 120000),
     shutdownMs: int('SHUTDOWN_TIMEOUT_MS', 10000, 1000, 60000),
+    databaseUrl: process.env.DATABASE_URL || 'postgresql://segment:segment@localhost:5432/segment',
+    authSecret: process.env.AUTH_SECRET || '',
+    authCodeTtlMs: int('AUTH_CODE_TTL_MS', 10 * 60 * 1000, 60000, 60 * 60 * 1000),
+    authSessionTtlMs: int('AUTH_SESSION_TTL_MS', 30 * 24 * 60 * 60 * 1000, 60 * 60 * 1000, 365 * 24 * 60 * 60 * 1000),
+    authMaxAvatarBytes: int('AUTH_MAX_AVATAR_BYTES', 512 * 1024, 32 * 1024, 2 * 1024 * 1024),
+    smtp: {
+      host: process.env.SMTP_HOST || '',
+      port: int('SMTP_PORT', 587, 1, 65535),
+      secure: process.env.SMTP_SECURE === '1',
+      user: process.env.SMTP_USER || '',
+      pass: process.env.SMTP_PASS || '',
+      from: process.env.SMTP_FROM || 'Segment <noreply@segmnt.org>',
+    },
   };
 }

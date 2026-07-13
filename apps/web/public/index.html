@@ -18,12 +18,28 @@
 </head>
 <body>
 <div class="gate" id="gate">
-  <div class="card">
+  <div class="card auth-card">
     <div class="logo">S</div>
     <h1>Segment</h1>
-    <p>лёгкий опенсорс-мессенджер</p>
-    <input id="nameInput" placeholder="твоё имя" maxlength="24" autocomplete="off">
-    <button id="joinBtn">войти</button>
+    <p data-auth="subtitle">Вход по электронной почте</p>
+    <div class="auth-step" data-step="email">
+      <input id="emailInput" type="email" placeholder="name@example.com" autocomplete="email">
+      <button id="sendCodeBtn">Получить код</button>
+    </div>
+    <div class="auth-step hidden" data-step="code">
+      <input id="codeInput" inputmode="numeric" placeholder="Код из письма" maxlength="6" autocomplete="one-time-code">
+      <button id="verifyCodeBtn">Продолжить</button>
+      <button class="auth-link" id="changeEmailBtn">Изменить почту</button>
+    </div>
+    <div class="auth-step hidden" data-step="profile">
+      <label class="auth-avatar" for="avatarInput"><span id="avatarPreview">+</span><small>Добавить фото</small></label>
+      <input class="hidden" id="avatarInput" type="file" accept="image/png,image/jpeg,image/webp">
+      <input id="usernameInput" placeholder="username" maxlength="24" autocomplete="username">
+      <input id="displayNameInput" placeholder="Имя" maxlength="40" autocomplete="name">
+      <small class="auth-hint">Username: 3–24 символа, латиница, цифры и _</small>
+      <button id="registerBtn">Создать аккаунт</button>
+    </div>
+    <div class="auth-error hidden" id="authError"></div>
   </div>
 </div>
 

@@ -548,12 +548,101 @@ client.on('chats', () => {
   document.title = total > 0 ? `(${total}) Segment` : 'Segment';
 });
 
-// ── регистрация ──
+// ── аккаунт и вход по email ──
 const gate = $('gate');
-client.on('identity', () => gate.classList.add('hidden'));
-$('joinBtn').onclick = () => client.setIdentity($('nameInput').value);
-$('nameInput').onkeydown = (e) => { if (e.key === 'Enter') $('joinBtn').click(); };
-if (client.self.name) $('nameInput').value = client.self.name;
+let authEmail = '';
+let registrationToken = '';
+let avatarData = '';
+let connected = false;
+const authError = $('authError');
+const authSteps = [...gate.querySelectorAll('[data-step]')];
+const showAuthStep = (name) => {
+  for (const step of authSteps) step.classList.toggle('hidden', step.dataset.step !== name);
+  authError.classList.add('hidden');
+  gate.querySelector(`[data-step="${name}"] input:not([type="file"])`)?.focus();
+};
+const showAuthError = (message) => { authError.textContent = message; authError.classList.remove('hidden'); };
+const authMessage = (code) => ({
+  EMAIL_INVALID: 'Проверь адрес электронной почты',
+  TOO_MANY_REQUESTS: 'Подожди минуту перед новой попыткой',
+  EMAIL_NOT_CONFIGURED: 'Отправка писем ещё не настроена на сервере',
+  EMAIL_SEND_FAILED: 'Не удалось отправить письмо. Попробуй позже',
+  CODE_INVALID: 'Неверный или просроченный код',
+  USERNAME_INVALID: 'Username: 3–24 символа, только a–z, 0–9 и _',
+  USERNAME_TAKEN: 'Этот username уже занят',
+  NAME_INVALID: 'Укажи имя',
+  AVATAR_TOO_LARGE: 'Фотография слишком большая',
+  REGISTRATION_EXPIRED: 'Регистрация устарела. Запроси новый код',
+}[code] || 'Что-то пошло не так');
+const authApi = async (path, options = {}) => {
+  const response = await fetch(`/api/auth/${path}`, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(new Error(data.error || 'REQUEST_FAILED'), { code: data.error });
+  return data;
+};
+const enterApp = (user) => {
+  webStorage.setName(user.name);
+  webStorage.setUsername?.(user.username);
+  webStorage.setAvatar?.(user.avatar || '');
+  webStorage.setColor(user.color);
+  client.self = { name: user.name, username: user.username, avatar: user.avatar || '', color: user.color };
+  client._emit('identity', { name: user.name, user });
+  gate.classList.add('hidden');
+  if (!connected) { connected = true; client.connect(); }
+};
+
+$('sendCodeBtn').onclick = async () => {
+  authEmail = $('emailInput').value.trim().toLowerCase();
+  $('sendCodeBtn').disabled = true;
+  try { await authApi('request-code', { method: 'POST', body: JSON.stringify({ email: authEmail }) }); showAuthStep('code'); }
+  catch (error) { showAuthError(authMessage(error.code)); }
+  finally { $('sendCodeBtn').disabled = false; }
+};
+$('emailInput').onkeydown = (e) => { if (e.key === 'Enter') $('sendCodeBtn').click(); };
+$('changeEmailBtn').onclick = () => showAuthStep('email');
+$('verifyCodeBtn').onclick = async () => {
+  $('verifyCodeBtn').disabled = true;
+  try {
+    const result = await authApi('verify-code', { method: 'POST', body: JSON.stringify({ email: authEmail, code: $('codeInput').value }) });
+    if (result.user) enterApp(result.user);
+    else { registrationToken = result.registrationToken; showAuthStep('profile'); }
+  } catch (error) { showAuthError(authMessage(error.code)); }
+  finally { $('verifyCodeBtn').disabled = false; }
+};
+$('codeInput').onkeydown = (e) => { if (e.key === 'Enter') $('verifyCodeBtn').click(); };
+
+$('avatarInput').onchange = () => {
+  const file = $('avatarInput').files?.[0];
+  if (!file) return;
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) { showAuthError('Выбери PNG, JPEG или WebP'); return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const image = new Image();
+    image.onload = () => {
+      const size = Math.min(512, Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement('canvas'); canvas.width = size; canvas.height = size;
+      const context = canvas.getContext('2d'); const scale = Math.max(size / image.naturalWidth, size / image.naturalHeight);
+      const width = image.naturalWidth * scale; const height = image.naturalHeight * scale;
+      context.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
+      avatarData = canvas.toDataURL('image/jpeg', 0.82);
+      $('avatarPreview').innerHTML = `<img src="${avatarData}" alt="">`;
+    };
+    image.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+};
+$('registerBtn').onclick = async () => {
+  $('registerBtn').disabled = true;
+  try {
+    const result = await authApi('register', { method: 'POST', body: JSON.stringify({
+      registrationToken, username: $('usernameInput').value, name: $('displayNameInput').value, avatar: avatarData,
+    }) });
+    enterApp(result.user);
+  } catch (error) { showAuthError(authMessage(error.code)); }
+  finally { $('registerBtn').disabled = false; }
+};
+
+authApi('me').then(({ user }) => enterApp(user)).catch(() => showAuthStep('email'));
 
 // Esc — отменить выбор чата (вернуться к «ничего не выбрано»).
 document.addEventListener('keydown', (e) => {
@@ -563,4 +652,3 @@ document.addEventListener('keydown', (e) => {
 });
 
 // Глобальная точка доступа — основа будущего API модификаций.
-client.connect();

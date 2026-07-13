@@ -4,12 +4,16 @@
 // setNotes). Для нативных приложений вместо localStorage подставляется свой
 // адаптер (напр. AsyncStorage) — ядро об этом не знает.
 
-const KEYS = { name: 'segment_name', notes: 'segment_saved', pinned: 'segment_pinned', color: 'segment_color', general: 'segment_general', muted: 'segment_muted', archived: 'segment_archived', folders: 'segment_folders' };
+const KEYS = { name: 'segment_name', username: 'segment_username', avatar: 'segment_avatar', notes: 'segment_saved', pinned: 'segment_pinned', color: 'segment_color', general: 'segment_general', muted: 'segment_muted', archived: 'segment_archived', folders: 'segment_folders' };
 const NOTES_LIMIT = 200;
 
 export const webStorage = {
   getName: () => localStorage.getItem(KEYS.name) || '',
   setName: (name) => localStorage.setItem(KEYS.name, name),
+  getUsername: () => localStorage.getItem(KEYS.username) || '',
+  setUsername: (username) => localStorage.setItem(KEYS.username, username || ''),
+  getAvatar: () => localStorage.getItem(KEYS.avatar) || '',
+  setAvatar: (avatar) => localStorage.setItem(KEYS.avatar, avatar || ''),
 
   getColor: () => localStorage.getItem(KEYS.color) || '',
   setColor: (color) => localStorage.setItem(KEYS.color, color),
@@ -33,6 +37,8 @@ export const webStorage = {
 
   clear: () => {
     localStorage.removeItem(KEYS.name);
+    localStorage.removeItem(KEYS.username);
+    localStorage.removeItem(KEYS.avatar);
     localStorage.removeItem(KEYS.notes);
     localStorage.removeItem(KEYS.pinned);
     localStorage.removeItem(KEYS.color);
