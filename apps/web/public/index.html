@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Segment</title>
+<link rel="stylesheet" href="./styles.css">
+<!-- Разрешаем имена общих пакетов к тем же исходникам, что и Node (см. static.js) -->
+<script type="importmap">
+{
+  "imports": {
+    "@segment/protocol": "/shared/protocol/index.js",
+    "@segment/core": "/shared/core/index.js",
+    "@segment/crypto": "/shared/crypto/index.js"
+  }
+}
+</script>
+</head>
+<body>
+<div class="gate" id="gate">
+  <div class="card">
+    <div class="logo">S</div>
+    <h1>Segment</h1>
+    <p>лёгкий опенсорс-мессенджер</p>
+    <input id="nameInput" placeholder="твоё имя" maxlength="24" autocomplete="off">
+    <button id="joinBtn">войти</button>
+  </div>
+</div>
+
+<div class="workspace" id="workspace"></div>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>
