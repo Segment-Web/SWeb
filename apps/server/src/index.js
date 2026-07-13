@@ -1,4 +1,4 @@
-// Точка входа сервера Segment: HTTP (статика) + WebSocket (чат).
+// Segment server entry point: static HTTP delivery and the WebSocket relay.
 
 import { createServer } from 'node:http';
 import { handleStatic } from './static.js';

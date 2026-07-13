@@ -2,7 +2,7 @@
   "name": "segment",
   "version": "0.0.1-beta",
   "private": true,
-  "description": "Segment — расширяемый мессенджер с E2EE и открытым исходным кодом.",
+  "description": "Segment is an extensible open-source messenger with end-to-end encryption.",
   "type": "module",
   "license": "AGPL-3.0-only",
   "workspaces": [

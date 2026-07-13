@@ -1,86 +1,44 @@
-# Архитектура
+# Architecture
 
-Segment устроен по мотивам открытого кода Telegram, адаптированным под лёгкий
-JavaScript-стек. Три слоя, каждый ниже — портируемее.
+Segment is a small npm-workspaces monorepo organized into four layers.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  Клиенты (UI)      apps/web · (позже apps/mobile, desktop)│
-│  тонкий слой: рендер + ввод, ничего не решает сам         │
-└───────────────▲─────────────────────────────────────────┘
-                │ команды ↓   обновления ↑
-┌───────────────┴─────────────────────────────────────────┐
-│  Ядро              packages/core  (аналог TDLib)          │
-│  соединение, состояние, поток обновлений; без DOM         │
-└───────────────▲─────────────────────────────────────────┘
-                │ импортирует
-┌───────────────┴─────────────────────────────────────────┐
-│  Протокол          packages/protocol  (аналог TL-схемы)   │
-│  типы сообщений, комнаты, лимиты, версия (layer)          │
-└─────────────────────────────────────────────────────────┘
+```text
+apps/web
+   ↓ commands / ↑ updates
+packages/core
+   ↓ shared types
+packages/protocol
+
+apps/server ← WebSocket → packages/core
+packages/crypto is used by the client core
 ```
 
-## Слои и их аналоги в Telegram
+## Packages
 
-| Segment              | Telegram                | Роль                                        |
-| -------------------- | ----------------------- | ------------------------------------------- |
-| `packages/protocol`  | TL-схема + `layer`      | Контракт общения. Версионируется `PROTOCOL_VERSION`. |
-| `packages/core`      | TDLib                   | Вся клиентская логика, портируемая между платформами. |
-| `apps/web`           | Telegram Web / iOS / …  | Тонкий UI поверх ядра.                        |
-| `apps/server`        | (сервер Telegram закрыт) | Раздача статики + **слепой ретранслятор** шифртекста. |
-| `packages/crypto`    | MTProto/libsignal       | Segment Secure Layer — наш E2EE (прототип, см. [docs/encryption.md](docs/encryption.md)). |
+| Path | Responsibility |
+| --- | --- |
+| `packages/protocol` | Platform-independent message types, rooms, limits and protocol version. |
+| `packages/core` | Connection lifecycle, client state, update events and encryption handshake. No DOM dependency. |
+| `packages/crypto` | Segment Secure Layer: the experimental E2EE implementation. |
+| `apps/server` | Static file delivery, account API and blind WebSocket ciphertext relay. |
+| `apps/web` | Thin browser UI built from independent panels. |
 
-## Почему ядро отдельно
+Node resolves shared packages through npm workspaces. The browser resolves the same source files through the import map in `apps/web/public/index.html`; the server exposes them under `/shared/`.
 
-Как в Telegram весь iOS/Android/Desktop — это UI поверх TDLib, так и здесь любой
-клиент — это UI поверх `@segment/core`. Ядро не зависит от DOM и общается с
-платформой через две границы:
+## Core API
 
-- **Хранилище** — адаптер (`getName/setName/getNotes/setNotes`) передаётся в
-  конструктор. Веб даёт обёртку над `localStorage`; мобильный клиент даст свою
-  (напр. AsyncStorage). См. `apps/web/public/js/storage.js`.
-- **Обновления** — ядро шлёт события (`connection`, `identity`, `status`,
-  `chats`, `room`, `append`, `typing`), клиент подписывается и рисует.
+`@segment/core` exposes an event-based client. Important events include `connection`, `identity`, `status`, `chats`, `room`, `append` and `typing`. The UI issues commands such as `connect`, `openRoom`, `send` and `notifyTyping`.
 
-Добавить новый клиент = реализовать эти две границы. Логику чата переписывать
-не нужно.
+Platform storage is injected through an adapter, allowing future clients to reuse the core without depending on browser APIs.
 
-## Единый исходник протокола и ядра
+## Panel workspace
 
-И Node, и браузер импортируют пакеты по одинаковым именам
-(`@segment/protocol`, `@segment/core`):
+A panel implements `{ id, title, mount(body), weight? }` and registers with the panel registry. The workspace stores a split tree rather than a fixed grid. Dropping a panel on an edge creates a split; dropping it in the center swaps panels. Dividers resize adjacent panels in both directions.
 
-- в **Node** имена разрешают npm workspaces (симлинки в `node_modules`);
-- в **браузере** — [import map](apps/web/public/index.html), указывающий на
-  `/shared/...`, который сервер отдаёт прямо из `packages/` (см.
-  `apps/server/src/static.js`).
+This registry is the foundation for future user-installed modifications. Extensions that change shared chat behavior will also require protocol-level capability negotiation.
 
-Никакой сборки: один и тот же файл — один источник правды.
+## Server trust boundary
 
-## Панели и модификации
+The server authenticates accounts, serves public prekeys and relays encrypted envelopes. It does not receive plaintext chat messages. It still sees transport metadata and must not be described as metadata-private.
 
-Интерфейс веб-клиента собран не монолитом, а из **панелей** — самостоятельных
-единиц UI. Панель описывается как `{ id, title, mount(body) }`: она сама строит
-свой DOM в переданном контейнере, подписывается на события ядра и возвращает
-функцию очистки. Встроенные панели:
-
-- `profile` — блок профиля: аватар, ник, статус, настройки (`js/panels/profile.js`);
-- `chat-list` — список чатов (`js/panels/chat-list.js`);
-- `chat-room` — окно активной комнаты (`js/panels/chat-room.js`).
-
-Панели регистрируются в **реестре** (`js/panels/registry.js`), а раскладкой
-занимается **Workspace** (`js/workspace/workspace.js`) — это дерево сплитов,
-которые делят место по горизонтали или вертикали. Панель тянут за шапку и
-бросают на край другой (лево/право/верх/низ) — та делится в нужную сторону, либо
-на центр — панели меняются местами. Между соседями всегда разделители (тянешь —
-меняешь размер в обе стороны), панели всегда вместе заполняют экран. Раскладка не
-привязана к сетке.
-
-Это и есть фундамент будущей **библиотеки модификаций**: пользовательский мод —
-это, по сути, та же панель (плюс, позже, команды и расширения протокола),
-которая регистрируется в реестре наравне со встроенными. Точка доступа —
-глобальный объект `window.Segment` (`{ client, registry, workspace }`).
-
-> Модификации, требующие установки у всех участников чата, появятся позже: для
-> них понадобится согласование версий модов между пирами поверх протокола
-> (сродни `PROTOCOL_VERSION`/layer).
+The current server does not persist message history. A future storage layer must store encrypted envelopes only and must define safe replay and key-rotation behavior before being enabled.

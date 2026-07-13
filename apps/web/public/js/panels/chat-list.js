@@ -1,7 +1,7 @@
-// Панель «Чаты» — список чатов слева.
+
 //
-// Самостоятельная единица: строит свой DOM в переданном теле, подписывается на
-// обновления ядра и возвращает функцию очистки.
+
+
 
 import { renderChatList } from '../ui.js';
 import { ICONS } from '../icons.js';
@@ -89,7 +89,7 @@ export function chatListPanel(client) {
       preview.className = 'chat-preview hidden';
       document.body.appendChild(preview);
 
-      // Пресеты формы под каждый тип (как «Новый канал/группа/контакт» в TG).
+
       const PRESETS = {
         channel: { title: 'Новый канал', icon: '📢', placeholder: 'Название канала' },
         chat: { title: 'Новая группа', icon: '💬', placeholder: 'Название группы' },
@@ -97,7 +97,7 @@ export function chatListPanel(client) {
       };
 
       let type = 'chat';
-      let editing = null; // id чата при переименовании, иначе null
+      let editing = null;
 
       const hideAll = () => {
         menu.classList.add('hidden');
@@ -130,7 +130,7 @@ export function chatListPanel(client) {
         editing = id;
         titleEl.textContent = 'Переименовать';
         emojiIn.value = chat.icon;
-        emojiIn.disabled = true; // значок встроенных/типовых не трогаем
+        emojiIn.disabled = true;
         nameIn.value = chat.name;
         createBtn.textContent = 'Сохранить';
         hideAll();
@@ -146,7 +146,7 @@ export function chatListPanel(client) {
         else nameIn.focus();
       };
 
-      // ── контекстное меню чата (правый клик) ──
+
       const openContext = (id, x, y) => {
         const chat = client.chatById(id);
         if (!chat) return;
@@ -159,8 +159,8 @@ export function chatListPanel(client) {
         const removeLabel = { channel: 'Выйти из канала', chat: 'Выйти из группы', dm: 'Удалить чат' }[chat.type] || 'Удалить';
         const ws = window.Segment?.workspace;
         const views = ws ? ws.panels.filter((p) => p.id.startsWith('chatview:')) : [];
-        const openBlocks = views.filter((p) => ws.isOpen(p.id)).length; // скрытые в боках не в счёт
-        const alreadyOpen = views.some((p) => p.id.startsWith(`chatview:${id}:`)); // этот чат уже в блоке
+        const openBlocks = views.filter((p) => ws.isOpen(p.id)).length;
+        const alreadyOpen = views.some((p) => p.id.startsWith(`chatview:${id}:`));
         const rows = [
           { act: 'open', label: 'Открыть чат', icon: ICONS.open },
           { act: 'newblock', label: 'Открыть в новом блоке', icon: ICONS.newBlock, disabled: alreadyOpen || openBlocks >= 3 },
@@ -198,7 +198,7 @@ export function chatListPanel(client) {
               const vs = wsp ? wsp.panels.filter((p) => p.id.startsWith('chatview:')) : [];
               const openN = vs.filter((p) => wsp.isOpen(p.id)).length;
               const dup = vs.some((p) => p.id.startsWith(`chatview:${id}:`));
-              if (dup || openN >= 3) { hideAll(); return; } // уже открыт / лимит 3 открытых
+              if (dup || openN >= 3) { hideAll(); return; }
               wsp?.addPanel(chatViewPanel(client, chat));
             }
             else if (act === 'open') client.openRoom(id);
@@ -250,7 +250,7 @@ export function chatListPanel(client) {
         if (e.key === 'Enter') submit();
         else if (e.key === 'Escape') hideAll();
       };
-      // клик мимо всплывашек (не по кнопке/меню/форме) — закрыть
+
       const onOutside = (e) => {
         if (!fab.contains(e.target) && !menu.contains(e.target)
           && !dialog.contains(e.target) && !ctx.contains(e.target)) hideAll();
@@ -268,7 +268,7 @@ export function chatListPanel(client) {
         }, 60);
       };
 
-      // Сколько чатов с непрочитанным подходит под каждый фильтр (для бейджей вкладок).
+
       const filterCount = (f) => client.chats.filter((c) => {
         if (client.archived.has(c.id)) return false;
         const hasUnread = !!client.unread[c.id] || client.unreadDot.has(c.id);
@@ -291,7 +291,7 @@ export function chatListPanel(client) {
       };
 
       const render = () => {
-        // фильтры и «архив» прячем в режиме поиска
+
         const searching = !!searchIn.value.trim();
         filtersEl.classList.toggle('hidden', searching || showArchived);
         archiveHead.classList.toggle('hidden', !showArchived);
@@ -366,8 +366,8 @@ export function chatListPanel(client) {
 
       const off = client.on('chats', render);
       searchIn.oninput = render;
-      // клик по всей строке поиска фокусирует поле (важно в узком режиме, где
-      // видно только лупу, но искать всё равно можно)
+
+
       body.querySelector('.chat-search').onclick = () => searchIn.focus();
 
       render();

@@ -1,37 +1,32 @@
-# Как внести вклад
+# Contributing
 
-Спасибо, что заглянул! Segment — открытый проект, и любой вклад приветствуется.
+Contributions to Segment are welcome.
 
-## С чего начать
+## Setup
 
-1. Форкни репозиторий и склонируй свой форк.
-2. Установи зависимости и подними проект:
-   ```bash
-   npm install
-   npm start
-   ```
-3. Создай ветку под свою задачу: `git checkout -b feature/короткое-имя`.
+1. Fork and clone the repository.
+2. Install dependencies with `npm install`.
+3. Copy `.env.example` to `.env` and configure PostgreSQL.
+4. Start the project with `npm start`.
+5. Create a focused branch such as `feature/short-name`.
 
-## Где что лежит
+## Repository areas
 
-- **Меняешь формат сообщений или список комнат** → `packages/protocol`.
-  Это общий код: он подхватится и сервером, и клиентом автоматически.
-- **Логика реального времени, история** → `apps/server/src`.
-- **Интерфейс, анимации, экраны** → `apps/web/public`.
+- Shared wire formats and limits: `packages/protocol`
+- Client state and connection logic: `packages/core`
+- Encryption protocol: `packages/crypto`
+- Server and WebSocket relay: `apps/server`
+- Browser interface: `apps/web/public`
 
-Держи протокол платформонезависимым (без Node- и DOM-специфики), чтобы его
-можно было переиспользовать в будущих приложениях.
+Keep protocol and core code independent from Node-specific and DOM-specific APIs.
 
-## Стиль
+## Style
 
-- ES-модули, современный JavaScript, без сборщика на фронте.
-- Понятные имена, комментарии — там, где объясняют «почему», а не «что».
-- Одна фича/фикс — один pull request.
+- Use modern JavaScript and ES modules.
+- Write all repository text, documentation, comments, commits, pull requests and release notes in English.
+- Keep localized user-facing strings in the application localization layer.
+- Prefer comments that explain why a decision exists.
+- Keep each pull request focused on one feature or fix.
+- Include screenshots or recordings for visible interface changes.
 
-## Pull request
-
-- Опиши, что меняешь и зачем.
-- Проверь, что проект запускается и чат работает в двух вкладках.
-- Приложи скриншот/видео, если менял интерфейс.
-
-Идеи и баги — через Issues. Спасибо! 💜
+Run `npm run check` before opening a pull request.

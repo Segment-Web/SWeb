@@ -1,12 +1,5 @@
-// Ядро клиента Segment — аналог TDLib.
-//
-// Держит всю клиентскую логику: WebSocket-соединение, состояние чатов и поток
-// обновлений. С v2 — сквозное шифрование (E2EE): сервер видит только шифртекст.
-// Комнаты шифруются схемой sender-key (@segment/crypto): у каждого участника своя
-// ratchet-цепочка, её начальное состояние раздаётся остальным по личным
-// ECDH-каналам. Ничего не знает про DOM — один код на веб и будущие приложения.
-//
-// Требует глобальные `WebSocket`, `location` и WebCrypto (браузер, RN, Node 20+).
+// Platform-independent Segment client core. It owns the WebSocket lifecycle,
+// chat state, update stream and encrypted session setup without depending on DOM.
 
 import { ROOMS, MessageType, PROTOCOL_VERSION, ChatType } from '@segment/protocol';
 import {
@@ -53,7 +46,7 @@ export class SegmentClient {
 
     this.chats = [SAVED_CHAT, ...ROOMS];
     this.self = { name: storage.getName(), username: storage.getUsername?.() || '', avatar: storage.getAvatar?.() || '', color: storage.getColor?.() || pickColor() };
-    this.currentRoom = null; // изначально ни один чат не выбран — выбирает юзер
+    this.currentRoom = null;
     this.messages = Object.fromEntries(this.chats.map((c) => [c.id, []]));
     this.messages[SAVED_ID] = storage.getNotes();
     this.unread = {};
@@ -68,21 +61,21 @@ export class SegmentClient {
     this.muted = new Set(storage.getMuted?.() || []);
     this.archived = new Set(storage.getArchived?.() || []);
     this.folders = storage.getFolders?.() || [];
-    this.unreadDot = new Set(); // чаты, помеченные «непрочитанным» вручную
-    this.firstUnread = {};      // id первого непрочитанного сообщения по чату
-    this.typing = {};           // roomId -> имя того, кто печатает (для строки списка)
+    this.unreadDot = new Set();
+    this.firstUnread = {};
+    this.typing = {};
     this._typingTimers = {};
     this.online = [];
 
     this.ws = null;
     this._lastTyping = 0;
 
-    // крипта
-    this.kit = null;           // prekey-бандл (secret + публичный bundle)
-    this.senderKey = null;     // наша sender-key цепочка для комнат
-    this.myId = null;          // id соединения (от сервера)
+
+    this.kit = null;
+    this.senderKey = null;
+    this.myId = null;
     this.peers = new Map();    // id -> { name, color, bundle, ratchet, view, pendingCiphers }
-    this._queue = Promise.resolve(); // строгий порядок обработки серверных сообщений
+    this._queue = Promise.resolve();
   }
 
   view() {
@@ -108,7 +101,7 @@ export class SegmentClient {
 
   chatById(id) { return this.chats.find((c) => c.id === id); }
 
-  // ── команды от платформы ──
+
 
   connect() {
     const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
@@ -124,7 +117,7 @@ export class SegmentClient {
       this._emit('connection', { connected: false });
       setTimeout(() => this.connect(), RECONNECT_MS);
     };
-    // обрабатываем строго по очереди — крипта асинхронна, порядок важен
+
     this.ws.onmessage = (e) => {
       const msg = JSON.parse(e.data);
       this._queue = this._queue.then(() => this._onServer(msg)).catch(() => {});
@@ -140,9 +133,9 @@ export class SegmentClient {
     return true;
   }
 
-  // Создать новый чат/канал. Сервер комнат не знает (слепой ретранслятор),
-  // так что чат — это просто согласованный id: кто добавил такой же id, тот и
-  // окажется в одной комнате. Возвращает id созданного чата.
+
+
+
   createChat({ name, icon, type } = {}) {
     const clean = (name || '').trim();
     if (!clean) return null;
@@ -161,7 +154,7 @@ export class SegmentClient {
     return id;
   }
 
-  // Закрепить/открепить чат — закреплённые всплывают вверх списка.
+
   togglePin(id) {
     if (!this.chatById(id)) return;
     if (this.pinned.has(id)) this.pinned.delete(id);
@@ -199,8 +192,8 @@ export class SegmentClient {
 
   removeFolder(id) { this.folders = this.folders.filter((f) => f.id !== id); this.storage.setFolders?.(this.folders); this._emit('chats'); }
 
-  // Выключить/включить уведомления чата. Сообщения приходят, но бейдж
-  // становится приглушённым — считаем, но не «кричим».
+
+
   toggleMute(id) {
     if (!this.chatById(id)) return;
     if (this.muted.has(id)) this.muted.delete(id);
@@ -211,7 +204,7 @@ export class SegmentClient {
 
   isMuted(id) { return this.muted.has(id); }
 
-  // Архивировать/вернуть чат из архива.
+
   toggleArchive(id) {
     const chat = this.chatById(id);
     if (!chat || chat.type === 'saved') return;
@@ -224,7 +217,7 @@ export class SegmentClient {
 
   isArchived(id) { return this.archived.has(id); }
 
-  // Отметить чат прочитанным: снять счётчик и ручную пометку.
+
   markRead(id) {
     if (!this.chatById(id)) return;
     this.unread[id] = 0;
@@ -233,14 +226,14 @@ export class SegmentClient {
     this._emit('chats');
   }
 
-  // Отметить непрочитанным (точка). Текущий открытый чат так пометить нельзя.
+
   markUnread(id) {
     if (!this.chatById(id) || id === this.currentRoom) return;
     this.unreadDot.add(id);
     this._emit('chats');
   }
 
-  // Очистить историю чата локально (сервер её и так не хранит).
+
   clearHistory(id) {
     if (!this.messages[id]) return false;
     this.messages[id] = [];
@@ -255,13 +248,13 @@ export class SegmentClient {
     return true;
   }
 
-  // Можно ли удалить/переименовать чат (Избранное — нельзя).
+
   canEditChat(id) {
     const chat = this.chatById(id);
     return !!chat && chat.type !== ChatType.Saved;
   }
 
-  // Переименовать чат/канал (id не меняем — он и есть комната).
+
   renameChat(id, name) {
     const chat = this.chatById(id);
     const clean = (name || '').trim();
@@ -272,7 +265,7 @@ export class SegmentClient {
     return true;
   }
 
-  // Удалить/выйти из чата: локально убираем комнату из списка.
+
   removeChat(id) {
     const chat = this.chatById(id);
     if (!chat || chat.type === ChatType.Saved) return false;
@@ -305,7 +298,7 @@ export class SegmentClient {
     if (readIds.length && id !== SAVED_ID) this.sendEvent(id, { kind: 'receipt', ids: readIds, state: 'read' }, false);
   }
 
-  // Закрыть текущий чат — вернуться к состоянию «ничего не выбрано» (Esc).
+
   closeRoom() {
     if (!this.currentRoom) return;
     this.currentRoom = null;
@@ -313,16 +306,16 @@ export class SegmentClient {
     this._emit('chats');
   }
 
-  // Отправка в текущий чат.
+
   send(text) { return this.sendTo(this.currentRoom, text); }
 
-  // Отправка в конкретный чат — нужно доп-блокам, привязанным к своей комнате.
+
   async sendTo(roomId, text) {
     const clean = (text || '').trim();
     if (!clean || !roomId || !this.chatById(roomId)) return;
 
     const message = this._makeMessage(clean);
-    this._addMessage(roomId, message); // показываем сразу — с «часиками»
+    this._addMessage(roomId, message);
     if (roomId === SAVED_ID) {
       message.status = 'sent';
       this.storage.setNotes(this.messages[SAVED_ID]);
@@ -335,9 +328,9 @@ export class SegmentClient {
     this._markSent(roomId, message);
   }
 
-  // Отправка вложений (фото/файлы) с необязательной подписью. Данные каждого
-  // вложения (base64 data URL) едут внутри зашифрованного события — сервер их
-  // не видит, ровно как и текст.
+
+
+
   async sendAttachments(roomId, attachments, caption = '', replyRef = null) {
     roomId = roomId || this.currentRoom;
     const files = (attachments || []).filter(Boolean);
@@ -347,7 +340,7 @@ export class SegmentClient {
     return this.sendEvent(roomId, { kind: 'message', message });
   }
 
-  // Сменить цвет профиля (аватар/имя). Косметика — храним локально.
+
   setColor(color) {
     if (!color || color === this.self.color) return;
     this.self.color = color;
@@ -355,13 +348,13 @@ export class SegmentClient {
     this._emit('identity', { name: this.self.name });
   }
 
-  // Сохранить диалог комнаты «Общий» в локальное хранилище (переживёт перезапуск).
+
   saveDialog(roomId = 'general') {
     if (roomId !== 'general') return;
     this.storage.setGeneral?.(this.messages.general || []);
   }
 
-  // Выйти: стереть личность и локальные данные (перед reload на клиенте).
+
   logout() {
     this.storage.clear?.();
     this.self.name = '';
@@ -389,7 +382,7 @@ export class SegmentClient {
 
   async sendEvent(roomId, event, local = true) {
     if (!roomId || !this.chatById(roomId) || !event) return;
-    // сообщения показываем сразу (с «часиками»), реакции/правки — как раньше
+
     if (local) this._applyEvent(roomId, event, this.self);
     if (roomId !== SAVED_ID) {
       await this._ensureCrypto();
@@ -399,7 +392,7 @@ export class SegmentClient {
     if (event.kind === 'message' && event.message) this._markSent(roomId, event.message);
   }
 
-  // Создать опрос: вопрос + список вариантов. Голоса храним в самом сообщении.
+
   sendPoll(roomId, question, options) {
     roomId = roomId || this.currentRoom;
     const q = (question || '').trim();
@@ -409,7 +402,7 @@ export class SegmentClient {
     return this.sendEvent(roomId, { kind: 'message', message });
   }
 
-  // Проголосовать (одиночный выбор). Повторный клик по своему варианту — отмена.
+
   votePoll(roomId, messageId, option) {
     const message = this._messageById(roomId, messageId);
     if (!message?.poll) return;
@@ -470,7 +463,7 @@ export class SegmentClient {
     this._send({ type: MessageType.Typing, room: this.currentRoom });
   }
 
-  // ── крипта и рукопожатие ──
+
 
   async _ensureCrypto() {
     if (this.kit) return;
@@ -490,12 +483,12 @@ export class SegmentClient {
     this.peers.set(m.id, { name: m.name, username: m.username, avatar: m.avatar, color: m.color, bundle: m.bundle, pendingCiphers: [] });
   }
 
-  // Меньший id инициирует X3DH (запрашивает одноразовый prekey), больший — ждёт.
+
   _maybeInitiate(id) {
     if (this.myId != null && this.myId < id) this._send({ type: MessageType.PreKeyRequest, to: id });
   }
 
-  // Инициатор: получил prekey участника → делает X3DH и шлёт ему свой sender-key.
+
   async _onPreKey(from, opk) {
     const p = this.peers.get(from);
     if (!p || p.ratchet || !p.bundle) return;
@@ -510,15 +503,15 @@ export class SegmentClient {
     const p = this.peers.get(from);
     if (!p) return;
     if (x3dh && !p.ratchet) {
-      // ответчик: устанавливаем сессию из X3DH-заголовка, читаем sender-key,
-      // и в ответ по тому же храповику отдаём свой
+
+
       p.ratchet = await x3dhRespond(this.kit.secret, x3dh);
       p.view = SenderKeyView.from(JSON.parse(await p.ratchet.decrypt(box)));
       await this._drain(p);
       const reply = await p.ratchet.encrypt(JSON.stringify(this.senderKey.export()));
       this._send({ type: MessageType.KeyShare, to: from, box: reply });
     } else if (p.ratchet) {
-      // инициатор получил ответный sender-key
+
       p.view = SenderKeyView.from(JSON.parse(await p.ratchet.decrypt(box)));
       await this._drain(p);
     }
@@ -530,8 +523,8 @@ export class SegmentClient {
     for (const c of pend) await this._decryptCipher(p, c);
   }
 
-  // Участник ушёл → меняем свой sender-key и раздаём новый оставшимся, чтобы
-  // ушедший не мог прочитать будущие сообщения (forward secrecy по составу).
+
+
   async _onPeerLeft(id) {
     const had = this.peers.delete(id);
     if (!had || !this.senderKey) return;
@@ -545,7 +538,7 @@ export class SegmentClient {
   async _onCipher(msg) {
     const p = this.peers.get(msg.from);
     if (!p) return;
-    if (!p.view) { p.pendingCiphers.push(msg); return; } // ждём sender-key
+    if (!p.view) { p.pendingCiphers.push(msg); return; }
     await this._decryptCipher(p, msg);
   }
 
@@ -559,7 +552,7 @@ export class SegmentClient {
     }
   }
 
-  // ── обработка сервера (строго по очереди) ──
+
 
   async _onServer(msg) {
     switch (msg.type) {
@@ -625,7 +618,7 @@ export class SegmentClient {
     if (!m.system) { delete this.typing[roomId]; clearTimeout(this._typingTimers[roomId]); }
     const current = roomId === this.currentRoom;
     if (!current && !m.system) {
-      if (!this.unread[roomId]) this.firstUnread[roomId] = m.id; // граница «непрочитанного»
+      if (!this.unread[roomId]) this.firstUnread[roomId] = m.id;
       this.unread[roomId] = (this.unread[roomId] || 0) + 1;
     }
     this._emit('append', { roomId, message: m, current, wasEmpty });
@@ -643,12 +636,12 @@ export class SegmentClient {
       ts: Date.now(),
       reactions: {},
       replyTo,
-      status: 'sending', // до отправки — часики; после — галочка
+      status: 'sending',
       ...extra,
     };
   }
 
-  // Отметить, что в чате кто-то печатает — с авто-сбросом; обновляем список.
+
   _setTyping(roomId, name) {
     if (!roomId || !this.chatById(roomId)) return;
     this.typing[roomId] = name;
@@ -660,7 +653,7 @@ export class SegmentClient {
     this._emit('chats');
   }
 
-  // Пометить своё сообщение отправленным и перерисовать чат.
+
   _markSent(roomId, message) {
     if (!message) return;
     message.status = 'sent';
@@ -751,7 +744,7 @@ export class SegmentClient {
     }
     if (event.kind === 'poll-vote' && message?.poll) {
       const by = event.by || author.name || 'user';
-      if (message.poll.votes[by] === event.option) delete message.poll.votes[by]; // отмена
+      if (message.poll.votes[by] === event.option) delete message.poll.votes[by];
       else message.poll.votes[by] = event.option;
       this._refreshRoom(roomId);
       return;
@@ -768,7 +761,7 @@ export class SegmentClient {
     }
   }
 
-  // ── низкий уровень ──
+
 
   _send(payload) {
     if (this.ws?.readyState === 1) this.ws.send(JSON.stringify(payload));

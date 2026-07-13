@@ -1,23 +1,23 @@
-// Рабочая область — свободная раскладка панелей (дерево сплитов).
-//
-// Раскладка не привязана к сетке или ряду: это дерево, где узлы-сплиты делят
-// место по горизонтали или вертикали, а листья — панели. Панель можно тянуть за
-// шапку и бросать на любой край другой панели — тогда та делится в нужную
-// сторону (лево/право/верх/низ), либо на центр — тогда панели меняются местами.
-//
-// Помимо этого:
-//  • доп-блоки (removable) можно удалить — бросив на красную полоску сверху;
-//  • панели с флагом hideable можно «скрыть» к левому/правому краю — они
-//    сворачиваются в тонкую полоску; наведёшь — через паузу всплывает живой
-//    предпросмотр; можно вытянуть обратно в раскладку.
-// Профиль/список чатов/основной чат — встроенные, их правила заданы флагами.
 
-const MIN_PX = 40;   // запасной минимум для узлов без собственного min-размера
-const EDGE_PX = 24;  // близость к краю экрана, чтобы «скрыть» панель
+//
+
+
+
+
+//
+
+
+
+
+
+
+
+const MIN_PX = 40;
+const EDGE_PX = 24;
 const TRASH_HIT_PX = 46;
 const TRASH_GLOW_PX = 150;
-const PREVIEW_DELAY = 350; // микро-пауза перед всплытием предпросмотра свёрнутой панели
-// палитра для полосок в доке (спокойные приглушённые тона под тёмную тему)
+const PREVIEW_DELAY = 350;
+
 const DOCK_PALETTE = ['#7a8294', '#6382b8', '#8a7462', '#6c8d7a', '#8b6f85', '#b8794f', '#5f9ea0', '#9a6f9a'];
 const LAYOUT_KEY = 'segment_layout_v1';
 
@@ -28,8 +28,8 @@ export class Workspace {
     this.root = root;
     this.panels = panels.slice();
     this.frames = {};       // id -> { wrapper, dispose }
-    this.docked = [];       // [{ id, side }] — свёрнутые к краю панели
-    this._unread = new Set(); // id свёрнутых чатов с новыми сообщениями
+    this.docked = [];
+    this._unread = new Set();
 
     this.tree = this._defaultTree(this.panels);
     try {
@@ -56,12 +56,12 @@ export class Workspace {
     this._renderDocks(true); this._apply(true); this._persist();
   }
 
-  // ── флаги панелей ──
+
   _def(id) { return this.panels.find((p) => p.id === id); }
   _removable(id) { return !!this._def(id)?.removable; }
   _hideable(id) { return !!this._def(id)?.hideable; }
 
-  // Стартовое дерево: слева колонка (профиль сверху, чаты снизу), справа чат.
+
   _defaultTree(panels) {
     const leaf = (id) => panels.find((p) => p.id === id) && { type: 'leaf', id, weight: 1 };
     const profile = leaf('profile');
@@ -85,7 +85,7 @@ export class Workspace {
     };
   }
 
-  // ── оверлеи: корзина сверху, боковые доки, подсказки, предпросмотр ──
+
 
   _buildOverlays() {
     this.trashEl = document.createElement('div');
@@ -112,7 +112,7 @@ export class Workspace {
     this.previewEl.addEventListener('pointerenter', () => clearTimeout(this._previewHideT));
     this.previewEl.addEventListener('pointerleave', () => this._hidePreview());
 
-    // палитра выбора цвета полоски — всплывает под предпросмотром при наведении
+
     this.paletteEl = document.createElement('div');
     this.paletteEl.className = 'ws-dock-palette';
     document.body.appendChild(this.paletteEl);
@@ -129,12 +129,12 @@ export class Workspace {
     reset.title = 'Сбросить цвет';
     reset.addEventListener('pointerdown', (e) => { e.preventDefault(); this._pickDockColor(null); });
     this.paletteEl.appendChild(reset);
-    // наведение на палитру держит предпросмотр открытым
+
     this.paletteEl.addEventListener('pointerenter', () => clearTimeout(this._previewHideT));
     this.paletteEl.addEventListener('pointerleave', () => this._hidePreview());
   }
 
-  // ── монтирование панелей ──
+
 
   _buildFrame(panel) {
     const wrapper = document.createElement('div');
@@ -151,11 +151,11 @@ export class Workspace {
 
     const dispose = panel.mount(body) || (() => {});
     this.frames[panel.id] = { wrapper, dispose };
-    // если панель свёрнута (её шапку видно только в предпросмотре) — тащим как из дока
+
     head.addEventListener('pointerdown', (e) => this._drag(e, panel.id, this.isDocked(panel.id)));
   }
 
-  // ── отрисовка дерева ──
+
 
   _apply(animate = false) {
     const first = animate ? this._snapshot() : null;
@@ -218,11 +218,11 @@ export class Workspace {
     }
   }
 
-  // ── боковые доки (свёрнутые панели) ──
+
 
   _renderDocks(animate = false) {
     const first = animate ? this._dockSnapshot() : null;
-    this._slot = null; // слот-плейсхолдер уедет вместе с innerHTML ниже
+    this._slot = null;
     for (const side of ['left', 'right']) {
       const dock = this.dockEls[side];
       dock.innerHTML = '';
@@ -241,7 +241,7 @@ export class Workspace {
         dock.appendChild(item);
       });
     }
-    // освобождаем место под доки: сдвигаем рабочую область от края
+
     this.root.style.paddingLeft = this.docked.some((d) => d.side === 'left') ? '16px' : '';
     this.root.style.paddingRight = this.docked.some((d) => d.side === 'right') ? '16px' : '';
     if (animate) this._dockFlip(first);
@@ -250,7 +250,7 @@ export class Workspace {
   _dockItemEl(id) { return this.dockEls.left.querySelector(`[data-id="${CSS.escape(id)}"]`) || this.dockEls.right.querySelector(`[data-id="${CSS.escape(id)}"]`); }
   _makeDot() { const d = document.createElement('div'); d.className = 'ws-dock-dot'; return d; }
 
-  // новое сообщение в свёрнутом чате → точка-индикатор на его полоске
+
   flagDockUnread(id) {
     if (!this.isDocked(id) || this._unread.has(id)) return;
     this._unread.add(id);
@@ -263,15 +263,15 @@ export class Workspace {
     this._dockItemEl(id)?.querySelector('.ws-dock-dot')?.remove();
   }
 
-  // ── палитра цвета полоски (под предпросмотром при наведении) ──
+
   _showPalette(id) {
     this._paletteId = id;
     const p = this.paletteEl;
     const pv = this.previewEl;
-    // берём финальные координаты из style/offset (не getBoundingClientRect —
-    // тот в момент вызова ещё в стартовой фазе анимации превью и даёт кривую позицию)
+
+
     const pvTop = parseFloat(pv.style.top) || 0;
-    const pvW = pv.offsetWidth, pvH = pv.offsetHeight; // offset не искажается transform
+    const pvW = pv.offsetWidth, pvH = pv.offsetHeight;
     const pvLeft = (pv.style.left && pv.style.left !== 'auto')
       ? parseFloat(pv.style.left)
       : window.innerWidth - parseFloat(pv.style.right || 0) - pvW;
@@ -292,10 +292,10 @@ export class Workspace {
       const item = this._dockItemEl(id);
       if (item) { if (color) item.style.setProperty('--dock-color', color); else item.style.removeProperty('--dock-color'); }
     }
-    // палитру не закрываем — можно перебирать цвета, пока открыт предпросмотр
+
   }
 
-  // FLIP-анимация полосок в доке — плавное переупорядочивание
+
   _dockSnapshot() {
     const m = {};
     for (const side of ['left', 'right']) {
@@ -323,21 +323,21 @@ export class Workspace {
     }
   }
 
-  // пустой слот-плейсхолдер в доке: остальные полоски раздвигаются вокруг него и
-  // при смене индекса плавно (FLIP) переезжают — реордер виден ещё до отпускания
+
+
   _showDockSlot(side, index) {
     if (this._slot && this._slot.side === side && this._slot.index === index) return;
     const first = this._dockSnapshot();
     if (this._slot) this._slot.el.remove();
     const dock = this.dockEls[side];
-    dock.classList.add('has-items'); // держим док видимым, даже если своих полосок нет
+    dock.classList.add('has-items');
     const items = [...dock.querySelectorAll('.ws-dock-item')];
     const slot = document.createElement('div');
     slot.className = 'ws-dock-slot';
     if (index >= items.length) dock.appendChild(slot);
     else dock.insertBefore(slot, items[index]);
     this._slot = { side, index, el: slot };
-    // высота слота = реальная высота будущей полоски при текущем числе (для призрака)
+
     this._slotH = slot.getBoundingClientRect().height;
     this._dockFlip(first);
   }
@@ -352,7 +352,7 @@ export class Workspace {
     this._dockFlip(first);
   }
 
-  // ── предпросмотр свёрнутой панели (живой фрейм) ──
+
 
   _queuePreview(id, itemEl) {
     clearTimeout(this._previewHideT);
@@ -365,7 +365,7 @@ export class Workspace {
     if (!f || this._dragging) return;
     const side = this.docked.find((d) => d.id === id)?.side;
     if (!side) return;
-    this._clearDockUnread(id); // заглянул в предпросмотр — считаем прочитанным
+    this._clearDockUnread(id);
     f.wrapper.style.flex = '';
     this.previewEl.innerHTML = '';
     this.previewEl.appendChild(f.wrapper);
@@ -376,7 +376,7 @@ export class Workspace {
     if (side === 'left') { this.previewEl.style.left = `${r.right + 8}px`; this.previewEl.style.right = 'auto'; }
     else { this.previewEl.style.right = `${window.innerWidth - r.left + 8}px`; this.previewEl.style.left = 'auto'; }
     this.previewEl.classList.add('show');
-    this._showPalette(id); // палитра цвета — под предпросмотром
+    this._showPalette(id);
   }
 
   _hidePreview() {
@@ -384,7 +384,7 @@ export class Workspace {
     this._previewHideT = setTimeout(() => {
       this.previewEl.classList.remove('show');
       this._hidePalette();
-      // фрейм возвращается «в лимб» (отсоединён), пока панель свёрнута
+
       if (this.previewEl.firstElementChild) this.previewEl.firstElementChild.remove();
     }, 120);
   }
@@ -397,7 +397,7 @@ export class Workspace {
     if (this.previewEl.firstElementChild) this.previewEl.firstElementChild.remove();
   }
 
-  // ── ресайз ──
+
 
   _splitter(node, i, aEl, bEl) {
     const bar = document.createElement('div');
@@ -456,7 +456,7 @@ export class Workspace {
     window.addEventListener('pointerup', onUp);
   }
 
-  // ── перетаскивание (единое для панелей в дереве и свёрнутых полосок) ──
+
 
   _drag(e, id, fromDock) {
     if (e.button !== 0) return;
@@ -474,11 +474,11 @@ export class Workspace {
     const removable = this._removable(id);
     const hideable = this._hideable(id);
 
-    // геометрия, закэшированная на время перетаскивания: панели/корзина/корень не
-    // двигаются, поэтому меряем один раз в begin() — иначе на каждом кадре шёл бы
-    // форс-reflow всей страницы (особенно больно для «Избранного» с длинной историей)
+
+
+
     let rootRect = null, trashRect = null, panelRects = [];
-    const dockMids = { left: [], right: [] }; // серединки полосок дока (для выбора индекса)
+    const dockMids = { left: [], right: [] };
     const buildRects = () => {
       rootRect = this.root.getBoundingClientRect();
       trashRect = this.trashEl.getBoundingClientRect();
@@ -497,8 +497,8 @@ export class Workspace {
     const panelAt = (x, y) => panelRects.find((p) => this._inRect(p.rect, x, y)) || null;
     const dockIndexAt = (side, y) => { const m = dockMids[side]; let i = 0; while (i < m.length && y >= m[i]) i++; return i; };
 
-    // близко к левому/правому краю → свернуть в полосу; index — куда вставить
-    // среди уже свёрнутых на этой стороне (чтобы можно было менять их порядок)
+
+
     const edgeDock = (x, y) => {
       if (!hideable) return null;
       if (x <= rootRect.left + EDGE_PX) return { kind: 'dock', side: 'left', index: dockIndexAt('left', y) };
@@ -508,18 +508,18 @@ export class Workspace {
 
     const moveGhost = (x, y) => { ghost.style.transform = `translate3d(${Math.round(x - offsetX)}px, ${Math.round(y - offsetY)}px, 0)`; };
 
-    // морфинг призрака в полоску-док у края (и обратно, если отвели курсор)
+
     const STRIP_W = 9;
     let ghostW = 0, ghostH = 0, stripped = false;
     let stripH = 0;
     const stripGhost = (side, y) => {
-      // высота = ровно как у будущей полоски в доке при текущем числе (замерена по слоту)
+
       const h = this._slotH || clamp(ghostH, 52, window.innerHeight - 24);
       const gx = side === 'left' ? 3 : window.innerWidth - STRIP_W - 3;
       const gy = clamp(y - h / 2, 12, window.innerHeight - h - 12);
       ghost.style.transform = `translate3d(${gx}px, ${Math.round(gy)}px, 0)`;
       if (!stripped) { ghost.style.width = `${STRIP_W}px`; ghost.classList.add('as-dock-strip'); stripped = true; }
-      if (stripH !== h) { stripH = h; ghost.style.height = `${h}px`; } // плавно при смене стороны/числа
+      if (stripH !== h) { stripH = h; ghost.style.height = `${h}px`; }
     };
     const unstripGhost = () => {
       if (!stripped) return;
@@ -527,15 +527,15 @@ export class Workspace {
       ghost.style.height = `${ghostH}px`;
       ghost.classList.remove('as-dock-strip');
       stripped = false;
-      stripH = 0; // чтобы при повторном схлопывании высота выставилась заново
+      stripH = 0;
     };
 
     const begin = () => {
       dragging = true;
       this._dragging = true;
 
-      // геометрию снимаем ДО скрытия предпросмотра: если тянем за шапку из живого
-      // предпросмотра — берём его реальный прямоугольник (иначе после detach нули)
+
+
       const inPreview = this.previewEl.contains(wrapper);
       const rect = inPreview ? wrapper.getBoundingClientRect()
         : (fromDock ? { left: startX - 140, top: startY - 20, width: 280, height: 360 }
@@ -545,16 +545,16 @@ export class Workspace {
 
       clearTimeout(this._previewShowT);
       this._hidePreviewNow();
-      if (this.previewEl.contains(wrapper)) wrapper.remove(); // забираем из предпросмотра
+      if (this.previewEl.contains(wrapper)) wrapper.remove();
 
       ghost = wrapper.cloneNode(true);
       ghost.classList.add('panel-ghost');
-      // облегчаем призрак: лента сообщений в клоне не нужна и тормозит перетаскивание
+
       ghost.querySelectorAll('.feed').forEach((f) => { f.innerHTML = ''; });
       ghost.style.transform = '';
-      // ВАЖНО: клон наследует inline `transition: transform .18s` от FLIP-анимации
-      // wrapper'а — из-за него призрак «плывёт» за курсором. Оставляем переход
-      // только для морфинга в полоску (ширина/высота), transform — мгновенно.
+
+
+
       ghost.style.transition = 'width .24s cubic-bezier(.22,1,.36,1), height .24s cubic-bezier(.22,1,.36,1), border-radius .24s cubic-bezier(.22,1,.36,1)';
       ghostW = rect.width; ghostH = rect.height;
       ghost.style.width = `${ghostW}px`;
@@ -566,8 +566,8 @@ export class Workspace {
       this._hint.style.display = 'none';
       document.body.appendChild(this._hint);
 
-      // при вытаскивании полосы из дока запоминаем её место, чтобы сразу удержать
-      // там пустой слот (иначе остальные полоски мгновенно заполнят пустоту)
+
+
       let origSide = null, origIndex = -1;
       if (fromDock) {
         const entry = this.docked.find((d) => d.id === id);
@@ -583,13 +583,13 @@ export class Workspace {
       this.trashEl.classList.toggle('armed', removable);
       this._setTrashHeat(0);
       moveGhost(startX, startY);
-      buildRects(); // один замер геометрии на всё перетаскивание
+      buildRects();
       if (fromDock && origSide) this._showDockSlot(origSide, origIndex);
     };
 
-    // Оверлеи трогаем только когда состояние реально изменилось, а не каждый кадр —
-    // иначе постоянные layout/paint подсказки тормозят главный поток и призрак
-    // начинает отставать от курсора.
+
+
+
     let shownHint = '', trashHot = false;
     const showHint = (key, rect, zone) => {
       if (key === shownHint) return;
@@ -599,15 +599,15 @@ export class Workspace {
     };
     const setTrashHot = (on) => { if (on !== trashHot) { trashHot = on; this.trashEl.classList.toggle('hot', on); } };
 
-    // основная обработка — не чаще кадра (иначе при нескольких блоках тормозит)
+
     const handleMove = (x, y) => {
       if (!dragging) {
         if (Math.hypot(x - startX, y - startY) < 6) return;
         begin();
       }
-      moveGhost(x, y); // призрак следует за курсором каждый кадр (только transform)
+      moveGhost(x, y);
 
-      // 1) корзина — только для удаляемых
+
       if (this._trashState(x, y, removable, trashRect)) {
         unstripGhost();
         this._clearDockSlot();
@@ -617,13 +617,13 @@ export class Workspace {
         return;
       }
       setTrashHot(false);
-      // 2) скрытие к краю — только для hideable; призрак схлопывается в полоску,
-      //    а в доке держится пустой слот, вокруг которого полоски двигаются вживую
+
+
       const ed = edgeDock(x, y);
       if (ed) { drop = ed; showHint(''); this._showDockSlot(ed.side, ed.index); stripGhost(ed.side, y); return; }
       unstripGhost();
       this._clearDockSlot();
-      // 3) обычный докинг к панели (по закэшированной геометрии)
+
       const target = panelAt(x, y);
       if (target) {
         const zone = this._zone(target.rect, x, y);
@@ -647,8 +647,8 @@ export class Workspace {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
-      try { this.root.releasePointerCapture(e.pointerId); } catch { /* уже отпущен */ }
-      if (!dragging) { if (fromDock) this.restorePanel(id); return; } // клик по полоске — развернуть
+      try { this.root.releasePointerCapture(e.pointerId); } catch {
+      if (!dragging) { if (fromDock) this.restorePanel(id); return; }
 
       if (this._trashState(ev.clientX, ev.clientY, removable, trashRect)) {
         drop = { kind: 'trash' };
@@ -658,7 +658,7 @@ export class Workspace {
       }
 
       this._dragging = false;
-      // слот-плейсхолдер: при доке его снимет перерисовка, иначе убираем сами (с FLIP)
+
       if (drop?.kind === 'dock') this._slot = null;
       else this._clearDockSlot();
       wrapper.classList.remove('is-placeholder');
@@ -677,13 +677,13 @@ export class Workspace {
         if (fromDock) { this._placePanel(id, drop.id, drop.zone === 'center' ? 'right' : drop.zone); this.tree = this._normalize(this.tree); this._apply(true); }
         else this._applyDrop(id, drop.id, drop.zone);
       } else if (fromDock) {
-        this.dockPanel(id, this._def(id)?._lastSide || 'right'); // не попал — вернуть в док
+        this.dockPanel(id, this._def(id)?._lastSide || 'right');
       }
     };
 
-    // захват указателя — события продолжают приходить, даже если курсор ушёл за
-    // край экрана (иначе полоска «пропадала» при выходе за окно)
-    try { this.root.setPointerCapture(e.pointerId); } catch { /* нет поддержки — ок */ }
+
+
+    try { this.root.setPointerCapture(e.pointerId); } catch {
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);
@@ -696,7 +696,7 @@ export class Workspace {
   _setTrashHeat(heat) {
     const h = clamp(heat, 0, 1);
     const key = h.toFixed(3);
-    if (this._trashHeatKey === key) return; // не переписываем стили, если жар не изменился
+    if (this._trashHeatKey === key) return;
     this._trashHeatKey = key;
     this.trashEl.style.setProperty('--trash-heat', h.toFixed(3));
     this.trashEl.style.setProperty('--trash-height', `${3 + h * 3}px`);
@@ -741,18 +741,18 @@ export class Workspace {
     h.style.height = `${rect.height * half[3]}px`;
   }
 
-  // открыта ли панель в раскладке (в дереве), а не свёрнута в бок
+
   isOpen(id) { return !!this._find(id); }
   isDocked(id) { return this.docked.some((d) => d.id === id); }
 
-  // ── публичные операции над блоками ──
+
 
   addPanel(def, nearId = null, zone = null) {
     if (this._def(def.id)) return;
     this.panels.push(def);
     this._buildFrame(def);
-    // без явной цели — выбираем самый крупный блок и делим его по длинной стороне,
-    // чтобы новые чаты ложились «квадратнее», а не всегда в ряд справа
+
+
     if (!nearId || !zone) {
       const smart = this._smartTarget();
       nearId = smart.id;
@@ -764,8 +764,8 @@ export class Workspace {
     this._apply(true);
   }
 
-  // куда положить новый блок: самый большой по площади лист (не служебные
-  // профиль/список), делим его вдоль длинной стороны → раскладка остаётся ровной
+
+
   _smartTarget() {
     const skip = new Set(['profile', 'chat-list']);
     let best = null;
@@ -803,7 +803,7 @@ export class Workspace {
     if (index == null) {
       this.docked.push(entry);
     } else {
-      // вставляем в нужное место среди полос той же стороны (порядок важен)
+
       const sideItems = this.docked.filter((d) => d.side === side);
       const others = this.docked.filter((d) => d.side !== side);
       sideItems.splice(clamp(index, 0, sideItems.length), 0, entry);
@@ -815,10 +815,10 @@ export class Workspace {
 
   restorePanel(id, nearId = null, zone = null) {
     if (!this.docked.some((d) => d.id === id)) return;
-    this._unread.delete(id); // развернули — прочитано
+    this._unread.delete(id);
     this._hidePreviewNow();
     this.docked = this.docked.filter((d) => d.id !== id);
-    // без явной цели — раскрываем «умно», как обычный новый блок, а не криво справа
+
     if (!nearId || !zone) {
       const smart = this._smartTarget();
       nearId = smart.id; zone = smart.zone;
@@ -830,7 +830,7 @@ export class Workspace {
     this._apply(true);
   }
 
-  // ── операции над деревом ──
+
 
   _placePanel(id, targetId, zone) {
     if (!this.tree) { this.tree = { type: 'leaf', id, weight: 1 }; return; }
@@ -887,7 +887,7 @@ export class Workspace {
 
   _splitAt(targetId, draggedNode, dir, before) {
     const found = this._find(targetId);
-    if (!found) { // некуда вставлять — делаем узел корнем рядом с текущим деревом
+    if (!found) {
       if (!this.tree) this.tree = draggedNode;
       else this.tree = { type: 'split', dir, weight: 1, children: before ? [draggedNode, this.tree] : [this.tree, draggedNode] };
       return;

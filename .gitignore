@@ -1,21 +1,21 @@
-# зависимости
+# Dependencies
 node_modules/
 
-# логи
+# Logs
 *.log
 npm-debug.log*
 
-# окружение
+# Environment
 .env
 .env.local
 
-# ОС / редакторы
+# Operating systems and editors
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
 
-# сборки будущих приложений
+# Future application builds
 dist/
 build/
 *.apk

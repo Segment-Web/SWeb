@@ -5,12 +5,12 @@ import { chatViewPanel } from './chat-view.js';
 
 const TYPING_HIDE_MS = 2000;
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '🔥', '👏', '🥰', '😮', '😢'];
-// полный набор для пикера реакций (кнопка «+»)
+
 const REACTIONS_ALL = ['👍', '👎', '❤️', '🔥', '🥰', '👏', '😂', '🤣', '😍', '🤔', '🤯', '😱', '🤬', '😢', '🎉', '🤩', '🙏', '👌', '🕊', '🤡', '🥴', '😐', '🍓', '🍾', '💋', '🖕', '😈', '😴', '😭', '🤓', '👻', '💯', '🤣', '💔', '❤️‍🔥', '😀', '😃', '😄', '😉', '😊', '😎', '🥳', '😇', '🤝', '💪', '👀', '✅', '⚡'];
 const EMOJIS = ['😀', '😂', '😍', '😎', '🤝', '👍', '🔥', '❤️', '🎉', '💡', '👀', '✅'];
 const IMAGE_URL_RE = /(https?:\/\/\S+\.(?:png|jpe?g|gif|webp))(?:\?\S*)?/i;
 
-// Цвет аватара по id/имени — та же палитра, что в списке чатов.
+
 const AVATAR_COLORS = ['#e17076', '#7bc862', '#e5ca77', '#65aadd', '#a695e7', '#ee7aae', '#6ec9cb', '#f2846a'];
 function avatarColor(id) {
   let h = 0;
@@ -18,7 +18,7 @@ function avatarColor(id) {
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
 }
 
-// шорткоды эмодзи для автодополнения по «:name»
+
 const EMOJI_MAP = {
   smile: '😄', grin: '😁', joy: '😂', rofl: '🤣', laughing: '😆', wink: '😉',
   blush: '😊', heart_eyes: '😍', kiss: '😘', cool: '😎', sunglasses: '😎',
@@ -33,7 +33,7 @@ const EMOJI_MAP = {
   hundred: '💯', ok: '🆗', new: '🆕',
 };
 
-// слэш-команды: вставляют текст (без сетевых действий)
+
 const SLASH = [
   { cmd: 'shrug', desc: 'пожать плечами', insert: '¯\\_(ツ)_/¯' },
   { cmd: 'tableflip', desc: 'перевернуть стол', insert: '(╯°□°)╯︵ ┻━┻' },
@@ -42,8 +42,8 @@ const SLASH = [
 ];
 
 /**
- * Ставит всплывающий блок у точки (x, y) в координатах окна, удерживая его
- * целиком внутри `bounds`. Если снизу/справа не влезает — переворачивает.
+  *
+  *
  */
 function placeFloating(el, x, y, bounds) {
   const b = bounds.getBoundingClientRect();
@@ -54,8 +54,8 @@ function placeFloating(el, x, y, bounds) {
   const pad = 8;
   let left = x - b.left;
   let top = y - b.top;
-  if (left + w > b.width - pad) left = Math.max(pad, (x - b.left) - w); // раскрыть влево
-  if (top + h > b.height - pad) top = Math.max(pad, (y - b.top) - h);   // раскрыть вверх
+  if (left + w > b.width - pad) left = Math.max(pad, (x - b.left) - w);
+  if (top + h > b.height - pad) top = Math.max(pad, (y - b.top) - h);
   el.style.left = `${Math.max(pad, Math.min(left, b.width - w - pad))}px`;
   el.style.top = `${Math.max(pad, Math.min(top, b.height - h - pad))}px`;
 }
@@ -193,7 +193,7 @@ export function chatRoomPanel(client) {
       const pinnedManager = q('pinnedManager');
       const selectionQuote = q('selectionQuote');
 
-      const MAX_ATTACH = 12 * 1024 * 1024; // 12 МБ на файл — крипта тащит base64 в шифртексте
+      const MAX_ATTACH = 12 * 1024 * 1024;
       let typingTimer;
       let currentChat = client.chatById(client.currentRoom);
       let replyTo = null;
@@ -202,13 +202,13 @@ export function chatRoomPanel(client) {
       let roomSearchIds = [];
       let roomSearchIndex = -1;
       let selectionQuoteData = null;
-      let pending = []; // подготовленные вложения { kind, name, size, mime, data }
-      let processing = 0; // сколько файлов сейчас читается/обрабатывается
-      let awayCount = 0;  // сколько сообщений пришло, пока листали вверх
-      const drafts = {};  // черновик ввода по id чата
+      let pending = [];
+      let processing = 0;
+      let awayCount = 0;
+      const drafts = {};
       const selected = new Set();
 
-      // ── автодополнение: эмодзи «:», упоминания «@», команды «/» ──
+
       let acItems = [];   // [{ label, hint, apply }]
       let acIndex = 0;
       let acToken = null; // { start, end }
@@ -243,7 +243,7 @@ export function chatRoomPanel(client) {
         input.focus();
       };
 
-      // источники подсказок
+
       const chatMembers = () => {
         const set = new Set((client.online || []).map((u) => u.name));
         for (const m of client.messages[currentChat?.id] || []) if (!m.system && m.name) set.add(m.name);
@@ -255,7 +255,7 @@ export function chatRoomPanel(client) {
         const caret = input.selectionStart;
         const before = input.value.slice(0, caret);
         let mt;
-        // /команда — только в самом начале
+
         if ((mt = /^\/(\w*)$/.exec(before))) {
           const q2 = mt[1].toLowerCase();
           acToken = { start: 0, end: caret };
@@ -290,7 +290,7 @@ export function chatRoomPanel(client) {
         return true;
       };
 
-      // ── создание опроса ──
+
       const renderPoll = (optionCount = 2) => {
         pollCompose.innerHTML = `
           <div class="poll-box">
@@ -346,7 +346,7 @@ export function chatRoomPanel(client) {
         r.readAsDataURL(file);
       });
 
-      // Постер (кадр) + длительность + размеры видео — рисуем первый кадр на canvas.
+
       const videoMeta = (file) => new Promise((resolve) => {
         const url = URL.createObjectURL(file);
         const v = document.createElement('video');
@@ -366,7 +366,7 @@ export function chatRoomPanel(client) {
         v.onerror = () => done({});
       });
 
-      // Натуральные размеры картинки — чтобы пузырь совпал по пропорциям.
+
       const imageMeta = (dataUrl) => new Promise((resolve) => {
         const img = new Image();
         img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
@@ -384,7 +384,7 @@ export function chatRoomPanel(client) {
         return att;
       };
 
-      // Пустое поле → кнопка записи; есть текст/вложения → кнопка отправки.
+
       const syncActions = () => {
         const hasContent = input.value.trim().length > 0 || pending.length > 0;
         sendBtn.classList.toggle('hidden', !hasContent);
@@ -414,7 +414,7 @@ export function chatRoomPanel(client) {
         }
       };
 
-      // Единая точка приёма файлов — из диалога, drag&drop или вставки.
+
       const addFiles = async (files) => {
         const list = [...files];
         if (!list.length) return;
@@ -436,10 +436,10 @@ export function chatRoomPanel(client) {
         input.focus();
       };
 
-      // ── запись голосовых и кружков ──
+
       const fmtClock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
-      // Волна голосового: декодируем и берём 28 пиков.
+
       const computeWaveform = async (blob) => {
         try {
           const AC = window.AudioContext || window.webkitAudioContext;
@@ -458,13 +458,13 @@ export function chatRoomPanel(client) {
         } catch { return []; }
       };
 
-      // ── единая запись голосовых/кружков: тап переключает режим, зажатие пишет ──
+
       let recMode = 'voice';           // 'voice' | 'video'
       let recSession = null;           // { rec, stream, chunks, start, kind, locked, timer, canceled }
-      let recStarting = false;         // идёт getUserMedia
-      let holdTimer = null;            // таймер отличия тапа от удержания
+      let recStarting = false;
+      let holdTimer = null;
       let holdY = 0, holdX = 0, pressPointer = null;
-      let recStartRequested = false;   // палец удерживается достаточно, ждём/идёт запись
+      let recStartRequested = false;
 
       const setRecMode = (mode) => {
         recMode = mode;
@@ -474,7 +474,7 @@ export function chatRoomPanel(client) {
       };
       const toggleRecMode = () => setRecMode(recMode === 'voice' ? 'video' : 'voice');
 
-      // Компактная плашка статуса записи над полем ввода.
+
       const renderRecBar = () => {
         if (!recSession) { recBar.classList.add('hidden'); recBar.innerHTML = ''; return; }
         const secs = Math.floor((Date.now() - recSession.start) / 1000);
@@ -507,7 +507,7 @@ export function chatRoomPanel(client) {
           stream = await navigator.mediaDevices.getUserMedia(
             kind === 'video' ? { video: { width: 480, height: 480, facingMode: 'user' }, audio: true } : { audio: true });
         } catch { recStarting = false; window.Segment?.toast?.(kind === 'video' ? 'Нет доступа к камере' : 'Нет доступа к микрофону'); return; }
-        // палец мог отпуститься, пока спрашивали доступ — не начинаем
+
         if (!pressPointer && !recStartRequested) { stream.getTracks().forEach((t) => t.stop()); recStarting = false; return; }
         const rec = new MediaRecorder(stream, kind === 'video' && MediaRecorder.isTypeSupported('video/webm') ? { mimeType: 'video/webm' } : undefined);
         const chunks = []; rec.ondataavailable = (e) => chunks.push(e.data);
@@ -594,7 +594,7 @@ export function chatRoomPanel(client) {
         if (!el) return;
         el.scrollIntoView({ block: 'center', behavior: 'smooth' });
         el.classList.remove('flash');
-        void el.offsetWidth; // рестарт анимации
+        void el.offsetWidth;
         el.classList.add('flash');
       };
 
@@ -715,7 +715,7 @@ export function chatRoomPanel(client) {
         }
       };
 
-      // Закреплённое сообщение — постоянная плашка под шапкой, не в ленте.
+
       const renderPinnedBar = () => {
         const list = currentChat ? client.messages[currentChat.id] : null;
         if (currentChat?.id !== pinnedRoomId) { pinnedRoomId = currentChat?.id || null; pinnedIndex = 0; }
@@ -813,9 +813,9 @@ export function chatRoomPanel(client) {
         const picker = msgMenu.querySelector('.react-picker');
         for (const btn of msgMenu.querySelectorAll('.react-btn')) {
           btn.onclick = () => {
-            if (btn.dataset.more != null) { // «+» раскрывает полный пикер
+            if (btn.dataset.more != null) {
               picker.classList.toggle('hidden');
-              placeFloating(msgMenu, x, y, roomEl); // переставить с учётом новой высоты
+              placeFloating(msgMenu, x, y, roomEl);
               return;
             }
             client.toggleReaction(currentChat.id, id, btn.dataset.emoji);
@@ -849,7 +849,7 @@ export function chatRoomPanel(client) {
         }
       }
 
-      // Собрать медиа/файлы/ссылки/участников чата для инфо-экрана.
+
       const collectInfo = () => {
         const msgs = client.messages[currentChat.id] || [];
         const media = []; const files = []; const links = [];
@@ -955,7 +955,7 @@ export function chatRoomPanel(client) {
       const renderRoom = (chat, messages) => {
         const chatChanged = chat?.id !== currentChat?.id;
         if (chatChanged) {
-          if (currentChat) drafts[currentChat.id] = input.value; // сохранить черновик уходящего чата
+          if (currentChat) drafts[currentChat.id] = input.value;
           pending = []; selected.clear(); renderAttachDraft();
           closeRoomSearch();
         }
@@ -984,7 +984,7 @@ export function chatRoomPanel(client) {
         statusEl.classList.toggle('online', status.online);
         statusEl.classList.toggle('muted', !status.online);
         input.placeholder = chat.local ? 'Заметка для себя...' : (chat.type === 'channel' ? 'Публикация в канал...' : 'Сообщение...');
-        // при открытии чата — вниз; при перерисовке (реакция/выделение) — держим якорь
+
         renderFeed(feed, chat, messages, client.self.name, {
           ...feedOptions(),
           scrollMode: chatChanged ? 'bottom' : 'anchor',
@@ -1001,13 +1001,13 @@ export function chatRoomPanel(client) {
         client.on('room', ({ chat, messages }) => renderRoom(chat, messages)),
         client.on('append', ({ message, current, wasEmpty }) => {
           if (!current) return;
-          // липнем к низу, только если читатель и так был у конца ленты
+
           const stick = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80 || wasEmpty;
           if (wasEmpty) feed.innerHTML = '';
           if (message.system) renderSystem(feed, message.text);
           else renderMessage(feed, message, client.self.name, feedOptions());
           if (stick) scrollFeedToBottom(feed);
-          // не свои сообщения, пришедшие пока листаем вверх — считаем на бейдж
+
           else if (!message.system && message.name !== client.self.name) awayCount++;
           updateScrollDown();
         }),
@@ -1078,8 +1078,8 @@ export function chatRoomPanel(client) {
       roomSearchInput.onkeydown = (e) => { if (e.key === 'Enter') updateRoomSearch(e.shiftKey ? -1 : 1); else if (e.key === 'Escape') closeRoomSearch(); };
       const roomSearchShortcut = (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && currentChat) { e.preventDefault(); openRoomSearch(); } };
       document.addEventListener('keydown', roomSearchShortcut);
-      // Меню скрепки: открывается по наведению/клику, закрывается с задержкой,
-      // чтобы можно было увести курсор вверх к пунктам (меню над полем).
+
+
       let attachHideTimer = null;
       const openAttachMenu = () => { clearTimeout(attachHideTimer); attachMenu.classList.remove('hidden'); };
       const scheduleAttachHide = () => { clearTimeout(attachHideTimer); attachHideTimer = setTimeout(() => attachMenu.classList.add('hidden'), 260); };
@@ -1096,7 +1096,7 @@ export function chatRoomPanel(client) {
           fileInput.click();
         };
       }
-      // тап (быстрый клик без записи) — переключить режим; удержание — запись
+
       const LOCK_DY = -56, CANCEL_DX = -90, HOLD_MS = 180;
       recBtn.addEventListener('pointerdown', (e) => {
         if (e.button != null && e.button !== 0) return;
@@ -1118,9 +1118,9 @@ export function chatRoomPanel(client) {
         if (pressPointer !== e.pointerId) return;
         pressPointer = null;
         recLock.style.removeProperty('--pull');
-        if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; toggleRecMode(); return; } // быстрый тап
+        if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; toggleRecMode(); return; }
         recStartRequested = false;
-        if (recSession && !recSession.locked) finishRecord(true); // отпустил — отправить
+        if (recSession && !recSession.locked) finishRecord(true);
       };
       recBtn.addEventListener('pointerup', endPress);
       recBtn.addEventListener('pointercancel', endPress);
@@ -1130,13 +1130,13 @@ export function chatRoomPanel(client) {
         addFiles(files);
       };
 
-      // Вставка изображения из буфера (Ctrl+V) — как в Telegram.
+
       input.addEventListener('paste', (e) => {
         const files = [...(e.clipboardData?.files || [])];
         if (files.length) { e.preventDefault(); addFiles(files); }
       });
 
-      // Drag&drop файлов в область чата.
+
       const onDragOver = (e) => {
         if (!currentChat || !e.dataTransfer?.types?.includes('Files')) return;
         e.preventDefault();
@@ -1163,7 +1163,7 @@ export function chatRoomPanel(client) {
         emojiMenu.classList.toggle('hidden', !wasHidden);
         if (wasHidden) {
           const r = emojiBtn.getBoundingClientRect();
-          placeFloating(emojiMenu, r.left, r.top, roomEl); // не влезает вниз → раскроется вверх
+          placeFloating(emojiMenu, r.left, r.top, roomEl);
         }
         for (const btn of emojiMenu.querySelectorAll('button')) {
           btn.onclick = () => {
@@ -1174,7 +1174,7 @@ export function chatRoomPanel(client) {
           };
         }
       };
-      // Обернуть выделение в поле маркерами форматирования (Ctrl+B/I и т.п.).
+
       const wrapSelection = (mark) => {
         const s = input.selectionStart, e = input.selectionEnd;
         const val = input.value;
@@ -1184,7 +1184,7 @@ export function chatRoomPanel(client) {
         syncActions();
         if (currentChat) drafts[currentChat.id] = input.value;
       };
-      // Загрузить в поле последнее своё сообщение для правки.
+
       const editLast = () => {
         const list = currentChat ? client.messages[currentChat.id] : null;
         if (!list) return false;
@@ -1203,7 +1203,7 @@ export function chatRoomPanel(client) {
       };
 
       input.onkeydown = (e) => {
-        if (acKeydown(e)) return; // подсказка перехватывает навигацию/выбор
+        if (acKeydown(e)) return;
         if (e.key === 'Enter') submit();
         else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && 'biscu'.includes(e.key.toLowerCase())) {
           const mark = { b: '**', i: '__', s: '~~', u: '__', c: '`' }[e.key.toLowerCase()];
