@@ -1,6 +1,6 @@
 {
   "name": "@segment/crypto",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "Segment Secure Layer — собственный слой E2EE поверх стандартных примитивов WebCrypto. Прототип, требует аудита.",
   "type": "module",
   "private": true,

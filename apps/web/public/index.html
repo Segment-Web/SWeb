@@ -17,6 +17,14 @@
 </script>
 </head>
 <body>
+<div class="desktop-only-gate" id="desktopOnlyGate" aria-labelledby="desktopOnlyTitle">
+  <div class="desktop-only-card">
+    <div class="logo" aria-hidden="true">S</div>
+    <h1 id="desktopOnlyTitle">Segment пока доступен только на ПК</h1>
+    <p>Мобильная версия ещё разрабатывается. Откройте Segment на компьютере или ноутбуке.</p>
+  </div>
+</div>
+
 <div class="gate" id="gate">
   <div class="card auth-card">
     <div class="logo">S</div>
@@ -45,6 +53,10 @@
 
 <div class="workspace" id="workspace"></div>
 
-<script type="module" src="./app.js"></script>
+<script type="module">
+  const desktop = matchMedia('(min-width: 1024px) and (hover: hover) and (pointer: fine)').matches;
+  document.body.classList.toggle('desktop-required', !desktop);
+  if (desktop) import('./app.js');
+</script>
 </body>
 </html>

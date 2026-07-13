@@ -1,6 +1,6 @@
 {
   "name": "segment",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "private": true,
   "description": "Segment — расширяемый мессенджер с E2EE и открытым исходным кодом.",
   "type": "module",

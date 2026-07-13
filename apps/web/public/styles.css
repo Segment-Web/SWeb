@@ -2095,3 +2095,29 @@ html[data-density="spacious"] .panel[data-id="profile"], html[data-density="spac
 .lightbox-nav { position:fixed; z-index:7; top:50%; }
 .lightbox-nav.prev { left:16px; } .lightbox-nav.next { right:16px; }
 .lightbox .vplayer, .lightbox .vplayer-video { max-width:calc(100vw - 112px); max-height:calc(100vh - 112px); }
+/* Пока продукт рассчитан только на ПК: на мобильных клиент и WebSocket не запускаются. */
+.desktop-only-gate { display: none; }
+body.desktop-required { overflow: hidden; }
+body.desktop-required > :not(.desktop-only-gate):not(script) { display: none !important; }
+body.desktop-required .desktop-only-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #0b1521;
+  color: #f4f7fa;
+}
+.desktop-only-card {
+  width: min(100%, 430px);
+  padding: 34px 28px;
+  text-align: center;
+  border: 1px solid #26384a;
+  border-radius: 22px;
+  background: #132130;
+  box-shadow: 0 20px 60px rgb(0 0 0 / 28%);
+}
+.desktop-only-card .logo { margin: 0 auto 20px; }
+.desktop-only-card h1 { margin: 0 0 12px; font-size: 23px; line-height: 1.25; }
+.desktop-only-card p { margin: 0; color: #91a4b7; font-size: 15px; line-height: 1.55; }
