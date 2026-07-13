@@ -36,7 +36,11 @@ window.Segment = segmentApi;
 
 const mountWorkspace = () => {
   if (workspace) return;
-  workspace = new Workspace($('workspace'), registry.list());
+  const root = document.createElement('div');
+  root.className = 'workspace';
+  root.id = 'workspace';
+  document.body.appendChild(root);
+  workspace = new Workspace(root, registry.list());
   segmentApi.workspace = workspace;
 };
 

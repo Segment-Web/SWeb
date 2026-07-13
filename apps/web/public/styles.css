@@ -38,6 +38,7 @@ body {
 /* кроме полей ввода — там текст выделять нужно */
 input, textarea, [contenteditable] { user-select: text; -webkit-user-select: text; }
 body.is-resizing { cursor: col-resize; user-select: none; }
+body.auth-pending > :not(.gate):not(.desktop-only-gate):not(script) { display: none !important; }
 
 /* ── рабочая область (тайлинг панелей) ── */
 .workspace {
@@ -1348,11 +1349,11 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
 .gate.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
 .card {
   width: min(92vw, 390px);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 20px; padding: 32px 30px 30px;
+  background: transparent;
+  border: 0;
+  border-radius: 0; padding: 32px 30px 30px;
   text-align: center;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, .24);
+  box-shadow: none;
 }
 .logo {
   width: 52px; height: 52px; border-radius: 14px;
