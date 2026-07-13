@@ -23,6 +23,7 @@
   --ease-out: cubic-bezier(.22, 1, .36, 1);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 body {
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif,
@@ -37,14 +38,16 @@ body {
 /* кроме полей ввода — там текст выделять нужно */
 input, textarea, [contenteditable] { user-select: text; -webkit-user-select: text; }
 body.is-resizing { cursor: col-resize; user-select: none; }
+body.auth-pending:not(.desktop-required) > :not(.gate):not(script) { display: none !important; }
 
 /* ── рабочая область (тайлинг панелей) ── */
 .workspace {
   position: fixed; inset: 0;
-  display: flex;
+  display: none;
   padding: 10px;
   transition: padding .18s ease;
 }
+body.authenticated .workspace { display: flex; }
 
 /* контейнеры сплитов: делят место по горизонтали или вертикали */
 .split { display: flex; min-width: 0; min-height: 0; }
@@ -1340,16 +1343,17 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
 .gate {
   position: fixed; inset: 0; z-index: 10;
   display: grid; place-items: center;
-  background: rgba(15, 17, 22, .82);
+  background: var(--bg);
   transition: opacity .3s, visibility .3s;
 }
 .gate.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
 .card {
-  width: min(92vw, 360px);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 16px; padding: 32px 28px;
+  width: min(92vw, 390px);
+  background: transparent;
+  border: 0;
+  border-radius: 0; padding: 32px 30px 30px;
   text-align: center;
+  box-shadow: none;
 }
 .logo {
   width: 52px; height: 52px; border-radius: 14px;
@@ -1359,7 +1363,7 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
   margin: 0 auto 16px;
 }
 .card h1 { font-size: 22px; margin-bottom: 6px; }
-.card p { color: var(--muted); font-size: 13px; margin-bottom: 22px; }
+.card p { color: var(--muted); font-size: 13px; line-height: 1.5; margin-bottom: 22px; }
 .card input {
   width: 100%; padding: 12px 16px; border-radius: 10px;
   background: var(--surface2); border: 1px solid var(--border);
@@ -1377,7 +1381,18 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
 .card button:active { filter: brightness(.9); }
 .card button:disabled { opacity: .55; cursor: wait; }
 .auth-step { display: grid; gap: 0; }
-.auth-step.hidden { display: none; }
+.auth-step.hidden { display: none !important; }
+.auth-code { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-bottom: 14px; }
+.card .auth-code input {
+  min-width: 0; height: 54px; margin: 0; padding: 0;
+  border-radius: 12px; font-size: 22px; font-weight: 700;
+  caret-color: var(--accent);
+}
+.card .auth-code input:not(:placeholder-shown) { border-color: var(--grip); }
+.auth-progress { display: flex; justify-content: center; gap: 6px; margin: 18px 0 12px; }
+.auth-progress span { width: 24px; height: 3px; border-radius: 999px; background: var(--stroke); transition: background .18s, width .18s; }
+.auth-progress span.active { width: 38px; background: var(--accent); }
+.auth-kicker { display: block; margin-bottom: 6px; color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .card .auth-link {
   margin-top: 8px; padding: 6px; background: transparent; color: var(--muted);
   font-size: 13px; font-weight: 500;
@@ -2095,3 +2110,29 @@ html[data-density="spacious"] .panel[data-id="profile"], html[data-density="spac
 .lightbox-nav { position:fixed; z-index:7; top:50%; }
 .lightbox-nav.prev { left:16px; } .lightbox-nav.next { right:16px; }
 .lightbox .vplayer, .lightbox .vplayer-video { max-width:calc(100vw - 112px); max-height:calc(100vh - 112px); }
+/* Пока продукт рассчитан только на ПК: на мобильных клиент и WebSocket не запускаются. */
+.desktop-only-gate { display: none; }
+body.desktop-required { overflow: hidden; }
+body.desktop-required > :not(.desktop-only-gate):not(script) { display: none !important; }
+body.desktop-required .desktop-only-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #0b1521;
+  color: #f4f7fa;
+}
+.desktop-only-card {
+  width: min(100%, 430px);
+  padding: 34px 28px;
+  text-align: center;
+  border: 1px solid #26384a;
+  border-radius: 22px;
+  background: #132130;
+  box-shadow: 0 20px 60px rgb(0 0 0 / 28%);
+}
+.desktop-only-card .logo { margin: 0 auto 20px; }
+.desktop-only-card h1 { margin: 0 0 12px; font-size: 23px; line-height: 1.25; }
+.desktop-only-card p { margin: 0; color: #91a4b7; font-size: 15px; line-height: 1.55; }

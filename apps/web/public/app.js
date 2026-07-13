@@ -21,7 +21,7 @@ registry.register(profilePanel(client));
 registry.register(chatListPanel(client));
 registry.register(chatRoomPanel(client));
 
-const workspace = new Workspace($('workspace'), registry.list());
+let workspace = null;
 
 const uiPrefs = (() => { try { return JSON.parse(localStorage.getItem('segment_ui_prefs') || '{}'); } catch { return {}; } })();
 const applyUiPrefs = (prefs = uiPrefs) => {
@@ -31,8 +31,18 @@ const applyUiPrefs = (prefs = uiPrefs) => {
 };
 applyUiPrefs();
 
-const segmentApi = { client, registry, workspace, forwardDraft: null, uiPrefs, applyUiPrefs };
+const segmentApi = { client, registry, workspace: null, forwardDraft: null, uiPrefs, applyUiPrefs };
 window.Segment = segmentApi;
+
+const mountWorkspace = () => {
+  if (workspace) return;
+  const root = document.createElement('div');
+  root.className = 'workspace';
+  root.id = 'workspace';
+  document.body.appendChild(root);
+  workspace = new Workspace(root, registry.list());
+  segmentApi.workspace = workspace;
+};
 
 segmentApi.saveUiPrefs = (patch = {}) => {
   Object.assign(uiPrefs, patch); localStorage.setItem('segment_ui_prefs', JSON.stringify(uiPrefs)); applyUiPrefs();
@@ -556,8 +566,28 @@ let avatarData = '';
 let connected = false;
 const authError = $('authError');
 const authSteps = [...gate.querySelectorAll('[data-step]')];
+const codeDigits = [...gate.querySelectorAll('[data-code-digit]')];
+const readCode = () => codeDigits.map((input) => input.value).join('');
+const fillCode = (value) => {
+  const digits = String(value).replace(/\D/g, '').slice(0, codeDigits.length);
+  codeDigits.forEach((input, index) => { input.value = digits[index] || ''; });
+  codeDigits[Math.min(digits.length, codeDigits.length - 1)]?.focus();
+};
+const authCopy = {
+  email: { index: 1, kicker: 'Шаг 1 из 3', subtitle: 'Введите почту — мы отправим одноразовый код' },
+  code: { index: 2, kicker: 'Шаг 2 из 3', subtitle: 'Введите шестизначный код из письма' },
+  profile: { index: 3, kicker: 'Шаг 3 из 3', subtitle: 'Создайте профиль — данные можно изменить позже' },
+};
 const showAuthStep = (name) => {
-  for (const step of authSteps) step.classList.toggle('hidden', step.dataset.step !== name);
+  for (const step of authSteps) {
+    const inactive = step.dataset.step !== name;
+    step.hidden = inactive;
+    step.classList.toggle('hidden', inactive);
+  }
+  const copy = authCopy[name];
+  gate.querySelector('[data-auth="kicker"]').textContent = copy.kicker;
+  gate.querySelector('[data-auth="subtitle"]').textContent = copy.subtitle;
+  gate.querySelectorAll('[data-progress]').forEach((item, index) => item.classList.toggle('active', index + 1 === copy.index));
   authError.classList.add('hidden');
   gate.querySelector(`[data-step="${name}"] input:not([type="file"])`)?.focus();
 };
@@ -586,6 +616,9 @@ const enterApp = (user) => {
   webStorage.setAvatar?.(user.avatar || '');
   webStorage.setColor(user.color);
   client.self = { name: user.name, username: user.username, avatar: user.avatar || '', color: user.color };
+  document.body.classList.remove('auth-pending');
+  document.body.classList.add('authenticated');
+  mountWorkspace();
   client._emit('identity', { name: user.name, user });
   gate.classList.add('hidden');
   if (!connected) { connected = true; client.connect(); }
@@ -594,7 +627,7 @@ const enterApp = (user) => {
 $('sendCodeBtn').onclick = async () => {
   authEmail = $('emailInput').value.trim().toLowerCase();
   $('sendCodeBtn').disabled = true;
-  try { await authApi('request-code', { method: 'POST', body: JSON.stringify({ email: authEmail }) }); showAuthStep('code'); }
+  try { await authApi('request-code', { method: 'POST', body: JSON.stringify({ email: authEmail }) }); fillCode(''); showAuthStep('code'); }
   catch (error) { showAuthError(authMessage(error.code)); }
   finally { $('sendCodeBtn').disabled = false; }
 };
@@ -603,13 +636,29 @@ $('changeEmailBtn').onclick = () => showAuthStep('email');
 $('verifyCodeBtn').onclick = async () => {
   $('verifyCodeBtn').disabled = true;
   try {
-    const result = await authApi('verify-code', { method: 'POST', body: JSON.stringify({ email: authEmail, code: $('codeInput').value }) });
+    const result = await authApi('verify-code', { method: 'POST', body: JSON.stringify({ email: authEmail, code: readCode() }) });
     if (result.user) enterApp(result.user);
     else { registrationToken = result.registrationToken; showAuthStep('profile'); }
   } catch (error) { showAuthError(authMessage(error.code)); }
   finally { $('verifyCodeBtn').disabled = false; }
 };
-$('codeInput').onkeydown = (e) => { if (e.key === 'Enter') $('verifyCodeBtn').click(); };
+codeDigits.forEach((input, index) => {
+  input.oninput = () => {
+    input.value = input.value.replace(/\D/g, '').slice(-1);
+    if (input.value && index < codeDigits.length - 1) codeDigits[index + 1].focus();
+    if (readCode().length === codeDigits.length) $('verifyCodeBtn').focus();
+  };
+  input.onkeydown = (event) => {
+    if (event.key === 'Backspace' && !input.value && index > 0) codeDigits[index - 1].focus();
+    if (event.key === 'ArrowLeft' && index > 0) { event.preventDefault(); codeDigits[index - 1].focus(); }
+    if (event.key === 'ArrowRight' && index < codeDigits.length - 1) { event.preventDefault(); codeDigits[index + 1].focus(); }
+    if (event.key === 'Enter' && readCode().length === codeDigits.length) $('verifyCodeBtn').click();
+  };
+  input.onpaste = (event) => {
+    event.preventDefault();
+    fillCode(event.clipboardData?.getData('text') || '');
+  };
+});
 
 $('avatarInput').onchange = () => {
   const file = $('avatarInput').files?.[0];
@@ -642,6 +691,7 @@ $('registerBtn').onclick = async () => {
   finally { $('registerBtn').disabled = false; }
 };
 
+showAuthStep('email');
 authApi('me').then(({ user }) => enterApp(user)).catch(() => showAuthStep('email'));
 
 // Esc — отменить выбор чата (вернуться к «ничего не выбрано»).

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Segment</title>
-<link rel="stylesheet" href="./styles.css">
+<link rel="stylesheet" href="./styles.css?v=0.0.1-auth5">
 <!-- Разрешаем имена общих пакетов к тем же исходникам, что и Node (см. static.js) -->
 <script type="importmap">
 {
@@ -16,24 +16,41 @@
 }
 </script>
 </head>
-<body>
+<body class="auth-pending">
+<div class="desktop-only-gate" id="desktopOnlyGate" aria-labelledby="desktopOnlyTitle">
+  <div class="desktop-only-card">
+    <div class="logo" aria-hidden="true">S</div>
+    <h1 id="desktopOnlyTitle">Segment пока доступен только на ПК</h1>
+    <p>Мобильная версия ещё разрабатывается. Откройте Segment на компьютере или ноутбуке.</p>
+  </div>
+</div>
+
 <div class="gate" id="gate">
   <div class="card auth-card">
     <div class="logo">S</div>
     <h1>Segment</h1>
-    <p data-auth="subtitle">Вход по электронной почте</p>
+    <div class="auth-progress" aria-hidden="true"><span data-progress="1"></span><span data-progress="2"></span><span data-progress="3"></span></div>
+    <small class="auth-kicker" data-auth="kicker">Шаг 1 из 3</small>
+    <p data-auth="subtitle">Введите почту — мы отправим одноразовый код</p>
     <div class="auth-step" data-step="email">
       <input id="emailInput" type="email" placeholder="name@example.com" autocomplete="email">
       <button id="sendCodeBtn">Получить код</button>
     </div>
-    <div class="auth-step hidden" data-step="code">
-      <input id="codeInput" inputmode="numeric" placeholder="Код из письма" maxlength="6" autocomplete="one-time-code">
+    <div class="auth-step" data-step="code" hidden>
+      <div class="auth-code" id="codeInput" aria-label="Код из письма">
+        <input data-code-digit inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="one-time-code" aria-label="Цифра 1">
+        <input data-code-digit inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Цифра 2">
+        <input data-code-digit inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Цифра 3">
+        <input data-code-digit inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Цифра 4">
+        <input data-code-digit inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Цифра 5">
+        <input data-code-digit inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Цифра 6">
+      </div>
       <button id="verifyCodeBtn">Продолжить</button>
       <button class="auth-link" id="changeEmailBtn">Изменить почту</button>
     </div>
-    <div class="auth-step hidden" data-step="profile">
+    <div class="auth-step" data-step="profile" hidden>
       <label class="auth-avatar" for="avatarInput"><span id="avatarPreview">+</span><small>Добавить фото</small></label>
-      <input class="hidden" id="avatarInput" type="file" accept="image/png,image/jpeg,image/webp">
+      <input id="avatarInput" type="file" accept="image/png,image/jpeg,image/webp" hidden>
       <input id="usernameInput" placeholder="username" maxlength="24" autocomplete="username">
       <input id="displayNameInput" placeholder="Имя" maxlength="40" autocomplete="name">
       <small class="auth-hint">Username: 3–24 символа, латиница, цифры и _</small>
@@ -43,8 +60,15 @@
   </div>
 </div>
 
-<div class="workspace" id="workspace"></div>
-
-<script type="module" src="./app.js"></script>
+<script type="module">
+  const desktop = matchMedia('(min-width: 1024px) and (hover: hover) and (pointer: fine)').matches;
+  document.body.classList.toggle('desktop-required', !desktop);
+  if (desktop) {
+    document.getElementById('desktopOnlyGate')?.remove();
+    import('./app.js?v=0.0.1-auth5');
+  } else {
+    document.getElementById('gate')?.remove();
+  }
+</script>
 </body>
 </html>
