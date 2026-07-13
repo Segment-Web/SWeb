@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 COPY package*.json ./
@@ -11,6 +11,7 @@ RUN npm ci --omit=dev
 
 COPY apps ./apps
 COPY packages ./packages
+RUN mkdir -p /data && chown node:node /data
 USER node
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000
 EXPOSE 3000

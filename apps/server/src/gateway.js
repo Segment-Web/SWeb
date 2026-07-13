@@ -1,7 +1,7 @@
 // Segment WebSocket gateway: a stateless relay for public keys and E2EE ciphertext.
 
 import { WebSocket, WebSocketServer } from 'ws';
-import { MessageType, isValidRoom, clean, LIMITS } from '@segment/protocol';
+import { MessageType, isValidRoom } from '@segment/protocol';
 
 const publicBundle = (bundle) => bundle && typeof bundle === 'object' ? {
   idDh: bundle.idDh,
@@ -10,7 +10,7 @@ const publicBundle = (bundle) => bundle && typeof bundle === 'object' ? {
   spkSig: bundle.spkSig,
 } : null;
 
-export function attachGateway(server, config) {
+export function attachGateway(server, config, auth) {
   const clients = new Map();
   const ipCounts = new Map();
   const allowedOrigins = new Set(config.allowedOrigins);
@@ -30,23 +30,28 @@ export function attachGateway(server, config) {
     server,
     maxPayload: config.maxWsPayload,
     perMessageDeflate: false,
-    verifyClient: ({ origin, req }, done) => {
+    verifyClient: async ({ origin, req }, done) => {
       const originAllowed = !config.production || allowedOrigins.size === 0 || allowedOrigins.has(origin);
       const ip = clientIp(req);
       const capacityAvailable = wss.clients.size < config.maxConnections
         && (ipCounts.get(ip) || 0) < config.maxConnectionsPerIp;
-      done(originAllowed && capacityAvailable, originAllowed ? 503 : 403);
+      try {
+        const user = originAllowed && capacityAvailable ? await auth.userFromRequest(req) : null;
+        req.segmentUser = user;
+        done(Boolean(originAllowed && capacityAvailable && user), !originAllowed ? 403 : (!capacityAvailable ? 503 : 401));
+      } catch { done(false, 503); }
     },
   });
 
-  const online = () => [...clients.values()].filter((client) => client.name).map(({ name }) => ({ name }));
+  const avatarUrl = (client) => client.avatar ? `/api/auth/avatar/${client.userId}` : '';
+  const online = () => [...clients.values()].filter((client) => client.joined).map((client) => ({ name: client.name, username: client.username, avatar: avatarUrl(client) }));
   const isWritable = (ws) => ws.readyState === WebSocket.OPEN && ws.bufferedAmount < config.maxWsPayload * 2;
   const send = (ws, message) => {
     if (isWritable(ws)) ws.send(JSON.stringify(message));
   };
   const broadcast = (message, except = null) => {
     for (const [ws, client] of clients) {
-      if (ws !== except && client.name) send(ws, message);
+      if (ws !== except && client.joined) send(ws, message);
     }
   };
   const clientById = (id) => [...clients.values()].find((client) => client.id === id);
@@ -58,6 +63,8 @@ export function attachGateway(server, config) {
   const publicOf = (client) => ({
     id: client.id,
     name: client.name,
+    username: client.username,
+    avatar: avatarUrl(client),
     color: client.color,
     bundle: publicBundle(client.bundle),
   });
@@ -71,6 +78,11 @@ export function attachGateway(server, config) {
       isAlive: true,
       windowStartedAt: Date.now(),
       messagesInWindow: 0,
+      userId: request.segmentUser.id,
+      name: request.segmentUser.name,
+      username: request.segmentUser.username,
+      avatar: request.segmentUser.avatar || '',
+      color: request.segmentUser.color,
     };
     clients.set(ws, client);
     ws.on('error', () => {});
@@ -93,29 +105,31 @@ export function attachGateway(server, config) {
       if (!message || typeof message !== 'object') return;
 
       if (message.type === MessageType.Join) {
-        if (client.name) return;
-        client.name = clean(message.name, LIMITS.name) || 'anon';
-        client.color = typeof message.color === 'string' ? clean(message.color, 32) : '';
+        if (client.joined) return;
+        client.joined = true;
         client.bundle = message.bundle && typeof message.bundle === 'object' ? message.bundle : null;
-        const members = [...clients.values()].filter((other) => other.name && other !== client).map(publicOf);
+        const members = [...clients.values()].filter((other) => other.joined && other !== client).map(publicOf);
         send(ws, { type: MessageType.Roster, self: { id: client.id }, members, online: online() });
         broadcast({ type: MessageType.Peer, ...publicOf(client), online: online() }, ws);
         broadcast({ type: MessageType.System, text: `${client.name} в чате`, online: online() });
         return;
       }
 
-      if (!client.name) return;
+      if (!client.joined) return;
       if (message.type === MessageType.PreKeyRequest) {
         const target = clientById(message.to);
         const opk = target?.bundle?.opks?.length ? target.bundle.opks.shift() : null;
         send(ws, { type: MessageType.PreKey, from: message.to, opk });
         return;
       }
-      if (message.type === MessageType.KeyShare && typeof message.to === 'string') {
+      if (message.type === MessageType.KeyShare && typeof message.to === 'string' && message.to.length < 80 && message.box && typeof message.box === 'object') {
         sendTo(message.to, { type: MessageType.KeyShare, from: client.id, x3dh: message.x3dh, box: message.box });
         return;
       }
-      if (message.type === MessageType.Cipher && isValidRoom(message.room)) {
+      if (message.type === MessageType.Cipher && isValidRoom(message.room)
+        && Number.isSafeInteger(message.n) && message.n >= 0
+        && typeof message.iv === 'string' && message.iv.length < 256
+        && typeof message.ct === 'string' && message.ct.length <= config.maxWsPayload * 1.5) {
         broadcast({ type: MessageType.Cipher, from: client.id, room: message.room, n: message.n, iv: message.iv, ct: message.ct }, ws);
         return;
       }
@@ -128,7 +142,7 @@ export function attachGateway(server, config) {
       clients.delete(ws);
       const remaining = (ipCounts.get(ip) || 1) - 1;
       if (remaining > 0) ipCounts.set(ip, remaining); else ipCounts.delete(ip);
-      if (client.name) {
+      if (client.joined) {
         broadcast({ type: MessageType.PeerLeft, id: client.id, online: online() });
         broadcast({ type: MessageType.System, text: `${client.name} вышел`, online: online() });
       }
@@ -145,7 +159,7 @@ export function attachGateway(server, config) {
   heartbeat.unref();
 
   return {
-    stats: () => ({ connections: clients.size, joined: [...clients.values()].filter((client) => client.name).length }),
+    stats: () => ({ connections: clients.size, joined: [...clients.values()].filter((client) => client.joined).length }),
     stop: () => {
       clearInterval(heartbeat);
       for (const ws of wss.clients) ws.close(1001, 'Server restarting');

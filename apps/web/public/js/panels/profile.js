@@ -39,7 +39,8 @@ export function profilePanel(client) {
 
       const setProfile = (name) => {
         nameEl.textContent = name || 'гость';
-        avatarEl.textContent = name ? name.trim()[0].toUpperCase() : '·';
+        if (client.self.avatar) avatarEl.innerHTML = `<img src="${client.self.avatar}" alt="">`;
+        else avatarEl.textContent = name ? name.trim()[0].toUpperCase() : '·';
         avatarEl.style.background = client.self.color;
       };
 
@@ -70,17 +71,20 @@ export function profilePanel(client) {
 
         settings.querySelector('[data-act="close"]').onclick = () => settings.classList.add('hidden');
         const nameInput = settings.querySelector('[data-el="name"]');
-        settings.querySelector('[data-act="save"]').onclick = () => {
-          if (client.setIdentity(nameInput.value)) {
-            setProfile(client.self.name);
+        settings.querySelector('[data-act="save"]').onclick = async () => {
+          const response = await fetch('/api/auth/profile', { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: nameInput.value }) });
+          const data = await response.json().catch(() => ({}));
+          if (response.ok) {
+            client.self = { ...client.self, ...data.user };
+            client.storage.setName(data.user.name); setProfile(data.user.name);
             window.Segment?.toast?.('Имя обновлено');
-          }
+          } else window.Segment?.toast?.('Не удалось обновить имя');
         };
         for (const btn of settings.querySelectorAll('.settings-color')) {
           btn.onclick = () => {
-            client.setColor(btn.dataset.color);
-            setProfile(client.self.name);
-            renderSettings();
+            fetch('/api/auth/profile', { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ color: btn.dataset.color }) })
+              .then((response) => response.json().then((data) => ({ response, data })))
+              .then(({ response, data }) => { if (!response.ok) return; client.self = { ...client.self, ...data.user }; client.storage.setColor(data.user.color); setProfile(client.self.name); renderSettings(); });
           };
         }
         const prefs = window.Segment?.uiPrefs || {};
@@ -94,7 +98,8 @@ export function profilePanel(client) {
         const reduce = settings.querySelector('[data-el="reduce"]'); reduce.checked = !!prefs.reduceMotion;
         reduce.onchange = () => window.Segment?.saveUiPrefs?.({ reduceMotion: reduce.checked });
         settings.querySelector('[data-act="reset-layout"]').onclick = () => { window.Segment?.workspace?.resetLayout(); window.Segment?.toast?.('Раскладка сброшена'); settings.classList.add('hidden'); };
-        settings.querySelector('[data-act="logout"]').onclick = () => {
+        settings.querySelector('[data-act="logout"]').onclick = async () => {
+          await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
           client.logout();
           location.reload();
         };

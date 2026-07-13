@@ -12,9 +12,10 @@
   "scripts": {
     "start": "node apps/server/src/index.js",
     "dev": "node apps/server/src/index.js",
-    "check": "node --check apps/server/src/index.js && node --check apps/server/src/gateway.js && node packages/crypto/selftest.js"
+    "check": "node --check apps/server/src/index.js && node --check apps/server/src/gateway.js && node --check apps/server/src/auth.js && node packages/crypto/selftest.js",
+    "test:auth": "node apps/server/src/auth.selftest.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   }
 }

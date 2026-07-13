@@ -349,7 +349,7 @@ export function renderMessage(feed, m, myName, options = {}) {
     && !m.text && !m.replyTo && !forwardFrom;
   const link = m.deleted ? '' : linkCardHtml(m);
   el.innerHTML = `
-    <div class="avatar" style="background:${color}">${initials(m.name)}</div>
+    <div class="avatar" style="background:${color}">${m.avatar ? `<img src="${esc(m.avatar)}" alt="">` : initials(m.name)}</div>
     <div class="bubble${mediaOnly ? ' only-media' : ''}${circleOnly ? ' only-circle' : ''}${jumbo ? ' only-emoji' : ''}">
       <div class="meta" style="color:${color}">${esc(m.name)}</div>
       ${forward}

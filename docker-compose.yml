@@ -5,9 +5,32 @@ services:
     env_file: .env
     expose:
       - "3000"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - segment_data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: segment
+      POSTGRES_USER: segment
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U segment -d segment"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   caddy:
     image: caddy:2-alpine
+    profiles: ["caddy"]
     restart: unless-stopped
     depends_on:
       - segment
@@ -23,5 +46,7 @@ services:
       - caddy_config:/config
 
 volumes:
+  segment_data:
+  postgres_data:
   caddy_data:
   caddy_config:

@@ -52,7 +52,7 @@ export class SegmentClient {
     this._listeners = new Map();
 
     this.chats = [SAVED_CHAT, ...ROOMS];
-    this.self = { name: storage.getName(), color: storage.getColor?.() || pickColor() };
+    this.self = { name: storage.getName(), username: storage.getUsername?.() || '', avatar: storage.getAvatar?.() || '', color: storage.getColor?.() || pickColor() };
     this.currentRoom = null; // изначально ни один чат не выбран — выбирает юзер
     this.messages = Object.fromEntries(this.chats.map((c) => [c.id, []]));
     this.messages[SAVED_ID] = storage.getNotes();
@@ -390,7 +390,7 @@ export class SegmentClient {
   async sendEvent(roomId, event, local = true) {
     if (!roomId || !this.chatById(roomId) || !event) return;
     // сообщения показываем сразу (с «часиками»), реакции/правки — как раньше
-    if (local) this._applyEvent(roomId, event, { name: this.self.name, color: this.self.color });
+    if (local) this._applyEvent(roomId, event, this.self);
     if (roomId !== SAVED_ID) {
       await this._ensureCrypto();
       const box = await this.senderKey.encrypt(JSON.stringify({ segment: 'event', ...event }));
@@ -487,7 +487,7 @@ export class SegmentClient {
 
   _addPeer(m) {
     if (this.peers.has(m.id)) return;
-    this.peers.set(m.id, { name: m.name, color: m.color, bundle: m.bundle, pendingCiphers: [] });
+    this.peers.set(m.id, { name: m.name, username: m.username, avatar: m.avatar, color: m.color, bundle: m.bundle, pendingCiphers: [] });
   }
 
   // Меньший id инициирует X3DH (запрашивает одноразовый prekey), больший — ждёт.
@@ -553,7 +553,7 @@ export class SegmentClient {
     let text;
     try { text = await p.view.decrypt({ n: msg.n, iv: msg.iv, ct: msg.ct }); } catch { return; }
     const event = parseEnvelope(text);
-    this._applyEvent(msg.room, event, { name: p.name, color: p.color });
+    this._applyEvent(msg.room, event, { name: p.name, username: p.username, avatar: p.avatar, color: p.color });
     if (event.kind === 'message' && event.message?.id) {
       this.sendEvent(msg.room, { kind: 'receipt', ids: [event.message.id], state: msg.room === this.currentRoom ? 'read' : 'delivered' }, false);
     }
@@ -636,6 +636,8 @@ export class SegmentClient {
     return {
       id: mid(),
       name: this.self.name,
+      username: this.self.username,
+      avatar: this.self.avatar,
       color: this.self.color,
       text: (text || '').trim(),
       ts: Date.now(),
@@ -693,8 +695,10 @@ export class SegmentClient {
     if (!event || !this.messages[roomId]) return;
     if (event.kind === 'message') {
       const message = event.message || this._makeMessage(event.text || '');
-      if (author.name && (!message.name || message.name === this.self.name)) {
+      if (author.name) {
         message.name = author.name;
+        message.username = author.username || '';
+        message.avatar = author.avatar || '';
         message.color = author.color;
       }
       this._addMessage(roomId, message);
