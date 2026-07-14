@@ -72,6 +72,8 @@ export class SegmentClient {
     this._lastTyping = 0;
 
 
+    this.historyKeys = new Map();   // roomId -> AES key bytes (adopt-if-absent)
+    this._backfilled = new Set();   // rooms already backfilled this session
     this.kit = null;
     this.senderKey = null;
     this.myId = null;
@@ -187,6 +189,7 @@ export class SegmentClient {
       try {
         const { room } = await this._roomsApi('POST', '/api/rooms', payload);
         if (icon) room.icon = icon;
+        this._seedHistoryKey(room.id); // creator seeds the room's history key
         return this._addServerRoom(room, { open: true });
       } catch (error) {
         if (error.code === 'SLUG_TAKEN') { payload.slug = this._slugify(clean); continue; }
@@ -208,6 +211,13 @@ export class SegmentClient {
   async joinByToken(token) {
     const { room } = await this._roomsApi('POST', '/api/rooms/join', { token });
     return this._addServerRoom(room, { open: true });
+  }
+
+  // Owner-only, one-way: switch a room to full history for all members.
+  async enableFullHistory(roomId) {
+    if (!this.chatById(roomId)) return null;
+    const { room } = await this._roomsApi('POST', '/api/rooms/history/visibility', { roomId });
+    return room;
   }
 
   // Resolve a deep link (/@user, /c/slug) to its target entity.
@@ -353,6 +363,7 @@ export class SegmentClient {
     this.currentRoom = id;
     this.unread[id] = 0;
     this.unreadDot.delete(id);
+    this._backfillRoom(id); // fetch + decrypt any stored history we are missing
     this._emit('room', { chat: this.chatById(id), messages: this.messages[id] });
     this._emit('chats');
     this._emit('status', this._statusText());
@@ -387,6 +398,7 @@ export class SegmentClient {
     await this._ensureCrypto();
     const box = await this.senderKey.encrypt(JSON.stringify({ segment: 'event', kind: 'message', message })); // { n, iv, ct }
     this._send({ type: MessageType.Cipher, room: roomId, n: box.n, iv: box.iv, ct: box.ct });
+    this._storeToHistory(roomId, { kind: 'message', message });
     this._markSent(roomId, message);
   }
 
@@ -451,6 +463,7 @@ export class SegmentClient {
       await this._ensureCrypto();
       const box = await this.senderKey.encrypt(JSON.stringify({ segment: 'event', ...wire }));
       this._send({ type: MessageType.Cipher, room: roomId, n: box.n, iv: box.iv, ct: box.ct });
+      if (event.kind === 'message') this._storeToHistory(roomId, wire);
     }
     if (event.kind === 'message' && event.message) this._markSent(roomId, event.message);
   }
@@ -620,6 +633,68 @@ export class SegmentClient {
     }
   }
 
+  // ---- Encrypted server-side history ----
+  // Each room has a symmetric history key held only by members. Events are
+  // additionally encrypted to it and stored server-side as opaque envelopes, so
+  // a returning device (or the backfill on open) can reconstruct the log. The
+  // server never sees the key. Distribution is adopt-if-absent: the room creator
+  // seeds the key and it propagates to members over the pairwise key channel;
+  // nobody overwrites a key they already hold, so all members converge on one.
+
+  _historyKey(roomId) { return this.historyKeys.get(roomId) || null; }
+
+  _seedHistoryKey(roomId) {
+    if (!this.historyKeys.has(roomId)) this.historyKeys.set(roomId, randomFileKey());
+    return this.historyKeys.get(roomId);
+  }
+
+  _adoptHistoryKeys(map) {
+    if (!map || typeof map !== 'object') return;
+    for (const [roomId, key] of Object.entries(map)) {
+      if (!this.historyKeys.has(roomId) && Array.isArray(key) && key.length === 32) this.historyKeys.set(roomId, key);
+    }
+  }
+
+  historyKeysExport() {
+    return Object.fromEntries(this.historyKeys);
+  }
+
+  // Persist one event to server history, encrypted to the room's history key.
+  async _storeToHistory(roomId, event) {
+    if (roomId === SAVED_ID) return;
+    const key = this._historyKey(roomId);
+    if (!key || !event) return;
+    const clean = event.message ? { ...event, message: { ...event.message } } : event;
+    if (clean.message) delete clean.message.status;
+    try {
+      const { iv, ct } = await sealBytes(key, new TextEncoder().encode(JSON.stringify(clean)));
+      let bin = ''; for (const b of ct) bin += String.fromCharCode(b);
+      await this._roomsApi('POST', '/api/rooms/history', { roomId, iv, ct: btoa(bin) });
+    } catch { /* offline or no access: live relay still delivered the message */ }
+  }
+
+  // Fetch and decrypt stored history for a room, applying events we don't have.
+  async _backfillRoom(roomId) {
+    if (roomId === SAVED_ID || this._backfilled.has(roomId)) return;
+    const key = this._historyKey(roomId);
+    if (!key) return;
+    this._backfilled.add(roomId);
+    try {
+      const { envelopes } = await this._roomsApi('GET', `/api/rooms/history?roomId=${encodeURIComponent(roomId)}`);
+      for (const env of envelopes || []) {
+        const bin = atob(env.ct);
+        const ct = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) ct[i] = bin.charCodeAt(i);
+        let event;
+        try { event = JSON.parse(new TextDecoder().decode(await openBytes(key, env.iv, ct))); } catch { continue; }
+        const id = event?.message?.id;
+        if (event?.kind === 'message' && id && !this._messageById(roomId, id)) {
+          this._applyEvent(roomId, event, {});
+        }
+      }
+    } catch { this._backfilled.delete(roomId); }
+  }
+
   async _ensureCrypto() {
     if (this.kit) return;
     this.kit = await createPreKeyBundle();
@@ -651,7 +726,7 @@ export class SegmentClient {
     const { ratchet, x3dh } = await x3dhInitiate(this.kit.secret, bundle);
     p.ratchet = ratchet;
     const box = await ratchet.encrypt(JSON.stringify(this.senderKey.export()));
-    this._send({ type: MessageType.KeyShare, to: from, x3dh, box });
+    this._send({ type: MessageType.KeyShare, to: from, x3dh, box, hist: this.historyKeysExport() });
   }
 
   async _onKeyShare(from, x3dh, box) {
@@ -664,7 +739,7 @@ export class SegmentClient {
       p.view = SenderKeyView.from(JSON.parse(await p.ratchet.decrypt(box)));
       await this._drain(p);
       const reply = await p.ratchet.encrypt(JSON.stringify(this.senderKey.export()));
-      this._send({ type: MessageType.KeyShare, to: from, box: reply });
+      this._send({ type: MessageType.KeyShare, to: from, box: reply, hist: this.historyKeysExport() });
     } else if (p.ratchet) {
 
       p.view = SenderKeyView.from(JSON.parse(await p.ratchet.decrypt(box)));
@@ -686,7 +761,7 @@ export class SegmentClient {
     this.senderKey = SenderKey.create();
     const state = JSON.stringify(this.senderKey.export());
     for (const [pid, p] of this.peers) {
-      if (p.ratchet) this._send({ type: MessageType.KeyShare, to: pid, box: await p.ratchet.encrypt(state) });
+      if (p.ratchet) this._send({ type: MessageType.KeyShare, to: pid, box: await p.ratchet.encrypt(state), hist: this.historyKeysExport() });
     }
   }
 
@@ -741,6 +816,7 @@ export class SegmentClient {
         break;
 
       case MessageType.KeyShare:
+        this._adoptHistoryKeys(msg.hist);
         await this._onKeyShare(msg.from, msg.x3dh, msg.box);
         break;
 
