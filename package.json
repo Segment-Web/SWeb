@@ -13,7 +13,7 @@
     "start": "node apps/server/src/index.js",
     "dev": "node apps/server/src/index.js",
     "dev:local": "node scripts/dev.js",
-    "check": "node --check apps/server/src/index.js && node --check apps/server/src/gateway.js && node --check apps/server/src/auth.js && node --check apps/server/src/rooms.js && node --check apps/server/src/files.js && node --check packages/core/index.js && node packages/crypto/selftest.js && node apps/server/src/rooms.selftest.js && node apps/server/src/files.selftest.js && node packages/core/files.selftest.js && node packages/core/history.selftest.js",
+    "check": "node scripts/check-syntax.js && node packages/crypto/selftest.js && node apps/server/src/rooms.selftest.js && node apps/server/src/files.selftest.js && node packages/core/files.selftest.js && node packages/core/history.selftest.js",
     "test:auth": "node apps/server/src/auth.selftest.js",
     "test:rooms": "node apps/server/src/rooms.selftest.js",
     "test:files": "node apps/server/src/files.selftest.js",

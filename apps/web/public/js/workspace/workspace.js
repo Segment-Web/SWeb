@@ -647,7 +647,7 @@ export class Workspace {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
-      try { this.root.releasePointerCapture(e.pointerId); } catch {
+      try { this.root.releasePointerCapture(e.pointerId); } catch { /* already released */ }
       if (!dragging) { if (fromDock) this.restorePanel(id); return; }
 
       if (this._trashState(ev.clientX, ev.clientY, removable, trashRect)) {
@@ -683,7 +683,7 @@ export class Workspace {
 
 
 
-    try { this.root.setPointerCapture(e.pointerId); } catch {
+    try { this.root.setPointerCapture(e.pointerId); } catch { /* unsupported — fine */ }
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);
