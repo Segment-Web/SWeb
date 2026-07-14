@@ -13,6 +13,8 @@ COPY apps ./apps
 COPY packages ./packages
 RUN mkdir -p /data && chown node:node /data
 USER node
-ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000
+# The blob store must live inside the persistent /data volume, otherwise every
+# rebuild would discard uploaded files.
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 FILE_DIR=/data/files
 EXPOSE 3000
 CMD ["node", "apps/server/src/index.js"]
