@@ -50,8 +50,9 @@ const call = async (method, url, { user = null, body } = {}) => {
 };
 
 // Legacy public rooms are seeded and reachable by everyone.
-ok(rooms.exists('general'), 'seeded room general exists');
-ok(rooms.canAccess(other.id, 'general'), 'public room accessible to any user');
+ok(rooms.exists('flood'), 'seeded public room exists');
+ok(rooms.canAccess(other.id, 'flood'), 'public room accessible to any user');
+ok(!rooms.exists('general'), 'the retired general room is gone');
 
 // Unauthenticated is rejected.
 const anon = await call('GET', '/api/rooms/mine');

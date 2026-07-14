@@ -52,12 +52,6 @@ export class SegmentClient {
     this.messages[SAVED_ID] = storage.getNotes();
     this.unread = {};
     this.lastText = {};
-    const savedGeneral = storage.getGeneral?.() || [];
-    if (savedGeneral.length) {
-      this.messages.general = savedGeneral;
-      const last = savedGeneral[savedGeneral.length - 1];
-      if (last) this.lastText.general = last.system ? last.text : preview(last);
-    }
     this.pinned = new Set(storage.getPinned ? storage.getPinned() : []);
     this.muted = new Set(storage.getMuted?.() || []);
     this.archived = new Set(storage.getArchived?.() || []);
@@ -322,7 +316,6 @@ export class SegmentClient {
     this.unreadDot.delete(id);
     delete this.firstUnread[id];
     if (id === SAVED_ID) this.storage.setNotes([]);
-    if (id === 'general') this.storage.setGeneral?.([]);
     if (id === this.currentRoom) this._emit('room', { chat: this.chatById(id), messages: this.messages[id] });
     this._emit('chats');
     return true;
@@ -428,12 +421,6 @@ export class SegmentClient {
     this.self.color = color;
     this.storage.setColor?.(color);
     this._emit('identity', { name: this.self.name });
-  }
-
-
-  saveDialog(roomId = 'general') {
-    if (roomId !== 'general') return;
-    this.storage.setGeneral?.(this.messages.general || []);
   }
 
 
@@ -880,7 +867,7 @@ export class SegmentClient {
 
       case MessageType.System:
         this.online = msg.online;
-        this._addMessage(!this.currentRoom || this.currentRoom === SAVED_ID ? 'general' : this.currentRoom, { system: true, text: msg.text });
+        if (this.currentRoom && this.currentRoom !== SAVED_ID) this._addMessage(this.currentRoom, { system: true, text: msg.text });
         this._emit('status', this._statusText());
         break;
 
@@ -1017,14 +1004,19 @@ export class SegmentClient {
       return;
     }
     if (event.kind === 'delete' && message) {
-      message.deleted = true;
-      message.text = 'Сообщение удалено';
-      message.reactions = {};
-      if (Array.isArray(this.messages[roomId].pinnedIds)) {
-        this.messages[roomId].pinnedIds = this.messages[roomId].pinnedIds.filter((id) => id !== message.id);
-        this.messages[roomId].pinnedId = this.messages[roomId].pinnedIds.at(-1) || null;
+      // Traceless: the message is removed outright, not tombstoned. The stored
+      // envelope is erased separately (see _eraseFromHistory), so a backfill
+      // cannot bring it back either.
+      const list = this.messages[roomId];
+      const at = list.indexOf(message);
+      if (at >= 0) list.splice(at, 1);
+      if (Array.isArray(list.pinnedIds)) {
+        list.pinnedIds = list.pinnedIds.filter((id) => id !== message.id);
+        list.pinnedId = list.pinnedIds.at(-1) || null;
       }
-      this.lastText[roomId] = preview(message);
+      const last = list[list.length - 1];
+      if (last) this.lastText[roomId] = last.system ? last.text : preview(last);
+      else delete this.lastText[roomId];
       this._refreshRoom(roomId);
       return;
     }

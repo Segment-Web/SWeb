@@ -25,6 +25,14 @@ globalThis.fetch = async (url, options = {}) => {
     store.set(body.roomId, list);
     return { ok: true, status: 201, json: async () => ({ seq: list.length }) };
   }
+  if (u.includes('/api/rooms/history') && options.method === 'DELETE') {
+    const body = JSON.parse(options.body);
+    const list = store.get(body.roomId) || [];
+    const at = list.findIndex((e) => e.seq === body.seq);
+    if (at < 0) return { ok: false, status: 404, json: async () => ({ error: 'NOT_FOUND' }) };
+    list.splice(at, 1); // erased for good, exactly as the server does
+    return { ok: true, status: 200, json: async () => ({ seq: body.seq }) };
+  }
   if (u.includes('/api/rooms/history')) {
     const roomId = new URL(u, 'http://x').searchParams.get('roomId');
     return { ok: true, status: 200, json: async () => ({ envelopes: store.get(roomId) || [] }) };
@@ -72,6 +80,36 @@ ok(!C._messageById(roomId, 'm1'), 'client without the key cannot read history');
 // Backfill is idempotent: running again adds no duplicate.
 await B._backfillRoom(roomId);
 ok(B.messages[roomId].filter((m) => m.id === 'm1').length === 1, 'backfill does not duplicate messages');
+
+// --- Traceless delete: gone from the view AND unrecoverable from history ---
+store.clear();
+A._backfilled.clear(); B._backfilled.clear();
+A.messages[roomId] = []; B.messages[roomId] = [];
+A.self.name = 'A';
+
+// A sends a message; it lands in history with a seq.
+await A.sendEvent(roomId, { kind: 'message', message: { id: 'm2', name: 'A', text: 'oops' } });
+await new Promise((r) => setTimeout(r, 20)); // history is written fire-and-forget
+const sent = A._messageById(roomId, 'm2');
+ok(sent?.seq === 1, 'sent message remembers where it lives in history');
+ok(store.get(roomId).length === 1, 'message is stored in history');
+
+// Deleting removes it outright — no "deleted" tombstone left behind.
+ok(A.deleteMessage(roomId, 'm2') === true, 'author may delete their message');
+ok(!A._messageById(roomId, 'm2'), 'deleted message is removed from the view, not tombstoned');
+await new Promise((r) => setTimeout(r, 10)); // let the erase request settle
+ok(store.get(roomId).length === 0, 'stored envelope is erased, so it cannot be restored');
+
+// A peer receiving the delete event drops it entirely too.
+B._applyEvent(roomId, { kind: 'message', message: { id: 'm3', name: 'A', text: 'bye' } }, { name: 'A' });
+ok(B._messageById(roomId, 'm3'), 'peer has the message');
+B._applyEvent(roomId, { kind: 'delete', id: 'm3' }, { name: 'A' });
+ok(!B._messageById(roomId, 'm3'), 'peer removes the message on delete, leaving no trace');
+
+// A backfill cannot bring the erased message back.
+A._backfilled.clear();
+await A._backfillRoom(roomId);
+ok(!A._messageById(roomId, 'm2'), 'backfill cannot resurrect an erased message');
 
 console.log(`\n${pass} ok, ${fail} fail`);
 if (fail) process.exit(1);

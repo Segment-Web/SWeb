@@ -429,7 +429,8 @@ document.addEventListener('keydown', (e) => {
 
 
 segmentApi.demo = async () => {
-  const room = 'general';
+  const room = client.currentRoom;
+  if (!room || room === 'saved') { segmentApi.toast?.('Открой обычный чат для демо'); return 'no-room'; }
   const paint = (w, h, draw) => {
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
@@ -544,13 +545,9 @@ segmentApi.demo = async () => {
   if (myVoice) push(me, { text: '', attachments: [myVoice] });
 
   client.openRoom(room);
-  client.saveDialog('general');
   segmentApi.toast?.('Демо-диалог создан и сохранён');
   return 'ok';
 };
-
-
-client.on('append', ({ roomId }) => { if (roomId === 'general') client.saveDialog('general'); });
 
 
 client.on('chats', () => {

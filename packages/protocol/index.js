@@ -14,11 +14,15 @@ export const ChatType = {
   Channel: 'channel',
 };
 
+// Seeded public rooms. 'general' was removed: it had no owner, so no history key
+// was ever seeded for it and nothing it carried could be stored or erased.
 export const ROOMS = [
-  { id: 'general', name: 'Общий',    icon: '💬', type: ChatType.Chat },
   { id: 'flood',   name: 'Флудилка', icon: '🌊', type: ChatType.Chat },
   { id: 'memes',   name: 'Мемы',     icon: '🐸', type: ChatType.Channel },
 ];
+
+/** Rooms retired from ROOMS: purged server-side and from local storage. */
+export const RETIRED_ROOM_IDS = ['general'];
 
 export const ROOM_IDS = ROOMS.map((r) => r.id);
 

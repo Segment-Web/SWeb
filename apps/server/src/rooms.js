@@ -11,7 +11,7 @@
 // receive a room's ciphertext, not how it is encrypted.
 
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
-import { ChatType, ROOMS, SLUG_RE } from '@segment/protocol';
+import { ChatType, ROOMS, RETIRED_ROOM_IDS, SLUG_RE } from '@segment/protocol';
 
 const ROOM_TYPES = new Set([ChatType.Chat, ChatType.Channel, ChatType.DM]);
 const hashToken = (value) => createHash('sha256').update(value).digest('hex');
@@ -84,6 +84,15 @@ export async function createRooms(config, auth) {
       PRIMARY KEY (room_id, seq)
     );
   `);
+
+  // Drop retired rooms. ON DELETE CASCADE takes their history, members and
+  // invites with them, so the room is gone for everyone, not just for one client.
+  if (RETIRED_ROOM_IDS.length) {
+    const removed = await pool.query('DELETE FROM rooms WHERE id = ANY($1) RETURNING id', [RETIRED_ROOM_IDS]);
+    for (const row of removed.rows) {
+      console.log(JSON.stringify({ level: 'info', event: 'rooms.retired', room: row.id }));
+    }
+  }
 
   // Seed the legacy hardcoded rooms as public entities so existing clients keep
   // working. Public rooms need no membership row; everyone may access them.
