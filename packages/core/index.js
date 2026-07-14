@@ -162,8 +162,15 @@ export class SegmentClient {
   // Merge a server room record into local chat state (idempotent by id).
   _addServerRoom(room, { open = false } = {}) {
     if (!room?.id) return null;
-    if (!this.chatById(room.id)) {
-      this.chats.push({ id: room.id, name: room.title, icon: room.icon || '💬', type: room.type, slug: room.slug || '' });
+    const existing = this.chatById(room.id);
+    if (existing) {
+      existing.ownerId = room.ownerId || existing.ownerId;
+      existing.historyVisibility = room.historyVisibility || existing.historyVisibility;
+    } else {
+      this.chats.push({
+        id: room.id, name: room.title, icon: room.icon || '💬', type: room.type, slug: room.slug || '',
+        ownerId: room.ownerId || '', historyVisibility: room.historyVisibility || 'joined',
+      });
       this.messages[room.id] ||= [];
       this._emit('chats');
     }

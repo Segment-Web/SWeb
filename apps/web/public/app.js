@@ -615,7 +615,7 @@ const enterApp = (user) => {
   webStorage.setUsername?.(user.username);
   webStorage.setAvatar?.(user.avatar || '');
   webStorage.setColor(user.color);
-  client.self = { name: user.name, username: user.username, avatar: user.avatar || '', color: user.color };
+  client.self = { id: user.id, name: user.name, username: user.username, avatar: user.avatar || '', color: user.color };
   document.body.classList.remove('auth-pending');
   document.body.classList.add('authenticated');
   mountWorkspace();

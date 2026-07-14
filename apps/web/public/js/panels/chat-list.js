@@ -175,6 +175,8 @@ export function chatListPanel(client) {
           { act: 'mute', label: muted ? 'Включить уведомления' : 'Выключить уведомления', icon: muted ? ICONS.bell : ICONS.bellOff },
           chat.type !== 'saved' && { act: 'archive', label: client.isArchived(id) ? 'Вернуть из архива' : 'В архив', icon: ICONS.archive },
           editable && { act: 'rename', label: 'Переименовать', icon: ICONS.rename },
+          (chat.ownerId && chat.ownerId === client.self.id && (chat.type === 'chat' || chat.type === 'channel') && chat.historyVisibility !== 'full')
+            && { act: 'fullhistory', label: 'Показать всю историю', icon: ICONS.info },
           { sep: true },
           { act: 'clear', label: 'Очистить историю', icon: ICONS.broom, disabled: !hasHistory, danger: true },
           editable && { act: 'remove', label: removeLabel, icon: ICONS.logout, danger: true },
@@ -223,6 +225,17 @@ export function chatListPanel(client) {
               if (confirm(`Очистить историю чата «${chat.name}»?`)) client.clearHistory(id);
             }
             else if (act === 'rename') { openRename(id); return; }
+            else if (act === 'fullhistory') {
+              if (confirm('Включить показ всей истории новым участникам? Отменить это будет нельзя.')) {
+                client.enableFullHistory(id)
+                  .then((room) => {
+                    const c = client.chatById(id);
+                    if (c && room) c.historyVisibility = room.historyVisibility;
+                    window.Segment?.toast?.('Новые участники теперь видят всю историю');
+                  })
+                  .catch(() => window.Segment?.toast?.('Не удалось изменить видимость'));
+              }
+            }
             else if (act === 'remove') client.removeChat(id);
             hideAll();
           };
