@@ -26,12 +26,18 @@ function safeJoin(base, urlPath) {
   return join(base, rel);
 }
 
+// The app ships unversioned ES modules, so a stale cached module can pin a
+// browser to a broken build (a proxy that rewrites `no-cache` into a long
+// max-age once left the client dead for hours). `no-store` keeps HTML and
+// scripts uncacheable; other assets may still be revalidated normally.
+const noStore = (path) => ['.html', '.js'].includes(extname(path));
+
 async function sendFile(res, path) {
   try {
     const file = await readFile(path);
     res.writeHead(200, {
       'Content-Type': MIME[extname(path)] || 'application/octet-stream',
-      'Cache-Control': 'no-cache',
+      'Cache-Control': noStore(path) ? 'no-store, must-revalidate' : 'no-cache',
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
       'Referrer-Policy': 'same-origin',
