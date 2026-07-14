@@ -17,8 +17,10 @@ const files = await createFiles(config, auth);
 let pass = 0, fail = 0;
 const ok = (cond, label) => { if (cond) { pass++; console.log('ok   ' + label); } else { fail++; console.log('FAIL ' + label); } };
 
-const call = async (method, url, { user = null, body } = {}) => {
-  const chunks = body === undefined ? [] : [Buffer.isBuffer(body) ? body : Buffer.from(body)];
+const call = async (method, url, { user = null, body, chunks: rawChunks } = {}) => {
+  const chunks = rawChunks
+    ? rawChunks.map((c) => (Buffer.isBuffer(c) ? c : Buffer.from(c)))
+    : (body === undefined ? [] : [Buffer.isBuffer(body) ? body : Buffer.from(body)]);
   const req = Readable.from(chunks);
   req.method = method; req.url = url; req.headers = { origin: '' }; req._user = user;
   let status = 0; const parts = []; let jsonMode = true;
@@ -60,9 +62,16 @@ ok(missing.status === 404, 'unknown id -> 404');
 const bad = await call('GET', '/api/files/not-a-hash', { user });
 ok(bad.status === 404, 'malformed id -> 404');
 
-// Oversized upload -> 413.
-const big = await call('POST', '/api/files', { user, body: Buffer.alloc(2048, 1) });
-ok(big.status === 413, 'oversized upload -> 413');
+// Multi-chunk streamed upload under the cap succeeds and round-trips exactly.
+const parts = ['chunk-1-', 'chunk-2-', 'chunk-3'];
+const streamed = await call('POST', '/api/files', { user, chunks: parts });
+ok(streamed.status === 201 && streamed.data.size === parts.join('').length, 'multi-chunk upload -> 201 correct size');
+const streamedBack = await call('GET', `/api/files/${streamed.data.id}`, { user });
+ok(streamedBack.bytes.toString() === parts.join(''), 'streamed upload round-trips exactly');
+
+// Oversized upload -> 413 (even when it only exceeds the cap partway through).
+const big = await call('POST', '/api/files', { user, chunks: [Buffer.alloc(600, 1), Buffer.alloc(600, 2)] });
+ok(big.status === 413, 'oversized streamed upload -> 413');
 
 // Empty upload -> 400.
 const empty = await call('POST', '/api/files', { user, body: Buffer.alloc(0) });

@@ -105,6 +105,26 @@ export async function open(keyRaw, box) {
   return dec.decode(pt);
 }
 
+// Binary AES-256-GCM for file bodies. Unlike seal/open these take and return
+// raw bytes so attachments are not base64-inflated before encryption. Used by
+// the client to encrypt a file, upload the opaque ciphertext, and decrypt it
+// back on the receiving device.
+export function randomFileKey() {
+  return b2a(globalThis.crypto.getRandomValues(new Uint8Array(32)));
+}
+
+export async function sealBytes(keyRaw, bytes) {
+  const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+  const key = await aesKey(a2b(keyRaw));
+  const ct = new Uint8Array(await subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes));
+  return { iv: b2a(iv), ct };
+}
+
+export async function openBytes(keyRaw, iv, ct) {
+  const key = await aesKey(a2b(keyRaw));
+  return new Uint8Array(await subtle.decrypt({ name: 'AES-GCM', iv: a2b(iv) }, key, ct));
+}
+
 
 
 // secrecy.

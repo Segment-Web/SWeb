@@ -4,6 +4,7 @@
 import { ROOMS, MessageType, PROTOCOL_VERSION, ChatType } from '@segment/protocol';
 import {
   createPreKeyBundle, x3dhInitiate, x3dhRespond, SenderKey, SenderKeyView,
+  randomFileKey, sealBytes, openBytes,
 } from '@segment/crypto';
 
 const COLORS = ['#7c5cff', '#00d4ff', '#ff5c8a', '#3ddc84', '#ffb347', '#ff6b6b', '#4facfe', '#a166ff'];
@@ -446,8 +447,9 @@ export class SegmentClient {
 
     if (local) this._applyEvent(roomId, event, this.self);
     if (roomId !== SAVED_ID) {
+      const wire = await this._toWire(event);
       await this._ensureCrypto();
-      const box = await this.senderKey.encrypt(JSON.stringify({ segment: 'event', ...event }));
+      const box = await this.senderKey.encrypt(JSON.stringify({ segment: 'event', ...wire }));
       this._send({ type: MessageType.Cipher, room: roomId, n: box.n, iv: box.iv, ct: box.ct });
     }
     if (event.kind === 'message' && event.message) this._markSent(roomId, event.message);
@@ -525,6 +527,98 @@ export class SegmentClient {
   }
 
 
+
+  // ---- File attachments ----
+  // Encrypt each attachment client-side, upload the opaque ciphertext to the
+  // blob store over HTTP, and carry only a small { fileId, key, iv } reference
+  // through the E2EE message. Large files therefore never traverse the
+  // WebSocket relay and are not capped by its payload limit.
+
+  _dataUrlToBytes(dataUrl) {
+    const comma = dataUrl.indexOf(',');
+    const meta = dataUrl.slice(5, comma); // strip leading "data:"
+    const mime = meta.split(';')[0] || 'application/octet-stream';
+    const body = dataUrl.slice(comma + 1);
+    if (meta.includes('base64')) {
+      const bin = atob(body);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return { mime, bytes };
+    }
+    return { mime, bytes: new TextEncoder().encode(decodeURIComponent(body)) };
+  }
+
+  _bytesToUrl(bytes, mime) {
+    const type = mime || 'application/octet-stream';
+    if (typeof URL !== 'undefined' && URL.createObjectURL) {
+      return URL.createObjectURL(new Blob([bytes], { type }));
+    }
+    let bin = '';
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return `data:${type};base64,${btoa(bin)}`;
+  }
+
+  async _uploadBlob(bytes) {
+    const response = await fetch('/api/files', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/octet-stream' }, body: bytes,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.id) throw new Error(data.error || 'UPLOAD_FAILED');
+    return data.id;
+  }
+
+  async _downloadBlob(fileId) {
+    const response = await fetch(`/api/files/${fileId}`, { credentials: 'same-origin' });
+    if (!response.ok) throw new Error('DOWNLOAD_FAILED');
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
+  async _sealDataUrl(dataUrl) {
+    const { mime, bytes } = this._dataUrlToBytes(dataUrl);
+    const key = randomFileKey();
+    const { iv, ct } = await sealBytes(key, bytes);
+    const fileId = await this._uploadBlob(ct);
+    return { fileId, key, iv, mime, size: bytes.length };
+  }
+
+  async _fetchToUrl(ref) {
+    const ct = await this._downloadBlob(ref.fileId);
+    const bytes = await openBytes(ref.key, ref.iv, ct);
+    return this._bytesToUrl(bytes, ref.mime);
+  }
+
+  async _attachmentToWire(att) {
+    const wire = { ...att };
+    if (att.data) { wire.blob = await this._sealDataUrl(att.data); delete wire.data; }
+    if (att.poster) { wire.posterBlob = await this._sealDataUrl(att.poster); delete wire.poster; }
+    return wire;
+  }
+
+  async _hydrateAttachment(att) {
+    if (att.blob && !att.data) att.data = await this._fetchToUrl(att.blob);
+    if (att.posterBlob && !att.poster) att.poster = await this._fetchToUrl(att.posterBlob);
+  }
+
+  async _hydrateMessage(roomId, message) {
+    const atts = message?.attachments;
+    if (!Array.isArray(atts) || !atts.some((a) => a.blob || a.posterBlob)) return;
+    try {
+      await Promise.all(atts.map((a) => this._hydrateAttachment(a)));
+      this._refreshRoom(roomId);
+    } catch { /* leave placeholder; opening the media can retry */ }
+  }
+
+  // Wire clone of an outgoing event: attachments uploaded, inline data stripped.
+  async _toWire(event) {
+    if (event.kind !== 'message' || !event.message?.attachments?.length) return event;
+    try {
+      const attachments = await Promise.all(event.message.attachments.map((a) => this._attachmentToWire(a)));
+      return { ...event, message: { ...event.message, attachments } };
+    } catch {
+      return event; // blob store unavailable: fall back to inline data
+    }
+  }
 
   async _ensureCrypto() {
     if (this.kit) return;
@@ -756,6 +850,7 @@ export class SegmentClient {
         message.color = author.color;
       }
       this._addMessage(roomId, message);
+      this._hydrateMessage(roomId, message);
       return;
     }
 

@@ -4,22 +4,13 @@
 // later be swapped for Cloudflare R2 without a protocol change
 // (see docs/persistence-and-rooms.md).
 
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile, readdir, stat, unlink } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { createWriteStream } from 'node:fs';
+import { mkdir, readFile, readdir, stat, unlink, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
-const readBody = (req, limit) => new Promise((resolve, reject) => {
-  const chunks = []; let size = 0;
-  req.on('data', (chunk) => {
-    size += chunk.length;
-    if (size > limit) { reject(Object.assign(new Error('FILE_TOO_LARGE'), { status: 413 })); req.destroy(); return; }
-    chunks.push(chunk);
-  });
-  req.on('end', () => resolve(Buffer.concat(chunks)));
-  req.on('error', reject);
-});
 const json = (res, status, value) => {
   const body = JSON.stringify(value);
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-store' });
@@ -34,14 +25,43 @@ export async function createFiles(config, auth) {
   await mkdir(dir, { recursive: true });
   const pathFor = (id) => join(dir, id);
 
-  // Content-addressed by SHA-256 of the (already encrypted) bytes: identical
-  // uploads dedupe to one file on disk.
-  const put = async (bytes) => {
-    const id = createHash('sha256').update(bytes).digest('hex');
-    const target = pathFor(id);
-    try { await stat(target); } catch { await writeFile(target, bytes); }
-    return { id, size: bytes.length };
-  };
+  // Stream the request body straight to a temp file while hashing it, so large
+  // uploads never sit fully in memory. The final name is the SHA-256 of the
+  // (already encrypted) bytes, giving content-addressed dedup: identical
+  // uploads collapse to one file. The size cap is enforced mid-stream.
+  const put = (req) => new Promise((resolve, reject) => {
+    const hash = createHash('sha256');
+    const tmp = join(dir, `.tmp-${randomUUID()}`);
+    const out = createWriteStream(tmp);
+    let size = 0, failed = false;
+    const fail = (error) => {
+      if (failed) return; failed = true;
+      req.destroy(); out.destroy();
+      unlink(tmp).catch(() => {});
+      reject(error);
+    };
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > maxBytes) { fail(Object.assign(new Error('FILE_TOO_LARGE'), { status: 413 })); return; }
+      hash.update(chunk);
+      if (!out.write(chunk)) { req.pause(); out.once('drain', () => req.resume()); }
+    });
+    req.on('error', fail);
+    out.on('error', fail);
+    req.on('end', () => {
+      if (failed) return;
+      out.end(async () => {
+        try {
+          if (size === 0) { await unlink(tmp).catch(() => {}); return reject(Object.assign(new Error('EMPTY_BODY'), { status: 400 })); }
+          const id = hash.digest('hex');
+          const target = pathFor(id);
+          try { await stat(target); await unlink(tmp).catch(() => {}); } // already stored: drop the temp
+          catch { await rename(tmp, target); }
+          resolve({ id, size });
+        } catch (error) { fail(error); }
+      });
+    });
+  });
 
   const sweep = async () => {
     if (!ttlMs) return;
@@ -73,9 +93,7 @@ export async function createFiles(config, auth) {
       if (!user) return json(res, 401, { error: 'UNAUTHORIZED' });
 
       if (req.method === 'POST' && url.pathname === '/api/files') {
-        const bytes = await readBody(req, maxBytes);
-        if (!bytes.length) return json(res, 400, { error: 'EMPTY_BODY' });
-        return json(res, 201, await put(bytes));
+        return json(res, 201, await put(req));
       }
       if (req.method === 'GET' && url.pathname.startsWith('/api/files/')) {
         const id = url.pathname.slice('/api/files/'.length);

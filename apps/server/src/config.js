@@ -27,7 +27,7 @@ export function loadConfig() {
     authMaxAvatarBytes: int('AUTH_MAX_AVATAR_BYTES', 512 * 1024, 32 * 1024, 2 * 1024 * 1024),
     roomInviteTtlMs: int('ROOM_INVITE_TTL_MS', 7 * 24 * 60 * 60 * 1000, 60 * 1000, 90 * 24 * 60 * 60 * 1000),
     fileDir: process.env.FILE_DIR || './data/files',
-    fileMaxBytes: int('FILE_MAX_BYTES', 25 * 1024 * 1024, 64 * 1024, 200 * 1024 * 1024),
+    fileMaxBytes: int('FILE_MAX_BYTES', 100 * 1024 * 1024, 64 * 1024, 500 * 1024 * 1024),
     fileTtlMs: int('FILE_TTL_MS', 90 * 24 * 60 * 60 * 1000, 0, 365 * 24 * 60 * 60 * 1000),
     smtp: {
       host: process.env.SMTP_HOST || '',

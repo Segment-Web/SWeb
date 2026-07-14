@@ -4,6 +4,7 @@
 import {
   generateIdentity, Session, SenderKey, SenderKeyView,
   createPreKeyBundle, x3dhInitiate, x3dhRespond,
+  randomFileKey, sealBytes, openBytes,
 } from './index.js';
 
 let ok = 0;
@@ -111,6 +112,18 @@ const respNoPq = await x3dhRespond(bobHybrid.secret, initH2.x3dh, null);
 let pqMattered = false;
 try { await respNoPq.decrypt(h2); } catch { pqMattered = true; }
 check('hybrid: decryption fails without the PQ secret', pqMattered);
+
+// Binary file encryption (attachments).
+const fileKey = randomFileKey();
+check('file key is 32 bytes', fileKey.length === 32);
+const fileBytes = new Uint8Array(200000);
+for (let i = 0; i < fileBytes.length; i++) fileBytes[i] = (i * 7) & 0xff;
+const sealed = await sealBytes(fileKey, fileBytes);
+const opened = await openBytes(fileKey, sealed.iv, sealed.ct);
+check('file bytes round-trip through sealBytes/openBytes', opened.length === fileBytes.length && opened.every((b, i) => b === fileBytes[i]));
+let fileTamper = false;
+try { await openBytes(randomFileKey(), sealed.iv, sealed.ct); } catch { fileTamper = true; }
+check('file decryption fails with the wrong key', fileTamper);
 
 console.log(`\n${ok} ok, ${fail} fail`);
 process.exit(fail ? 1 : 0);
