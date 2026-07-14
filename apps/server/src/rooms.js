@@ -232,6 +232,30 @@ export async function createRooms(config, auth) {
     return rows.map((r) => ({ seq: Number(r.seq), senderId: r.sender_id, iv: r.iv, ct: r.ct }));
   };
 
+  // Removing a room means two different things, so say which one happened:
+  //  - the owner DELETES it: the row goes, and ON DELETE CASCADE takes the
+  //    history, members and invites with it. Gone for everyone, unrecoverable.
+  //  - anyone else LEAVES it: only their membership row goes. They lose access
+  //    (the relay stops delivering to them, backfill refuses them), while the
+  //    other members keep the room and their history.
+  // Public rooms have no membership to drop and no owner, so they cannot be
+  // removed this way; the client just hides them locally.
+  const removeRoom = async (user, roomId) => {
+    if (!canAccess(user.id, roomId)) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
+    const room = await one('SELECT owner_id, is_public FROM rooms WHERE id=$1', [roomId]);
+    if (!room) throw Object.assign(new Error('NOT_FOUND'), { status: 404 });
+    if (room.is_public) throw Object.assign(new Error('PUBLIC_ROOM'), { status: 400 });
+
+    if (room.owner_id === user.id) {
+      await pool.query('DELETE FROM rooms WHERE id=$1', [roomId]);
+      existing.delete(roomId); publicRooms.delete(roomId); members.delete(roomId);
+      return { deleted: true };
+    }
+    await pool.query('DELETE FROM room_members WHERE room_id=$1 AND user_id=$2', [roomId, user.id]);
+    members.get(roomId)?.delete(user.id);
+    return { deleted: false, left: true };
+  };
+
   // Erase one stored envelope for good, so a deleted message cannot come back on
   // anyone's next backfill. Allowed for its author, or for the room owner.
   const deleteEnvelope = async (user, roomId, seq) => {
@@ -335,6 +359,11 @@ export async function createRooms(config, auth) {
         if (!exists(roomId)) return json(res, 404, { error: 'NOT_FOUND' });
         const envelopes = await fetchHistory(user, roomId, url.searchParams.get('after'), url.searchParams.get('limit'));
         return json(res, 200, { envelopes });
+      }
+      if (req.method === 'DELETE' && url.pathname === '/api/rooms') {
+        const body = await readJson(req);
+        if (!exists(String(body.roomId))) return json(res, 404, { error: 'NOT_FOUND' });
+        return json(res, 200, await removeRoom(user, String(body.roomId)));
       }
       if (req.method === 'DELETE' && url.pathname === '/api/rooms/history') {
         const body = await readJson(req);

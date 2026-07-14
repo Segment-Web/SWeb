@@ -174,6 +174,31 @@ ok((await call('GET', `/api/rooms/history?roomId=${clearRoom}`, { user: owner })
 await call('POST', '/api/rooms/history', { user: owner, body: { roomId: clearRoom, ...env(3) } });
 ok((await call('GET', `/api/rooms/history?roomId=${clearRoom}`, { user: other })).data.envelopes.length === 1, 'messages sent after a clear still arrive');
 
+// --- Removing a room: owner deletes for everyone, a member only leaves ---
+const gone = (await call('POST', '/api/rooms', { user: owner, body: { type: 'chat', title: 'Gone' } })).data.room.id;
+const inv5 = await call('POST', '/api/rooms/invite', { user: owner, body: { roomId: gone } });
+await call('POST', '/api/rooms/join', { user: other, body: { token: inv5.data.token } });
+await call('POST', '/api/rooms/history', { user: owner, body: { roomId: gone, ...env(1) } });
+
+// A member leaving only drops their own membership; the room lives on.
+const left = await call('DELETE', '/api/rooms', { user: other, body: { roomId: gone } });
+ok(left.status === 200 && left.data.left === true && left.data.deleted === false, 'a member leaves without deleting the room');
+ok(!rooms.canAccess(other.id, gone), 'the member who left loses access');
+ok(rooms.canAccess(owner.id, gone), 'the room still exists for the owner');
+ok((await call('GET', `/api/rooms/history?roomId=${gone}`, { user: other })).status === 403, 'the member who left cannot read its history');
+
+// The owner deleting it takes the room AND its history away for everyone.
+const deleted = await call('DELETE', '/api/rooms', { user: owner, body: { roomId: gone } });
+ok(deleted.status === 200 && deleted.data.deleted === true, 'the owner deletes the room');
+ok(!rooms.exists(gone), 'the room is gone');
+const leftover = await pool.query('SELECT COUNT(*)::int AS n FROM room_history WHERE room_id=$1', [gone]);
+ok(leftover.rows[0].n === 0, 'its history is erased with it — nothing to come back to');
+ok(!(await call('GET', '/api/rooms/mine', { user: owner })).data.rooms.some((r) => r.id === gone),
+  'a user signing in later does not get the deleted room back');
+
+// Public rooms cannot be deleted this way.
+ok((await call('DELETE', '/api/rooms', { user: owner, body: { roomId: 'flood' } })).status === 400, 'public rooms cannot be deleted');
+
 console.log(`\n${pass} ok, ${fail} fail`);
 await pool.end();
 if (fail) process.exit(1);

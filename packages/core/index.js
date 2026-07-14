@@ -342,6 +342,10 @@ export class SegmentClient {
   removeChat(id) {
     const chat = this.chatById(id);
     if (!chat || chat.type === ChatType.Saved) return false;
+    // Tell the server too, otherwise the room and its history come straight back
+    // on the next sign-in: the owner's delete erases it for everyone, anyone
+    // else's just drops their own membership.
+    this._removeServerRoom(id);
     this.chats = this.chats.filter((c) => c.id !== id);
     delete this.messages[id];
     delete this.unread[id];
@@ -704,6 +708,17 @@ export class SegmentClient {
     if (!message?.seq || roomId === SAVED_ID) return;
     try { await this._roomsApi('DELETE', '/api/rooms/history', { roomId, seq: message.seq }); }
     catch { /* not ours to erase, or already gone */ }
+  }
+
+  // Delete the room (owner) or leave it (member). Public rooms have neither, so
+  // they are simply hidden locally.
+  async _removeServerRoom(roomId) {
+    const chat = this.chatById(roomId);
+    if (!chat || chat.local || !chat.ownerId) return;
+    this.historyKeys.delete(roomId);
+    this._backfilled.delete(roomId);
+    try { await this._roomsApi('DELETE', '/api/rooms', { roomId }); }
+    catch { /* already gone, or not ours to remove */ }
   }
 
   // Clear stored history for this account only; other members keep their copies.
