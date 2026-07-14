@@ -14,6 +14,12 @@ globalThis.fetch = async (url, options = {}) => {
   const u = String(url);
   if (u.includes('/api/rooms/history') && options.method === 'POST') {
     const body = JSON.parse(options.body);
+    // Mirror the real server's contract: envelopes are base64 STRINGS. Rejecting
+    // anything else here keeps the client from drifting back to raw byte arrays,
+    // which the server would 400 and the client would swallow silently.
+    if (typeof body.iv !== 'string' || typeof body.ct !== 'string') {
+      return { ok: false, status: 400, json: async () => ({ error: 'ENVELOPE_INVALID' }) };
+    }
     const list = store.get(body.roomId) || [];
     list.push({ seq: list.length + 1, iv: body.iv, ct: body.ct });
     store.set(body.roomId, list);

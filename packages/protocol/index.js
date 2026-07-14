@@ -72,6 +72,23 @@ export function isValidRoom(id) {
   return ROOM_IDS.includes(id);
 }
 
+/** Longest AES-GCM nonce we accept on the wire (the crypto layer emits 12 bytes). */
+export const MAX_IV_BYTES = 32;
+
+/**
+ * Validate a ciphertext frame. The crypto layer emits `iv` and `ct` as byte
+ * ARRAYS (see `seal`), so the relay must accept arrays — an earlier version
+ * demanded strings here and silently dropped every encrypted message while
+ * typing indicators still went through. Keep this the single source of truth
+ * for the wire shape so the relay and the crypto layer cannot drift apart.
+ */
+export function isCipherFrame(message, maxCtBytes) {
+  return Boolean(message)
+    && Number.isSafeInteger(message.n) && message.n >= 0
+    && Array.isArray(message.iv) && message.iv.length > 0 && message.iv.length <= MAX_IV_BYTES
+    && Array.isArray(message.ct) && message.ct.length > 0 && message.ct.length <= maxCtBytes;
+}
+
 /** Convert arbitrary input to a string and enforce a character limit. */
 export function clean(value, max) {
   return String(value ?? '').slice(0, max);

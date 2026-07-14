@@ -1,7 +1,7 @@
 // Segment WebSocket gateway: a stateless relay for public keys and E2EE ciphertext.
 
 import { WebSocket, WebSocketServer } from 'ws';
-import { MessageType } from '@segment/protocol';
+import { MessageType, isCipherFrame } from '@segment/protocol';
 
 const publicBundle = (bundle) => bundle && typeof bundle === 'object' ? {
   idDh: bundle.idDh,
@@ -130,14 +130,12 @@ export function attachGateway(server, config, auth, rooms) {
         return;
       }
       if (message.type === MessageType.KeyShare && typeof message.to === 'string' && message.to.length < 80 && message.box && typeof message.box === 'object') {
-        sendTo(message.to, { type: MessageType.KeyShare, from: client.id, x3dh: message.x3dh, box: message.box });
+        sendTo(message.to, { type: MessageType.KeyShare, from: client.id, x3dh: message.x3dh, box: message.box, hist: message.hist });
         return;
       }
       if (message.type === MessageType.Cipher && rooms.exists(message.room)
         && rooms.canAccess(client.userId, message.room)
-        && Number.isSafeInteger(message.n) && message.n >= 0
-        && typeof message.iv === 'string' && message.iv.length < 256
-        && typeof message.ct === 'string' && message.ct.length <= config.maxWsPayload * 1.5) {
+        && isCipherFrame(message, config.maxWsPayload)) {
         broadcastRoom(message.room, { type: MessageType.Cipher, from: client.id, room: message.room, n: message.n, iv: message.iv, ct: message.ct }, ws);
         return;
       }

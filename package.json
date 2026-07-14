@@ -13,11 +13,13 @@
     "start": "node apps/server/src/index.js",
     "dev": "node apps/server/src/index.js",
     "dev:local": "node scripts/dev.js",
-    "check": "node scripts/check-syntax.js && node packages/crypto/selftest.js && node apps/server/src/rooms.selftest.js && node apps/server/src/files.selftest.js && node packages/core/files.selftest.js && node packages/core/history.selftest.js",
+    "check": "node scripts/check-syntax.js && node packages/crypto/selftest.js && node packages/protocol/selftest.js && node apps/server/src/relay.selftest.js && node apps/server/src/rooms.selftest.js && node apps/server/src/files.selftest.js && node packages/core/files.selftest.js && node packages/core/history.selftest.js",
     "test:auth": "node apps/server/src/auth.selftest.js",
     "test:rooms": "node apps/server/src/rooms.selftest.js",
     "test:files": "node apps/server/src/files.selftest.js",
-    "test:core": "node packages/core/files.selftest.js && node packages/core/history.selftest.js"
+    "test:core": "node packages/core/files.selftest.js && node packages/core/history.selftest.js",
+    "test:protocol": "node packages/protocol/selftest.js",
+    "test:relay": "node apps/server/src/relay.selftest.js"
   },
   "engines": {
     "node": ">=22.13"

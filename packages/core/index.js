@@ -648,6 +648,21 @@ export class SegmentClient {
   // seeds the key and it propagates to members over the pairwise key channel;
   // nobody overwrites a key they already hold, so all members converge on one.
 
+  // History envelopes travel as JSON over REST, so bytes are base64 there. (The
+  // WebSocket relay instead carries the raw byte arrays the crypto layer emits.)
+  _b64(bytes) {
+    let bin = '';
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin);
+  }
+
+  _unb64(text) {
+    const bin = atob(text);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+
   _historyKey(roomId) { return this.historyKeys.get(roomId) || null; }
 
   _seedHistoryKey(roomId) {
@@ -675,8 +690,7 @@ export class SegmentClient {
     if (clean.message) delete clean.message.status;
     try {
       const { iv, ct } = await sealBytes(key, new TextEncoder().encode(JSON.stringify(clean)));
-      let bin = ''; for (const b of ct) bin += String.fromCharCode(b);
-      await this._roomsApi('POST', '/api/rooms/history', { roomId, iv, ct: btoa(bin) });
+      await this._roomsApi('POST', '/api/rooms/history', { roomId, iv: this._b64(iv), ct: this._b64(ct) });
     } catch { /* offline or no access: live relay still delivered the message */ }
   }
 
@@ -689,11 +703,11 @@ export class SegmentClient {
     try {
       const { envelopes } = await this._roomsApi('GET', `/api/rooms/history?roomId=${encodeURIComponent(roomId)}`);
       for (const env of envelopes || []) {
-        const bin = atob(env.ct);
-        const ct = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) ct[i] = bin.charCodeAt(i);
         let event;
-        try { event = JSON.parse(new TextDecoder().decode(await openBytes(key, env.iv, ct))); } catch { continue; }
+        try {
+          const plain = await openBytes(key, this._unb64(env.iv), this._unb64(env.ct));
+          event = JSON.parse(new TextDecoder().decode(plain));
+        } catch { continue; }
         const id = event?.message?.id;
         if (event?.kind === 'message' && id && !this._messageById(roomId, id)) {
           this._applyEvent(roomId, event, {});
