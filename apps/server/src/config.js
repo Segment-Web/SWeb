@@ -30,6 +30,9 @@ export function loadConfig() {
     fileMaxBytes: int('FILE_MAX_BYTES', 100 * 1024 * 1024, 64 * 1024, 500 * 1024 * 1024),
     fileTtlMs: int('FILE_TTL_MS', 90 * 24 * 60 * 60 * 1000, 0, 365 * 24 * 60 * 60 * 1000),
     smtp: {
+      // Development only: deliver login codes to a fake transport and return the
+      // code in the response, so local testing needs no real mail provider.
+      test: !production && process.env.SMTP_TEST === '1',
       host: process.env.SMTP_HOST || '',
       port: int('SMTP_PORT', 587, 1, 65535),
       secure: process.env.SMTP_SECURE === '1',

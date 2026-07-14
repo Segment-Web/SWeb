@@ -12,6 +12,7 @@
   "scripts": {
     "start": "node apps/server/src/index.js",
     "dev": "node apps/server/src/index.js",
+    "dev:local": "node scripts/dev.js",
     "check": "node --check apps/server/src/index.js && node --check apps/server/src/gateway.js && node --check apps/server/src/auth.js && node --check apps/server/src/rooms.js && node --check apps/server/src/files.js && node --check packages/core/index.js && node packages/crypto/selftest.js && node apps/server/src/rooms.selftest.js && node apps/server/src/files.selftest.js && node packages/core/files.selftest.js && node packages/core/history.selftest.js",
     "test:auth": "node apps/server/src/auth.selftest.js",
     "test:rooms": "node apps/server/src/rooms.selftest.js",
@@ -22,6 +23,10 @@
     "node": ">=22.13"
   },
   "devDependencies": {
+    "embedded-postgres": "^18.4.0-beta.17",
     "pg-mem": "^3.0.14"
+  },
+  "allowScripts": {
+    "@embedded-postgres/windows-x64@18.4.0-beta.17": true
   }
 }

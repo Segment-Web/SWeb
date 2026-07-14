@@ -175,6 +175,7 @@ export function chatListPanel(client) {
           { act: 'mute', label: muted ? 'Включить уведомления' : 'Выключить уведомления', icon: muted ? ICONS.bell : ICONS.bellOff },
           chat.type !== 'saved' && { act: 'archive', label: client.isArchived(id) ? 'Вернуть из архива' : 'В архив', icon: ICONS.archive },
           editable && { act: 'rename', label: 'Переименовать', icon: ICONS.rename },
+          chat.ownerId && { act: 'invite', label: 'Пригласить (скопировать ссылку)', icon: ICONS.open },
           (chat.ownerId && chat.ownerId === client.self.id && (chat.type === 'chat' || chat.type === 'channel') && chat.historyVisibility !== 'full')
             && { act: 'fullhistory', label: 'Показать всю историю', icon: ICONS.info },
           { sep: true },
@@ -225,6 +226,15 @@ export function chatListPanel(client) {
               if (confirm(`Очистить историю чата «${chat.name}»?`)) client.clearHistory(id);
             }
             else if (act === 'rename') { openRename(id); return; }
+            else if (act === 'invite') {
+              client.createInvite(id)
+                .then(async (link) => {
+                  if (!link) return;
+                  try { await navigator.clipboard.writeText(link); window.Segment?.toast?.('Ссылка-приглашение скопирована'); }
+                  catch { prompt('Ссылка-приглашение:', link); }
+                })
+                .catch(() => window.Segment?.toast?.('Не удалось создать приглашение'));
+            }
             else if (act === 'fullhistory') {
               if (confirm('Включить показ всей истории новым участникам? Отменить это будет нельзя.')) {
                 client.enableFullHistory(id)

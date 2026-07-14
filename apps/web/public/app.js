@@ -650,7 +650,12 @@ const bootRooms = async () => {
 $('sendCodeBtn').onclick = async () => {
   authEmail = $('emailInput').value.trim().toLowerCase();
   $('sendCodeBtn').disabled = true;
-  try { await authApi('request-code', { method: 'POST', body: JSON.stringify({ email: authEmail }) }); fillCode(''); showAuthStep('code'); }
+  try {
+    const result = await authApi('request-code', { method: 'POST', body: JSON.stringify({ email: authEmail }) });
+    showAuthStep('code');
+    // Local development (SMTP_TEST): the server hands back the code, so fill it in.
+    fillCode(result.devCode || '');
+  }
   catch (error) { showAuthError(authMessage(error.code)); }
   finally { $('sendCodeBtn').disabled = false; }
 };
