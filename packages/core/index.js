@@ -315,6 +315,7 @@ export class SegmentClient {
 
   clearHistory(id) {
     if (!this.messages[id]) return false;
+    this._clearServerHistory(id); // otherwise the next backfill brings it all back
     this.messages[id] = [];
     delete this.lastText[id];
     this.unread[id] = 0;
@@ -510,6 +511,7 @@ export class SegmentClient {
     const message = this._messageById(roomId, messageId);
     if (!message || message.deleted || (message.name && message.name !== this.self.name)) return false;
     this.sendEvent(roomId, { kind: 'delete', id: messageId });
+    this._eraseFromHistory(roomId, message); // otherwise a backfill resurrects it
     return true;
   }
 
@@ -594,12 +596,15 @@ export class SegmentClient {
     return new Uint8Array(await response.arrayBuffer());
   }
 
+  // Encrypt + upload one data URL. Returns the reference to put on the wire and a
+  // playable url for local display: media plays far more reliably (and cheaply)
+  // from a blob: url than from a multi-megabyte data: url.
   async _sealDataUrl(dataUrl) {
     const { mime, bytes } = this._dataUrlToBytes(dataUrl);
     const key = randomFileKey();
     const { iv, ct } = await sealBytes(key, bytes);
     const fileId = await this._uploadBlob(ct);
-    return { fileId, key, iv, mime, size: bytes.length };
+    return { ref: { fileId, key, iv, mime, size: bytes.length }, url: this._bytesToUrl(bytes, mime) };
   }
 
   async _fetchToUrl(ref) {
@@ -608,10 +613,20 @@ export class SegmentClient {
     return this._bytesToUrl(bytes, ref.mime);
   }
 
+  // Build the wire form (reference only) and, on the way, swap the sender's own
+  // inline data url for the same blob: url the receiver will use.
   async _attachmentToWire(att) {
     const wire = { ...att };
-    if (att.data) { wire.blob = await this._sealDataUrl(att.data); delete wire.data; }
-    if (att.poster) { wire.posterBlob = await this._sealDataUrl(att.poster); delete wire.poster; }
+    if (att.data) {
+      const { ref, url } = await this._sealDataUrl(att.data);
+      wire.blob = ref; delete wire.data;
+      att.blob = ref; att.data = url;
+    }
+    if (att.poster) {
+      const { ref, url } = await this._sealDataUrl(att.poster);
+      wire.posterBlob = ref; delete wire.poster;
+      att.posterBlob = ref; att.poster = url;
+    }
     return wire;
   }
 
@@ -690,8 +705,25 @@ export class SegmentClient {
     if (clean.message) delete clean.message.status;
     try {
       const { iv, ct } = await sealBytes(key, new TextEncoder().encode(JSON.stringify(clean)));
-      await this._roomsApi('POST', '/api/rooms/history', { roomId, iv: this._b64(iv), ct: this._b64(ct) });
+      const { seq } = await this._roomsApi('POST', '/api/rooms/history', { roomId, iv: this._b64(iv), ct: this._b64(ct) });
+      // Remember where this message lives so deleting it can erase it for good.
+      const local = event.message?.id ? this._messageById(roomId, event.message.id) : null;
+      if (local && seq) local.seq = seq;
     } catch { /* offline or no access: live relay still delivered the message */ }
+  }
+
+  // Erase a stored envelope so a deleted message cannot return on a backfill.
+  async _eraseFromHistory(roomId, message) {
+    if (!message?.seq || roomId === SAVED_ID) return;
+    try { await this._roomsApi('DELETE', '/api/rooms/history', { roomId, seq: message.seq }); }
+    catch { /* not ours to erase, or already gone */ }
+  }
+
+  // Clear stored history for this account only; other members keep their copies.
+  async _clearServerHistory(roomId) {
+    if (roomId === SAVED_ID) return;
+    try { await this._roomsApi('POST', '/api/rooms/history/clear', { roomId }); }
+    catch { /* offline: local history is cleared regardless */ }
   }
 
   // Fetch and decrypt stored history for a room, applying events we don't have.
@@ -710,6 +742,7 @@ export class SegmentClient {
         } catch { continue; }
         const id = event?.message?.id;
         if (event?.kind === 'message' && id && !this._messageById(roomId, id)) {
+          event.message.seq = env.seq; // so it can be erased for good later
           this._applyEvent(roomId, event, {});
         }
       }

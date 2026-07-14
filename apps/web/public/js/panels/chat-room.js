@@ -193,7 +193,13 @@ export function chatRoomPanel(client) {
       const pinnedManager = q('pinnedManager');
       const selectionQuote = q('selectionQuote');
 
-      const MAX_ATTACH = 12 * 1024 * 1024;
+      // Attachments no longer travel over the WebSocket relay: they are encrypted
+      // and uploaded to the blob store over HTTP, so the old 12MB relay-era cap
+      // was silently rejecting ordinary files and videos. The ceiling is now the
+      // blob store's; it is kept below the server's 100MB so the browser never
+      // has to hold an enormous base64 data url in memory.
+      const MAX_ATTACH = 50 * 1024 * 1024;
+      const MAX_ATTACH_LABEL = '50 МБ';
       let typingTimer;
       let currentChat = client.chatById(client.currentRoom);
       let replyTo = null;
@@ -422,7 +428,7 @@ export function chatRoomPanel(client) {
         renderAttachDraft();
         for (const file of list) {
           if (file.size > MAX_ATTACH) {
-            window.Segment?.toast?.(`«${file.name}» больше 12 МБ — пропущено`);
+            window.Segment?.toast?.(`«${file.name}» больше ${MAX_ATTACH_LABEL} — пропущено`);
             processing--;
             continue;
           }

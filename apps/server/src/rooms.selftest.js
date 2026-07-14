@@ -137,6 +137,42 @@ ok(thirdViewFull.data.envelopes.length === 3, 'after full is enabled, joined mem
 const enableAgain = await call('POST', '/api/rooms/history/visibility', { user: owner, body: { roomId } });
 ok(enableAgain.status === 200 && enableAgain.data.room.historyVisibility === 'full', 'enabling full again is idempotent');
 
+// --- Traceless delete: an erased envelope must never come back on a backfill ---
+const delRoom = (await call('POST', '/api/rooms', { user: owner, body: { type: 'chat', title: 'Del' } })).data.room.id;
+const inv3 = await call('POST', '/api/rooms/invite', { user: owner, body: { roomId: delRoom } });
+await call('POST', '/api/rooms/join', { user: other, body: { token: inv3.data.token } });
+const e1 = await call('POST', '/api/rooms/history', { user: owner, body: { roomId: delRoom, ...env(1) } });
+await call('POST', '/api/rooms/history', { user: owner, body: { roomId: delRoom, ...env(2) } });
+
+// A member cannot erase someone else's message.
+const foreign = await call('DELETE', '/api/rooms/history', { user: other, body: { roomId: delRoom, seq: e1.data.seq } });
+ok(foreign.status === 404, 'cannot erase another user\'s envelope');
+
+// The author can, and it is gone from everyone's backfill.
+const erased = await call('DELETE', '/api/rooms/history', { user: owner, body: { roomId: delRoom, seq: e1.data.seq } });
+ok(erased.status === 200, 'author erases their own envelope');
+const afterErase = await call('GET', `/api/rooms/history?roomId=${delRoom}`, { user: owner });
+ok(!afterErase.data.envelopes.some((e) => e.seq === e1.data.seq), 'erased envelope is gone for good');
+ok(afterErase.data.envelopes.length === 1, 'the other message survives');
+
+// --- Clear history: per-member, non-destructive for everyone else ---
+const clearRoom = (await call('POST', '/api/rooms', { user: owner, body: { type: 'chat', title: 'Clr' } })).data.room.id;
+const inv4 = await call('POST', '/api/rooms/invite', { user: owner, body: { roomId: clearRoom } });
+await call('POST', '/api/rooms/join', { user: other, body: { token: inv4.data.token } });
+await call('POST', '/api/rooms/history/visibility', { user: owner, body: { roomId: clearRoom } }); // full, so `other` sees all
+await call('POST', '/api/rooms/history', { user: owner, body: { roomId: clearRoom, ...env(1) } });
+await call('POST', '/api/rooms/history', { user: owner, body: { roomId: clearRoom, ...env(2) } });
+
+ok((await call('GET', `/api/rooms/history?roomId=${clearRoom}`, { user: other })).data.envelopes.length === 2, 'member sees history before clearing');
+const cleared = await call('POST', '/api/rooms/history/clear', { user: other, body: { roomId: clearRoom } });
+ok(cleared.status === 200 && cleared.data.clearedSeq === 2, 'clear history records the current end of the log');
+ok((await call('GET', `/api/rooms/history?roomId=${clearRoom}`, { user: other })).data.envelopes.length === 0, 'history is empty for the member who cleared it');
+ok((await call('GET', `/api/rooms/history?roomId=${clearRoom}`, { user: owner })).data.envelopes.length === 2, 'other members keep their history');
+
+// New messages after a clear are still delivered to the member who cleared.
+await call('POST', '/api/rooms/history', { user: owner, body: { roomId: clearRoom, ...env(3) } });
+ok((await call('GET', `/api/rooms/history?roomId=${clearRoom}`, { user: other })).data.envelopes.length === 1, 'messages sent after a clear still arrive');
+
 console.log(`\n${pass} ok, ${fail} fail`);
 await pool.end();
 if (fail) process.exit(1);

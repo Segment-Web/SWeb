@@ -46,9 +46,10 @@ const dataUrl = `data:image/png;base64,${Buffer.from(original).toString('base64'
 const bytesOfUrl = (url) => client._dataUrlToBytes(url).bytes;
 const sameBytes = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
 
-// Seal + upload produces a reference; the stored blob is ciphertext, not plaintext.
-const ref = await client._sealDataUrl(dataUrl);
+// Seal + upload produces a reference plus a locally playable url.
+const { ref, url: localUrl } = await client._sealDataUrl(dataUrl);
 ok(/^[0-9a-f]{64}$/.test(ref.fileId) && ref.key.length === 32 && ref.size === original.length, 'seal returns a valid blob reference');
+ok(sameBytes(bytesOfUrl(localUrl), original), 'seal also returns a playable url for the sender');
 ok(lastStoredCiphertext && !sameBytes(lastStoredCiphertext, original), 'uploaded bytes are encrypted, not the plaintext');
 
 // Fetch + decrypt reproduces the exact original bytes.
@@ -60,7 +61,9 @@ const event = { kind: 'message', message: { id: 'm1', attachments: [{ kind: 'pho
 const wire = await client._toWire(event);
 const wireAtt = wire.message.attachments[0];
 ok(!wireAtt.data && wireAtt.blob?.fileId, 'wire attachment carries a blob ref, not inline data');
-ok(event.message.attachments[0].data === dataUrl, 'local message keeps its inline data (sender still sees it)');
+const localAtt = event.message.attachments[0];
+ok(localAtt.data && sameBytes(bytesOfUrl(localAtt.data), original), 'sender keeps a playable copy of the same bytes');
+ok(localAtt.blob?.fileId === wireAtt.blob.fileId, 'sender also keeps the blob ref (so the message can be erased later)');
 
 // A received attachment (ref only) hydrates back to displayable bytes.
 const received = { kind: 'photo', name: 'p.png', blob: wireAtt.blob };

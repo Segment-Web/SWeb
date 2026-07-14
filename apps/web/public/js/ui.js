@@ -89,7 +89,9 @@ const PAUSE_SM = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentC
 function voiceHtml(v) {
   const peaks = (v.waveform && v.waveform.length ? v.waveform : Array.from({ length: 28 }, () => 0.3));
   const bars = peaks.map((p) => `<span style="height:${Math.max(8, Math.round(p * 100))}%"></span>`).join('');
-  return `<div class="msg-voice" data-voice>
+  // Carry the recorded duration: MediaRecorder webm reports `Infinity` for
+  // audio.duration, which left the progress bars and the timer frozen.
+  return `<div class="msg-voice" data-voice data-duration="${Number(v.duration) || 0}">
     <button class="voice-play">${PLAY_SM}</button>
     <div class="voice-wave">${bars}</div>
     <span class="voice-time">${fmtDuration(v.duration)}</span>
@@ -212,7 +214,10 @@ function wireVoice(box) {
   const btn = box.querySelector('.voice-play');
   const bars = [...box.querySelectorAll('.voice-wave span')];
   const timeEl = box.querySelector('.voice-time');
-  const total = () => (Number.isFinite(audio.duration) ? audio.duration : 0);
+  const recorded = Number(box.dataset.duration) || 0;
+  // Prefer the duration captured at record time; MediaRecorder webm streams
+  // report Infinity here, which would freeze the waveform and the timer.
+  const total = () => (Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : recorded);
   const paint = () => {
     const p = total() ? audio.currentTime / total() : 0;
     const on = Math.round(p * bars.length);

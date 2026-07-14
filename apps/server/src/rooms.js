@@ -59,6 +59,9 @@ export async function createRooms(config, auth) {
       PRIMARY KEY (room_id, user_id)
     );
     ALTER TABLE room_members ADD COLUMN IF NOT EXISTS join_seq BIGINT NOT NULL DEFAULT 0;
+    -- Per-member "clear history": hides everything up to this sequence from THIS
+    -- member's backfill without destroying anyone else's copy.
+    ALTER TABLE room_members ADD COLUMN IF NOT EXISTS cleared_seq BIGINT NOT NULL DEFAULT 0;
     CREATE INDEX IF NOT EXISTS room_members_user_idx ON room_members(user_id);
     CREATE TABLE IF NOT EXISTS room_invites (
       token_hash TEXT PRIMARY KEY,
@@ -206,8 +209,11 @@ export async function createRooms(config, auth) {
   const fetchHistory = async (user, roomId, after, limit) => {
     if (!canAccess(user.id, roomId)) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
     const room = await one('SELECT history_visibility FROM rooms WHERE id=$1', [roomId]);
-    const member = await one('SELECT join_seq FROM room_members WHERE room_id=$1 AND user_id=$2', [roomId, user.id]);
-    const floor = room?.history_visibility === 'full' ? 0 : Number(member?.join_seq || 0);
+    const member = await one('SELECT join_seq, cleared_seq FROM room_members WHERE room_id=$1 AND user_id=$2', [roomId, user.id]);
+    // 'full' exposes everything from the start, but a member's own "clear history"
+    // always still applies to them.
+    const joinFloor = room?.history_visibility === 'full' ? 0 : Number(member?.join_seq || 0);
+    const floor = Math.max(joinFloor, Number(member?.cleared_seq || 0));
     const lower = Math.max(Number(after) || 0, floor);
     const cap = Math.min(Math.max(Number(limit) || 100, 1), 200);
     const rows = (await pool.query(
@@ -215,6 +221,36 @@ export async function createRooms(config, auth) {
       [roomId, lower, cap],
     )).rows;
     return rows.map((r) => ({ seq: Number(r.seq), senderId: r.sender_id, iv: r.iv, ct: r.ct }));
+  };
+
+  // Erase one stored envelope for good, so a deleted message cannot come back on
+  // anyone's next backfill. Allowed for its author, or for the room owner.
+  const deleteEnvelope = async (user, roomId, seq) => {
+    if (!canAccess(user.id, roomId)) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
+    if (!Number.isSafeInteger(Number(seq)) || Number(seq) <= 0) throw Object.assign(new Error('SEQ_INVALID'), { status: 400 });
+    const room = await one('SELECT owner_id FROM rooms WHERE id=$1', [roomId]);
+    const row = await one(
+      `DELETE FROM room_history WHERE room_id=$1 AND seq=$2 AND (sender_id=$3 OR $4::boolean)
+       RETURNING seq`,
+      [roomId, Number(seq), user.id, room?.owner_id === user.id],
+    );
+    if (!row) throw Object.assign(new Error('NOT_FOUND'), { status: 404 });
+    return { seq: Number(row.seq) };
+  };
+
+  // Clear history for the caller only: their future backfills start after the
+  // current end of the log. Other members keep their copies.
+  const clearHistoryFor = async (user, roomId) => {
+    if (!canAccess(user.id, roomId)) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
+    const top = await one('SELECT COALESCE(MAX(seq),0) AS seq FROM room_history WHERE room_id=$1', [roomId]);
+    const clearedSeq = Number(top?.seq || 0);
+    await pool.query(
+      `INSERT INTO room_members(room_id,user_id,join_seq,cleared_seq) VALUES($1,$2,$3,$3)
+       ON CONFLICT (room_id,user_id) DO UPDATE SET cleared_seq=EXCLUDED.cleared_seq`,
+      [roomId, user.id, clearedSeq],
+    );
+    indexMember(roomId, user.id);
+    return { clearedSeq };
   };
 
   // Turn on full-history visibility. One-way: only the owner, only joined -> full.
@@ -290,6 +326,16 @@ export async function createRooms(config, auth) {
         if (!exists(roomId)) return json(res, 404, { error: 'NOT_FOUND' });
         const envelopes = await fetchHistory(user, roomId, url.searchParams.get('after'), url.searchParams.get('limit'));
         return json(res, 200, { envelopes });
+      }
+      if (req.method === 'DELETE' && url.pathname === '/api/rooms/history') {
+        const body = await readJson(req);
+        if (!exists(String(body.roomId))) return json(res, 404, { error: 'NOT_FOUND' });
+        return json(res, 200, await deleteEnvelope(user, String(body.roomId), body.seq));
+      }
+      if (req.method === 'POST' && url.pathname === '/api/rooms/history/clear') {
+        const body = await readJson(req);
+        if (!exists(String(body.roomId))) return json(res, 404, { error: 'NOT_FOUND' });
+        return json(res, 200, await clearHistoryFor(user, String(body.roomId)));
       }
       if (req.method === 'POST' && url.pathname === '/api/rooms/history/visibility') {
         const body = await readJson(req);
