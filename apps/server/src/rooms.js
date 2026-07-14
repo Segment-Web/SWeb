@@ -33,7 +33,7 @@ const readJson = (req, limit = 64 * 1024) => new Promise((resolve, reject) => {
   req.on('error', reject);
 });
 
-const publicRoom = (row) => ({ id: row.id, type: row.type, slug: row.slug || '', title: row.title, icon: row.icon || '', isPublic: row.is_public, ownerId: row.owner_id });
+const publicRoom = (row) => ({ id: row.id, type: row.type, slug: row.slug || '', title: row.title, icon: row.icon || '', isPublic: row.is_public, ownerId: row.owner_id, historyVisibility: row.history_visibility || 'joined' });
 
 export async function createRooms(config, auth) {
   const pool = auth.pool;
@@ -46,15 +46,19 @@ export async function createRooms(config, auth) {
       icon VARCHAR(16) NOT NULL DEFAULT '',
       is_public BOOLEAN NOT NULL DEFAULT FALSE,
       owner_id UUID REFERENCES users(id) ON DELETE SET NULL,
+      history_visibility VARCHAR(16) NOT NULL DEFAULT 'joined',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE rooms ADD COLUMN IF NOT EXISTS history_visibility VARCHAR(16) NOT NULL DEFAULT 'joined';
     CREATE TABLE IF NOT EXISTS room_members (
       room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       role VARCHAR(16) NOT NULL DEFAULT 'member',
+      join_seq BIGINT NOT NULL DEFAULT 0,
       joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (room_id, user_id)
     );
+    ALTER TABLE room_members ADD COLUMN IF NOT EXISTS join_seq BIGINT NOT NULL DEFAULT 0;
     CREATE INDEX IF NOT EXISTS room_members_user_idx ON room_members(user_id);
     CREATE TABLE IF NOT EXISTS room_invites (
       token_hash TEXT PRIMARY KEY,
@@ -63,6 +67,18 @@ export async function createRooms(config, auth) {
       expires_at TIMESTAMPTZ NOT NULL,
       max_uses INTEGER NOT NULL DEFAULT 0,
       uses INTEGER NOT NULL DEFAULT 0
+    );
+    -- Encrypted history envelopes. The server stores opaque ciphertext (encrypted
+    -- to the room's history key, which it never holds) plus a monotonic per-room
+    -- sequence used for ordering and join-point visibility gating.
+    CREATE TABLE IF NOT EXISTS room_history (
+      room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+      seq BIGINT NOT NULL,
+      sender_id UUID REFERENCES users(id) ON DELETE SET NULL,
+      iv TEXT NOT NULL,
+      ct TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (room_id, seq)
     );
   `);
 
@@ -157,14 +173,64 @@ export async function createRooms(config, auth) {
     );
     if (!invite) throw Object.assign(new Error('INVITE_INVALID'), { status: 400 });
     if (invite.max_uses > 0 && invite.uses >= invite.max_uses) throw Object.assign(new Error('INVITE_EXHAUSTED'), { status: 410 });
+    // Record the join point so 'joined' visibility hides history sent before it.
     await pool.query(
-      'INSERT INTO room_members(room_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
+      `INSERT INTO room_members(room_id,user_id,join_seq)
+       VALUES($1,$2,(SELECT COALESCE(MAX(seq),0) FROM room_history WHERE room_id=$1))
+       ON CONFLICT DO NOTHING`,
       [invite.room_id, user.id],
     );
     await pool.query('UPDATE room_invites SET uses=uses+1 WHERE token_hash=$1', [invite.token_hash]);
     indexMember(invite.room_id, user.id);
     const room = await one('SELECT * FROM rooms WHERE id=$1', [invite.room_id]);
     return room ? publicRoom(room) : null;
+  };
+
+  // Append one encrypted history envelope; returns its assigned sequence.
+  const appendHistory = async (user, roomId, iv, ct) => {
+    if (!canAccess(user.id, roomId)) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
+    if (typeof iv !== 'string' || iv.length > 256 || typeof ct !== 'string' || !ct.length || ct.length > 2 * 1024 * 1024) {
+      throw Object.assign(new Error('ENVELOPE_INVALID'), { status: 400 });
+    }
+    const row = await one(
+      `INSERT INTO room_history(room_id,seq,sender_id,iv,ct)
+       VALUES($1,(SELECT COALESCE(MAX(seq),0)+1 FROM room_history WHERE room_id=$1),$2,$3,$4)
+       RETURNING seq`,
+      [roomId, user.id, iv, ct],
+    );
+    return { seq: Number(row.seq) };
+  };
+
+  // Backfill envelopes the caller may see. 'full' visibility exposes everything;
+  // otherwise a member only sees messages after their recorded join point.
+  const fetchHistory = async (user, roomId, after, limit) => {
+    if (!canAccess(user.id, roomId)) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
+    const room = await one('SELECT history_visibility FROM rooms WHERE id=$1', [roomId]);
+    const member = await one('SELECT join_seq FROM room_members WHERE room_id=$1 AND user_id=$2', [roomId, user.id]);
+    const floor = room?.history_visibility === 'full' ? 0 : Number(member?.join_seq || 0);
+    const lower = Math.max(Number(after) || 0, floor);
+    const cap = Math.min(Math.max(Number(limit) || 100, 1), 200);
+    const rows = (await pool.query(
+      'SELECT seq, sender_id, iv, ct FROM room_history WHERE room_id=$1 AND seq>$2 ORDER BY seq LIMIT $3',
+      [roomId, lower, cap],
+    )).rows;
+    return rows.map((r) => ({ seq: Number(r.seq), senderId: r.sender_id, iv: r.iv, ct: r.ct }));
+  };
+
+  // Turn on full-history visibility. One-way: only the owner, only joined -> full.
+  const enableFullHistory = async (user, roomId) => {
+    const row = await one(
+      `UPDATE rooms SET history_visibility='full'
+       WHERE id=$1 AND owner_id=$2 AND history_visibility<>'full' RETURNING *`,
+      [roomId, user.id],
+    );
+    if (!row) {
+      const room = await one('SELECT * FROM rooms WHERE id=$1', [roomId]);
+      if (!room) throw Object.assign(new Error('NOT_FOUND'), { status: 404 });
+      if (room.owner_id !== user.id) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
+      return publicRoom(room); // already 'full' — idempotent
+    }
+    return publicRoom(row);
   };
 
   const resolvePath = async (path) => {
@@ -213,6 +279,22 @@ export async function createRooms(config, auth) {
         const body = await readJson(req);
         const room = await redeemInvite(user, body.token);
         return json(res, 200, { room });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/rooms/history') {
+        const body = await readJson(req, 4 * 1024 * 1024);
+        if (!exists(String(body.roomId))) return json(res, 404, { error: 'NOT_FOUND' });
+        return json(res, 201, await appendHistory(user, String(body.roomId), body.iv, body.ct));
+      }
+      if (req.method === 'GET' && url.pathname === '/api/rooms/history') {
+        const roomId = url.searchParams.get('roomId') || '';
+        if (!exists(roomId)) return json(res, 404, { error: 'NOT_FOUND' });
+        const envelopes = await fetchHistory(user, roomId, url.searchParams.get('after'), url.searchParams.get('limit'));
+        return json(res, 200, { envelopes });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/rooms/history/visibility') {
+        const body = await readJson(req);
+        if (!exists(String(body.roomId))) return json(res, 404, { error: 'NOT_FOUND' });
+        return json(res, 200, { room: await enableFullHistory(user, String(body.roomId)) });
       }
       return json(res, 404, { error: 'NOT_FOUND' });
     } catch (error) {

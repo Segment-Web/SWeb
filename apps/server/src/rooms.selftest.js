@@ -27,6 +27,7 @@ const mkUser = async (username) => {
 };
 const owner = await mkUser('owner_u');
 const other = await mkUser('other_u');
+const third = await mkUser('third_u');
 
 const config = { production: false, allowedOrigins: [], publicUrl: '', roomInviteTtlMs: 3600000 };
 const auth = { pool, userFromRequest: async (req) => req._user ?? null };
@@ -101,6 +102,40 @@ const ownerMine = await call('GET', '/api/rooms/mine', { user: owner });
 ok(ownerMine.data.rooms.some((r) => r.id === roomId), 'owner /mine includes private room');
 const otherMine = await call('GET', '/api/rooms/mine', { user: other });
 ok(otherMine.data.rooms.some((r) => r.id === roomId), 'redeemer /mine includes joined room');
+
+// --- Encrypted history: append, join-point gating, one-way full visibility ---
+const env = (n) => ({ iv: `iv${n}`, ct: `cipher-${n}` });
+
+// Owner appends two envelopes to the private room (seq 1, 2).
+const h1 = await call('POST', '/api/rooms/history', { user: owner, body: { roomId, ...env(1) } });
+const h2 = await call('POST', '/api/rooms/history', { user: owner, body: { roomId, ...env(2) } });
+ok(h1.data.seq === 1 && h2.data.seq === 2, 'history seq increments per room');
+
+// A newly joined member records join_seq = 2, so 'joined' visibility hides 1..2.
+const roomForJoin = created.data.room.id;
+const invite2 = await call('POST', '/api/rooms/invite', { user: owner, body: { roomId: roomForJoin } });
+await call('POST', '/api/rooms/join', { user: third, body: { token: invite2.data.token } });
+const thirdAppend = await call('POST', '/api/rooms/history', { user: third, body: { roomId, ...env(3) } });
+ok(thirdAppend.data.seq === 3, 'joined member can append (seq 3)');
+
+const thirdView = await call('GET', `/api/rooms/history?roomId=${roomId}`, { user: third });
+ok(thirdView.data.envelopes.length === 1 && thirdView.data.envelopes[0].seq === 3, 'joined member sees only post-join history');
+const ownerView = await call('GET', `/api/rooms/history?roomId=${roomId}`, { user: owner });
+ok(ownerView.data.envelopes.length === 3, 'owner (join_seq 0) sees full history');
+
+// Non-member is denied append and read.
+const outAppend = await call('POST', '/api/rooms/history', { user: (await mkUser('outsider_u')), body: { roomId, ...env(9) } });
+ok(outAppend.status === 403, 'non-member append -> 403');
+
+// Only the owner can enable full history; it is one-way.
+const notOwnerFull = await call('POST', '/api/rooms/history/visibility', { user: third, body: { roomId } });
+ok(notOwnerFull.status === 403, 'non-owner cannot enable full history -> 403');
+const enableFull = await call('POST', '/api/rooms/history/visibility', { user: owner, body: { roomId } });
+ok(enableFull.data.room.historyVisibility === 'full', 'owner enables full history');
+const thirdViewFull = await call('GET', `/api/rooms/history?roomId=${roomId}`, { user: third });
+ok(thirdViewFull.data.envelopes.length === 3, 'after full is enabled, joined member sees all history');
+const enableAgain = await call('POST', '/api/rooms/history/visibility', { user: owner, body: { roomId } });
+ok(enableAgain.status === 200 && enableAgain.data.room.historyVisibility === 'full', 'enabling full again is idempotent');
 
 console.log(`\n${pass} ok, ${fail} fail`);
 await pool.end();
