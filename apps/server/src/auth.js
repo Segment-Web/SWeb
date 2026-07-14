@@ -194,5 +194,5 @@ export async function createAuth(config) {
       return json(res, error.status || 500, { error: error.code === '23505' ? 'USERNAME_TAKEN' : (error.message || 'INTERNAL_ERROR') });
     }
   };
-  return { handle, userFromRequest, publicUser, close: () => pool.end(), smtpReady };
+  return { handle, userFromRequest, publicUser, pool, close: () => pool.end(), smtpReady };
 }

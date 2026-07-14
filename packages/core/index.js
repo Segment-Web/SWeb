@@ -136,22 +136,83 @@ export class SegmentClient {
 
 
 
-  createChat({ name, icon, type } = {}) {
+  // REST helper for the rooms service. Rooms must exist server-side for the
+  // membership-scoped relay to deliver their ciphertext.
+  async _roomsApi(method, path, body) {
+    const response = await fetch(path, {
+      method,
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw Object.assign(new Error(data.error || 'REQUEST_FAILED'), { code: data.error });
+    return data;
+  }
+
+  _slugify(name) {
+    const base = String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30);
+    const padded = base.length >= 3 ? base : `${base}-${Math.random().toString(36).slice(2, 6)}`;
+    return padded.slice(0, 32).replace(/-+$/g, '') || `ch-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  // Merge a server room record into local chat state (idempotent by id).
+  _addServerRoom(room, { open = false } = {}) {
+    if (!room?.id) return null;
+    if (!this.chatById(room.id)) {
+      this.chats.push({ id: room.id, name: room.title, icon: room.icon || '💬', type: room.type, slug: room.slug || '' });
+      this.messages[room.id] ||= [];
+      this._emit('chats');
+    }
+    if (open) this.openRoom(room.id);
+    return room.id;
+  }
+
+  // Pull the rooms this account belongs to (public + joined) after sign-in.
+  async loadRooms() {
+    try {
+      const { rooms } = await this._roomsApi('GET', '/api/rooms/mine');
+      for (const room of rooms || []) this._addServerRoom(room);
+    } catch { /* offline or unauthenticated: keep local defaults */ }
+  }
+
+  async createChat({ name, icon, type } = {}) {
     const clean = (name || '').trim();
     if (!clean) return null;
     const kind = [ChatType.DM, ChatType.Chat, ChatType.Channel].includes(type) ? type : ChatType.Chat;
-    const defaultIcon = { [ChatType.DM]: '👤', [ChatType.Chat]: '💬', [ChatType.Channel]: '📢' }[kind];
-    const base = clean.toLowerCase().replace(/[^a-zа-я0-9]+/gi, '-').replace(/^-+|-+$/g, '') || 'chat';
-    let id = `${kind}-${base}`;
-    let n = 1;
-    while (this.chatById(id)) id = `${kind}-${base}-${++n}`;
+    const payload = { type: kind, title: clean };
+    if (kind === ChatType.Channel) payload.slug = this._slugify(clean);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const { room } = await this._roomsApi('POST', '/api/rooms', payload);
+        if (icon) room.icon = icon;
+        return this._addServerRoom(room, { open: true });
+      } catch (error) {
+        if (error.code === 'SLUG_TAKEN') { payload.slug = this._slugify(clean); continue; }
+        this._emit('error', { scope: 'createChat', code: error.code });
+        return null;
+      }
+    }
+    return null;
+  }
 
-    const chat = { id, name: clean, icon: icon || defaultIcon, type: kind };
-    this.chats.push(chat);
-    this.messages[id] = [];
-    this._emit('chats');
-    this.openRoom(id);
-    return id;
+  // Create a shareable invite link for a private room.
+  async createInvite(roomId) {
+    if (!this.chatById(roomId)) return null;
+    const { token } = await this._roomsApi('POST', '/api/rooms/invite', { roomId });
+    return `${location.origin}/j/${token}`;
+  }
+
+  // Redeem an invite token and open the joined room.
+  async joinByToken(token) {
+    const { room } = await this._roomsApi('POST', '/api/rooms/join', { token });
+    return this._addServerRoom(room, { open: true });
+  }
+
+  // Resolve a deep link (/@user, /c/slug) to its target entity.
+  async resolveLink(path) {
+    try { return await this._roomsApi('GET', `/api/rooms/resolve?path=${encodeURIComponent(path)}`); }
+    catch { return null; }
   }
 
 

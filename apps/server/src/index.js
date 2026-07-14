@@ -5,9 +5,13 @@ import { handleStatic } from './static.js';
 import { attachGateway } from './gateway.js';
 import { loadConfig } from './config.js';
 import { createAuth } from './auth.js';
+import { createRooms } from './rooms.js';
+import { createFiles } from './files.js';
 
 const config = loadConfig();
 const auth = await createAuth(config);
+const rooms = await createRooms(config, auth);
+const files = await createFiles(config, auth);
 let gateway;
 
 const server = createServer(async (req, res) => {
@@ -18,9 +22,11 @@ const server = createServer(async (req, res) => {
     return;
   }
   if (await auth.handle(req, res)) return;
+  if (await rooms.handle(req, res)) return;
+  if (await files.handle(req, res)) return;
   handleStatic(req, res);
 });
-gateway = attachGateway(server, config, auth);
+gateway = attachGateway(server, config, auth, rooms);
 
 server.listen(config.port, config.host, () => {
   console.log(JSON.stringify({ level: 'info', event: 'server.started', host: config.host, port: config.port, production: config.production }));
@@ -32,6 +38,7 @@ const shutdown = (signal) => {
   stopping = true;
   console.log(JSON.stringify({ level: 'info', event: 'server.stopping', signal }));
   gateway.stop();
+  files.close();
   auth.close();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), config.shutdownMs).unref();

@@ -1,7 +1,7 @@
 // Segment WebSocket gateway: a stateless relay for public keys and E2EE ciphertext.
 
 import { WebSocket, WebSocketServer } from 'ws';
-import { MessageType, isValidRoom } from '@segment/protocol';
+import { MessageType } from '@segment/protocol';
 
 const publicBundle = (bundle) => bundle && typeof bundle === 'object' ? {
   idDh: bundle.idDh,
@@ -10,7 +10,7 @@ const publicBundle = (bundle) => bundle && typeof bundle === 'object' ? {
   spkSig: bundle.spkSig,
 } : null;
 
-export function attachGateway(server, config, auth) {
+export function attachGateway(server, config, auth, rooms) {
   const clients = new Map();
   const ipCounts = new Map();
   const allowedOrigins = new Set(config.allowedOrigins);
@@ -52,6 +52,13 @@ export function attachGateway(server, config, auth) {
   const broadcast = (message, except = null) => {
     for (const [ws, client] of clients) {
       if (ws !== except && client.joined) send(ws, message);
+    }
+  };
+  // Deliver only to joined sockets whose user may access the room. Public rooms
+  // reach everyone; private rooms reach members only.
+  const broadcastRoom = (roomId, message, except = null) => {
+    for (const [ws, client] of clients) {
+      if (ws !== except && client.joined && rooms.canAccess(client.userId, roomId)) send(ws, message);
     }
   };
   const clientById = (id) => [...clients.values()].find((client) => client.id === id);
@@ -126,15 +133,16 @@ export function attachGateway(server, config, auth) {
         sendTo(message.to, { type: MessageType.KeyShare, from: client.id, x3dh: message.x3dh, box: message.box });
         return;
       }
-      if (message.type === MessageType.Cipher && isValidRoom(message.room)
+      if (message.type === MessageType.Cipher && rooms.exists(message.room)
+        && rooms.canAccess(client.userId, message.room)
         && Number.isSafeInteger(message.n) && message.n >= 0
         && typeof message.iv === 'string' && message.iv.length < 256
         && typeof message.ct === 'string' && message.ct.length <= config.maxWsPayload * 1.5) {
-        broadcast({ type: MessageType.Cipher, from: client.id, room: message.room, n: message.n, iv: message.iv, ct: message.ct }, ws);
+        broadcastRoom(message.room, { type: MessageType.Cipher, from: client.id, room: message.room, n: message.n, iv: message.iv, ct: message.ct }, ws);
         return;
       }
-      if (message.type === MessageType.Typing && isValidRoom(message.room)) {
-        broadcast({ type: MessageType.Typing, name: client.name, room: message.room }, ws);
+      if (message.type === MessageType.Typing && rooms.exists(message.room) && rooms.canAccess(client.userId, message.room)) {
+        broadcastRoom(message.room, { type: MessageType.Typing, name: client.name, room: message.room }, ws);
       }
     });
 

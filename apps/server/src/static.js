@@ -51,6 +51,10 @@ export function handleStatic(req, res) {
     return sendFile(res, safeJoin(SHARED_DIR, url.slice('/shared/'.length)));
   }
 
-  const path = url === '/' ? 'index.html' : url;
-  return sendFile(res, safeJoin(WEB_DIR, path));
+  // SPA fallback: deep links like /@user, /c/slug, /j/token have no file
+  // extension and are resolved client-side, so serve the app shell for them.
+  if (url === '/' || !extname(url)) {
+    return sendFile(res, join(WEB_DIR, 'index.html'));
+  }
+  return sendFile(res, safeJoin(WEB_DIR, url));
 }

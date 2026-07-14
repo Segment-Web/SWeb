@@ -15,6 +15,9 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Local file-store blobs (interim disk backend)
+data/
+
 # Future application builds
 dist/
 build/

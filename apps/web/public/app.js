@@ -622,6 +622,29 @@ const enterApp = (user) => {
   client._emit('identity', { name: user.name, user });
   gate.classList.add('hidden');
   if (!connected) { connected = true; client.connect(); }
+  bootRooms();
+};
+
+// After sign-in: load the account's rooms, then act on any deep link the user
+// opened the app with (/j/ invite, /c/ channel, /@ profile).
+const bootRooms = async () => {
+  await client.loadRooms();
+  const path = location.pathname;
+  let match;
+  if ((match = path.match(/^\/j\/([A-Za-z0-9_-]{16,64})$/))) {
+    try { await client.joinByToken(match[1]); segmentApi.toast('Вы присоединились к чату'); }
+    catch { segmentApi.toast('Ссылка-приглашение недействительна'); }
+    history.replaceState(null, '', '/');
+  } else if ((match = path.match(/^\/c\/([a-z0-9-]{3,32})$/i))) {
+    const target = await client.resolveLink(path);
+    if (target?.room) client._addServerRoom(target.room, { open: true });
+    else segmentApi.toast('Канал не найден');
+    history.replaceState(null, '', '/');
+  } else if ((match = path.match(/^\/@([a-z0-9_]{3,24})$/i))) {
+    const target = await client.resolveLink(path);
+    segmentApi.toast(target?.user ? `Профиль @${target.user.username}` : 'Профиль не найден');
+    history.replaceState(null, '', '/');
+  }
 };
 
 $('sendCodeBtn').onclick = async () => {
