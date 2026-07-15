@@ -348,6 +348,7 @@ export function chatRoomPanel(client) {
       let selectionQuoteData = null;
       let pending = [];
       let processing = 0;
+      let attachmentPickMode = 'media';
       let awayCount = 0;
       const drafts = {};
       const selected = new Set();
@@ -527,8 +528,8 @@ export function chatRoomPanel(client) {
         img.src = dataUrl;
       });
 
-      const readFile = async (file) => {
-        const kind = kindOf(file.type);
+      const readFile = async (file, asFile = false) => {
+        const kind = asFile ? 'file' : kindOf(file.type);
         const data = await toDataUrl(file);
         if (!data) return null;
         const att = { kind, name: file.name, size: file.size, mime: file.type, data };
@@ -568,7 +569,7 @@ export function chatRoomPanel(client) {
       };
 
 
-      const addFiles = async (files) => {
+      const addFiles = async (files, { asFiles = false } = {}) => {
         const list = [...files];
         if (!list.length) return;
         processing += list.length;
@@ -579,7 +580,7 @@ export function chatRoomPanel(client) {
             processing--;
             continue;
           }
-          const att = await readFile(file);
+          const att = await readFile(file, asFiles);
           processing--;
           if (att) pending.push(att);
           renderAttachDraft();
@@ -1326,7 +1327,10 @@ export function chatRoomPanel(client) {
       document.addEventListener('keydown', roomSearchShortcut);
       const attachShortcut = (e) => {
         if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'o' && currentChat) {
-          e.preventDefault(); fileInput.accept = ''; fileInput.click();
+          e.preventDefault();
+          attachmentPickMode = 'file';
+          fileInput.accept = '';
+          fileInput.click();
         }
       };
       document.addEventListener('keydown', attachShortcut);
@@ -1355,6 +1359,7 @@ export function chatRoomPanel(client) {
           attachMenu.classList.add('hidden');
           const kind = b.dataset.att;
           if (kind === 'poll') { openPoll(); return; }
+          attachmentPickMode = kind === 'photo' ? 'media' : 'file';
           fileInput.accept = kind === 'photo' ? 'image/*,video/*' : '';
           fileInput.click();
         };
@@ -1389,8 +1394,10 @@ export function chatRoomPanel(client) {
       recBtn.addEventListener('pointercancel', endPress);
       fileInput.onchange = () => {
         const files = [...fileInput.files];
+        const asFiles = attachmentPickMode === 'file';
         fileInput.value = '';
-        addFiles(files);
+        attachmentPickMode = 'media';
+        addFiles(files, { asFiles });
       };
 
 
