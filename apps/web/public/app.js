@@ -214,7 +214,10 @@ lightbox.innerHTML = `
         <span class="vplayer-dur">0:00</span>
         <button class="vplayer-mute" title="Звук">${ICON_VOL}</button>
         <input class="vplayer-volume" type="range" min="0" max="1" step="0.05" value="1" title="Громкость" aria-label="Громкость">
-        <select class="vplayer-speed" title="Скорость" aria-label="Скорость"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
+        <div class="vplayer-speed-wrap">
+          <button class="vplayer-speed" title="Скорость" aria-label="Скорость">1×</button>
+          <div class="vplayer-speed-menu hidden">${[.5, .75, 1, 1.25, 1.5, 2].map((rate) => `<button data-speed="${rate}" class="${rate === 1 ? 'active' : ''}">${rate}×</button>`).join('')}</div>
+        </div>
         <button class="vplayer-pip" title="Мини-плеер" aria-label="Мини-плеер">${ICON_PIP}</button>
         <button class="vplayer-full" title="На весь экран">${ICON_FULL}</button>
       </div>
@@ -244,6 +247,7 @@ const vDur = lightbox.querySelector('.vplayer-dur');
 const vMuteBtn = lightbox.querySelector('.vplayer-mute');
 const vVolume = lightbox.querySelector('.vplayer-volume');
 const vSpeed = lightbox.querySelector('.vplayer-speed');
+const vSpeedMenu = lightbox.querySelector('.vplayer-speed-menu');
 const vPipBtn = lightbox.querySelector('.vplayer-pip');
 let restoreAfterPip = false;
 const vFullBtn = lightbox.querySelector('.vplayer-full');
@@ -293,7 +297,17 @@ vVolume.oninput = () => {
   lightboxVideo.muted = lightboxVideo.volume === 0;
   vMuteBtn.innerHTML = lightboxVideo.muted ? ICON_MUTE : ICON_VOL;
 };
-vSpeed.onchange = () => { lightboxVideo.playbackRate = Number(vSpeed.value) || 1; };
+vSpeed.onclick = (e) => { e.stopPropagation(); vSpeedMenu.classList.toggle('hidden'); };
+for (const option of vSpeedMenu.querySelectorAll('[data-speed]')) {
+  option.onclick = (e) => {
+    e.stopPropagation();
+    const rate = Number(option.dataset.speed) || 1;
+    lightboxVideo.playbackRate = rate;
+    vSpeed.textContent = `${rate}×`;
+    for (const item of vSpeedMenu.querySelectorAll('[data-speed]')) item.classList.toggle('active', item === option);
+    vSpeedMenu.classList.add('hidden');
+  };
+}
 vPipBtn.hidden = !document.pictureInPictureEnabled || !lightboxVideo.requestPictureInPicture;
 vPipBtn.onclick = async (e) => {
   e.stopPropagation();
@@ -342,7 +356,7 @@ const applyZoom = () => {
   const other = isVideo ? lightboxImg : lightboxVideo;
   other.style.transform = '';
   target.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom}) rotate(${isVideo ? 0 : rotation}deg)`;
-  lightboxStage.style.cursor = zoom > 1 ? 'grab' : (isVideo ? 'default' : 'zoom-in');
+  lightboxStage.style.cursor = zoom > 1 ? 'grab' : 'default';
   target.classList.toggle('zoomed', zoom > 1);
 };
 const resetZoom = (resetRotation = true) => { zoom = 1; panX = 0; panY = 0; if (resetRotation) rotation = 0; lightboxImg.style.transform = ''; lightboxVideo.style.transform = ''; lightboxImg.classList.remove('zoomed'); lightboxVideo.classList.remove('zoomed'); lightboxStage.style.cursor = ''; };
@@ -476,7 +490,7 @@ lightbox.querySelector('[data-lb="download"]').onclick = (e) => {
   e.stopPropagation(); const item = lbList[lbIndex]; if (!item?.src) return;
   const a = document.createElement('a'); a.href = item.src; a.download = item.name || (item.type === 'video' ? 'video' : 'photo'); a.click();
 };
-lightbox.onclick = (e) => { if (e.target === lightbox) lbClose(); };
+lightbox.onclick = (e) => { vSpeedMenu.classList.add('hidden'); if (e.target === lightbox) lbClose(); };
 lightbox.querySelector('.lightbox-stage').onclick = (e) => { if (e.target.classList.contains('lightbox-stage')) lbClose(); };
 document.addEventListener('keydown', (e) => {
   if (lightbox.classList.contains('hidden')) return;

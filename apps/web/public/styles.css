@@ -1920,7 +1920,7 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
 }
 .lightbox-img {
   max-width: 90vw; max-height: 88vh; object-fit: contain; background: #000;
-  cursor: zoom-in; transform-origin: center center; touch-action: none;
+  cursor: inherit; transform-origin: center center; touch-action: none;
   transition: transform .08s ease-out;
 }
 .lightbox-img.zoomed { transition: none; }
@@ -1954,15 +1954,29 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
 }
 .vplayer-bar button:hover { color: var(--accent); }
 .vplayer-volume { width: 72px; height: 4px; accent-color: var(--accent); cursor: pointer; }
+.vplayer-speed-wrap { position: relative; display: flex; }
 .vplayer-speed {
-  appearance: none; width: 54px; height: 28px; padding: 0 8px;
+  width: 54px; height: 28px; padding: 0 8px;
   border: 1px solid rgba(255,255,255,.1); border-radius: 999px;
   background: rgba(255,255,255,.08); color: #fff;
   font: inherit; font-size: 12px; font-weight: 600; text-align: center; cursor: pointer;
   transition: background .14s, border-color .14s;
 }
 .vplayer-speed:hover, .vplayer-speed:focus { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.18); outline:none; }
-.vplayer-speed option { background: #141b24; color: #fff; }
+.vplayer-speed-menu {
+  position: absolute; z-index: 8; right: 0; bottom: calc(100% + 9px);
+  width: 82px; padding: 5px;
+  display: flex; flex-direction: column; gap: 2px;
+  border: 1px solid rgba(255,255,255,.1); border-radius: 11px;
+  background: rgba(17,23,30,.96); box-shadow: 0 12px 34px rgba(0,0,0,.42); backdrop-filter: blur(12px);
+}
+.vplayer-speed-menu.hidden { display:none; }
+.vplayer-speed-menu button {
+  width: 100%; height: 31px; border: 0; border-radius: 7px;
+  background: transparent; color: #c8d1d9; font-size: 12px; font-weight: 500; cursor:pointer;
+}
+.vplayer-speed-menu button:hover { background: rgba(255,255,255,.08); color:#fff; }
+.vplayer-speed-menu button.active { background: color-mix(in srgb, var(--accent) 25%, transparent); color: #fff; }
 .vplayer-cur, .vplayer-dur { color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; min-width: 34px; }
 .vplayer-dur { text-align: right; }
 .vplayer-seek {
