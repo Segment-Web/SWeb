@@ -58,6 +58,13 @@ document.addEventListener('keydown', (e) => {
     if (!typing) client.closeRoom();
     return;
   }
+  // Jump to chat 1-9 by position: Ctrl+1 … Ctrl+9.
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && /^[1-9]$/.test(e.key)) {
+    const list = [...document.querySelectorAll('.panel[data-id="chat-list"] .chat-item[data-room]')];
+    const target = list[Number(e.key) - 1];
+    if (target) { e.preventDefault(); client.openRoom(target.dataset.room); target.scrollIntoView({ block: 'nearest' }); }
+    return;
+  }
   // Switch chats: Ctrl+Tab / Ctrl+PageDown / Alt+↓ (next), Ctrl+Shift+Tab / Ctrl+PageUp / Alt+↑ (previous).
   const ctrl = e.ctrlKey || e.metaKey;
   let dir = 0;

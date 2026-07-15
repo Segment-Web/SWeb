@@ -1090,6 +1090,17 @@ export function chatRoomPanel(client) {
         }
       };
       document.addEventListener('keydown', attachShortcut);
+      const deleteShortcut = (e) => {
+        if (e.key !== 'Delete' || !currentChat) return;
+        if (/INPUT|TEXTAREA/.test(e.target.tagName) || e.target.isContentEditable) return;
+        const messages = selectedMessages();
+        if (!messages.length || !messages.every((m) => m.name === client.self.name)) return;
+        e.preventDefault();
+        messages.forEach((m) => client.deleteMessage(currentChat.id, m.id));
+        selected.clear();
+        renderRoom(currentChat, client.messages[currentChat.id] || []);
+      };
+      document.addEventListener('keydown', deleteShortcut);
 
 
       let attachHideTimer = null;
