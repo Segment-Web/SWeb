@@ -24,11 +24,11 @@ export function chatListPanel(client) {
           <button class="chat-filter" data-filter="dm">Личные</button>
           <button class="chat-filter" data-filter="groups">Группы</button>
           <button class="chat-filter" data-filter="channels">Каналы</button>
-          <button class="folder-add" title="Новая папка">+ Папка</button>
+          <button class="folder-add">+ Папка</button>
         </div>
         <div class="selection-bar hidden"><b class="selection-count">0</b><button data-batch="read">Прочитать</button><button data-batch="archive">В архив</button><button data-batch="delete">Удалить</button><button data-batch="cancel">Отмена</button></div>
         <div class="archive-head hidden">
-          <button class="archive-back" title="Назад">
+          <button class="archive-back" aria-label="Назад">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
           </button>
           <span>Архив</span>
@@ -50,7 +50,7 @@ export function chatListPanel(client) {
           </button>
         </div>
 
-        <button class="fab" title="Создать">+</button>
+        <button class="fab" aria-label="Создать">+</button>
 
         <div class="new-chat hidden">
           <div class="new-chat-title">Новый чат</div>

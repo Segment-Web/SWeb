@@ -126,7 +126,7 @@ export class Workspace {
     const reset = document.createElement('div');
     reset.className = 'ws-dock-swatch reset';
     reset.textContent = '⭯';
-    reset.title = 'Сбросить цвет';
+    reset.setAttribute('aria-label', 'Сбросить цвет');
     reset.addEventListener('pointerdown', (e) => { e.preventDefault(); this._pickDockColor(null); });
     this.paletteEl.appendChild(reset);
 
@@ -143,7 +143,7 @@ export class Workspace {
 
     const head = document.createElement('div');
     head.className = 'panel-head';
-    head.innerHTML = '<span class="panel-grip" title="Перетащи в любую сторону"></span>';
+    head.innerHTML = '<span class="panel-grip"></span>';
 
     const body = document.createElement('div');
     body.className = 'panel-body';

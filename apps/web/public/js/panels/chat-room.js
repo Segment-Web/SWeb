@@ -95,55 +95,55 @@ export function chatRoomPanel(client) {
               <div class="room-title" data-el="title">Общий</div>
               <div class="room-status" data-el="status">подключение...</div>
             </div>
-            <button class="room-head-action" data-el="roomSearchOpen" title="Поиск в чате" aria-label="Поиск в чате">${ICONS.search}</button>
+            <button class="room-head-action" data-el="roomSearchOpen" aria-label="Поиск в чате">${ICONS.search}</button>
           </header>
           <div class="room-searchbar hidden" data-el="roomSearchBar">
             ${ICONS.search}<input data-el="roomSearchInput" placeholder="Поиск в этом чате" autocomplete="off">
             <span data-el="roomSearchCount">0 из 0</span>
-            <button data-el="roomSearchPrev" title="Предыдущее">‹</button><button data-el="roomSearchNext" title="Следующее">›</button>
-            <button data-el="roomSearchClose" title="Закрыть">${ICONS.close}</button>
+            <button data-el="roomSearchPrev" aria-label="Предыдущее">‹</button><button data-el="roomSearchNext" aria-label="Следующее">›</button>
+            <button data-el="roomSearchClose" aria-label="Закрыть">${ICONS.close}</button>
           </div>
           <button class="pinned-bar hidden" data-el="pinnedBar"></button>
           <div class="selection-bar hidden" data-el="selectionBar"></div>
           <main class="feed" data-el="feed"></main>
-          <button class="scroll-down hidden" data-el="scrollDown" title="Вниз" aria-label="Вниз">
+          <button class="scroll-down hidden" data-el="scrollDown" aria-label="Вниз">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>
             <span class="sd-badge hidden" data-el="scrollBadge"></span>
           </button>
           <div class="typing" data-el="typing"></div>
           <footer class="composer">
-            <div class="reply-draft hidden" data-el="replyDraft"><b></b><span></span><button data-el="replyCancel" title="Отменить">×</button></div>
+            <div class="reply-draft hidden" data-el="replyDraft"><b></b><span></span><button data-el="replyCancel" aria-label="Отменить">×</button></div>
             <div class="attach-draft hidden" data-el="attachDraft"></div>
             <div class="autocomplete hidden" data-el="autocomplete"></div>
             <div class="composer-format" data-el="format">
               <div class="fmt-group fmt-history" aria-label="История изменений">
-                <button type="button" class="fmt-btn" data-command="undo" title="Отменить · Ctrl+Z" aria-label="Отменить">
+                <button type="button" class="fmt-btn" data-command="undo" aria-label="Отменить">
                   <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 7-5 5 5 5"/><path d="M20 17a7 7 0 0 0-7-7H4"/></svg>
                 </button>
-                <button type="button" class="fmt-btn" data-command="redo" title="Повторить · Ctrl+Y" aria-label="Повторить">
+                <button type="button" class="fmt-btn" data-command="redo" aria-label="Повторить">
                   <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 7 5 5-5 5"/><path d="M4 17a7 7 0 0 1 7-7h9"/></svg>
                 </button>
               </div>
               <span class="fmt-divider" aria-hidden="true"></span>
               <div class="fmt-group" aria-label="Форматирование текста">
-              <button type="button" class="fmt-btn" data-fmt="B" title="Жирный · Ctrl+B"><b>B</b></button>
-              <button type="button" class="fmt-btn" data-fmt="I" title="Курсив · Ctrl+I"><i>i</i></button>
-              <button type="button" class="fmt-btn" data-fmt="U" title="Подчёркнутый · Ctrl+U"><u>U</u></button>
-              <button type="button" class="fmt-btn" data-fmt="S" title="Зачёркнутый · Ctrl+S"><s>S</s></button>
-              <button type="button" class="fmt-btn mono" data-fmt="CODE" title="Моноширинный · Ctrl+E">&lt;/&gt;</button>
-              <button type="button" class="fmt-btn" data-fmt="SPOILER" title="Спойлер">
+              <button type="button" class="fmt-btn" data-fmt="B" aria-label="Жирный"><b>B</b></button>
+              <button type="button" class="fmt-btn" data-fmt="I" aria-label="Курсив"><i>i</i></button>
+              <button type="button" class="fmt-btn" data-fmt="U" aria-label="Подчёркнутый"><u>U</u></button>
+              <button type="button" class="fmt-btn" data-fmt="S" aria-label="Зачёркнутый"><s>S</s></button>
+              <button type="button" class="fmt-btn mono" data-fmt="CODE" aria-label="Моноширинный">&lt;/&gt;</button>
+              <button type="button" class="fmt-btn" data-fmt="SPOILER" aria-label="Спойлер">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="2.5"/></svg>
               </button>
               </div>
               <span class="fmt-divider" aria-hidden="true"></span>
               <div class="fmt-group">
-                <button type="button" class="fmt-btn fmt-clear" data-command="clear" title="Убрать форматирование" aria-label="Убрать форматирование">Aa</button>
+                <button type="button" class="fmt-btn fmt-clear" data-command="clear" aria-label="Убрать форматирование">Aa</button>
               </div>
             </div>
             <div class="composer-main">
             <div class="composer-field">
               <div class="attach-wrap" data-el="attachWrap">
-                <button class="composer-tool" data-el="attach" title="Прикрепить" aria-label="Прикрепить">
+                <button class="composer-tool" data-el="attach" aria-label="Прикрепить">
                   <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.6 12 21a6 6 0 0 1-8.5-8.5l10-10a4 4 0 1 1 5.7 5.7L9.6 17.8a2 2 0 0 1-2.8-2.8l8.9-8.9"/></svg>
                 </button>
                 <div class="attach-menu hidden" data-el="attachMenu">
@@ -153,7 +153,7 @@ export function chatRoomPanel(client) {
                 </div>
               </div>
               <div class="composer-input" data-el="input" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Сообщение..."></div>
-              <button class="composer-tool" data-el="emoji" title="Эмодзи" aria-label="Эмодзи">
+              <button class="composer-tool" data-el="emoji" aria-label="Эмодзи">
                 <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 10h.01"/><path d="M15.5 10h.01"/><path d="M8.2 14.2c.9 1.2 2.2 1.8 3.8 1.8s2.9-.6 3.8-1.8"/></svg>
               </button>
               <input class="file-input" data-el="file" type="file" multiple>
@@ -163,11 +163,11 @@ export function chatRoomPanel(client) {
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
                 <span class="rec-lock-arrow">⌃</span>
               </div>
-              <button class="composer-round rec-btn" data-el="rec" data-mode="voice" title="Тап — режим, зажать — запись" aria-label="Запись">
+              <button class="composer-round rec-btn" data-el="rec" data-mode="voice" aria-label="Запись">
                 <span class="rec-ico ico-voice"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2.5" width="6" height="11.5" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/></svg></span>
                 <span class="rec-ico ico-video"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 10.5 20.2 7a.6.6 0 0 1 .9.5v9a.6.6 0 0 1-.9.5L15 13.5z"/><rect x="3" y="6" width="12" height="12" rx="3.5"/></svg></span>
               </button>
-              <button class="composer-round primary hidden" data-el="send" title="Отправить" aria-label="Отправить">
+              <button class="composer-round primary hidden" data-el="send" aria-label="Отправить">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2.5 11 13"/><path d="M21.5 2.5 15 21.5l-4-8.5-8.5-4z"/></svg>
               </button>
             </div>
@@ -449,7 +449,7 @@ export function chatRoomPanel(client) {
       const renderPoll = (optionCount = 2) => {
         pollCompose.innerHTML = `
           <div class="poll-box">
-            <div class="poll-box-head"><b>Новый опрос</b><button data-act="close" title="Закрыть">✕</button></div>
+            <div class="poll-box-head"><b>Новый опрос</b><button data-act="close" aria-label="Закрыть">✕</button></div>
             <input class="poll-question" placeholder="Вопрос" maxlength="120">
             <div class="poll-options-edit">
               ${Array.from({ length: optionCount }, (_, i) => `<input class="poll-option" placeholder="Вариант ${i + 1}" maxlength="80">`).join('')}
@@ -558,7 +558,7 @@ export function chatRoomPanel(client) {
                 ? `<span class="attach-thumb">${a.poster ? `<img src="${a.poster}" alt="">` : ''}<span class="attach-play">▶</span></span>`
                 : '<span class="attach-doc">📎</span>'}
             ${a.kind === 'photo' || a.kind === 'video' ? '' : `<span class="attach-chip-name">${esc(a.name || 'Файл')}</span>`}
-            <button data-remove="${i}" title="Убрать">×</button>
+            <button data-remove="${i}" aria-label="Убрать">×</button>
           </div>`).join('');
         const spinner = processing
           ? `<div class="attach-chip processing"><span class="attach-spinner"></span><span class="attach-chip-name">обработка ${processing}…</span></div>`
@@ -653,7 +653,7 @@ export function chatRoomPanel(client) {
             <span class="rec-dot"></span>
             <span class="rec-time">${fmtClock(secs)}</span>
             <span class="rec-hint">запись ${kindWord}…</span>
-            <button data-act="cancel" class="rec-cancel" title="Отмена">✕</button>
+            <button data-act="cancel" class="rec-cancel" aria-label="Отмена">✕</button>
             <button data-act="send" class="rec-send">Отправить</button>`;
           recBar.querySelector('[data-act="cancel"]').onclick = () => finishRecord(false);
           recBar.querySelector('[data-act="send"]').onclick = () => finishRecord(true);
@@ -851,9 +851,9 @@ export function chatRoomPanel(client) {
         const onePinned = messages.length === 1 && pinnedIds.includes(messages[0].id);
         const plural = messages.length === 1 ? 'сообщение' : 'сообщения';
         const act = (name, label, icon, cls = '') =>
-          `<button class="sel-btn ${cls}" data-act="${name}" title="${label}" aria-label="${label}">${icon}</button>`;
+          `<button class="sel-btn ${cls}" data-act="${name}" aria-label="${label}">${icon}</button>`;
         selectionBar.innerHTML = `
-          <button class="sel-close" data-act="clear" title="Снять выделение" aria-label="Снять выделение">${ICONS.close}</button>
+          <button class="sel-close" data-act="clear" aria-label="Снять выделение">${ICONS.close}</button>
           <span class="sel-count">${messages.length} ${plural}</span>
           <div class="sel-actions">
             ${act('copy', 'Копировать', ICONS.copy)}
@@ -950,9 +950,9 @@ export function chatRoomPanel(client) {
         const preview = pinned.text || attachLabel(pinned) || 'Сообщение';
         pinnedBar.innerHTML = `
           <span class="pin-rail" aria-hidden="true">${pins.map((_, i) => `<i class="${i === pinnedIndex ? 'active' : ''}"></i>`).join('')}</span>
-          <span class="pin-body"><b>Закреплённое <em data-act="manage" title="Все закреплённые">${pinnedIndex + 1}/${pins.length}</em></b><span>${esc(preview)}</span></span>
-          ${pins.length > 1 ? `<span class="pin-nav"><span data-act="prev" title="Предыдущее">‹</span><span data-act="next" title="Следующее">›</span></span>` : ''}
-          <span class="pin-unpin" data-act="unpin" title="Открепить" aria-label="Открепить">${ICONS.close}</span>`;
+          <span class="pin-body"><b>Закреплённое <em data-act="manage">${pinnedIndex + 1}/${pins.length}</em></b><span>${esc(preview)}</span></span>
+          ${pins.length > 1 ? `<span class="pin-nav"><span data-act="prev">‹</span><span data-act="next">›</span></span>` : ''}
+          <span class="pin-unpin" data-act="unpin" aria-label="Открепить">${ICONS.close}</span>`;
         pinnedBar.onclick = (e) => {
           if (e.target.closest('[data-act="manage"]')) { renderPinnedManager(); return; }
           if (e.target.closest('[data-act="prev"]')) { pinnedIndex = (pinnedIndex - 1 + pins.length) % pins.length; renderPinnedBar(); return; }
@@ -977,13 +977,13 @@ export function chatRoomPanel(client) {
         const ids = list.pinnedIds || (list.pinnedId ? [list.pinnedId] : []);
         const pins = ids.map((id) => list.find((m) => m.id === id && !m.deleted)).filter(Boolean);
         pinnedManager.innerHTML = `
-          <div class="pinned-manager-head"><div><b>Закреплённые</b><span>${pins.length} сообщений</span></div><button data-pm="close" title="Закрыть">${ICONS.close}</button></div>
+          <div class="pinned-manager-head"><div><b>Закреплённые</b><span>${pins.length} сообщений</span></div><button data-pm="close" aria-label="Закрыть">${ICONS.close}</button></div>
           <div class="pinned-manager-list">${pins.map((m, i) => `
             <div class="pinned-manager-row" draggable="true" data-pin-id="${esc(m.id)}">
-              <span class="pm-grip" title="Перетащить">⠿</span>
+              <span class="pm-grip">⠿</span>
               <button class="pm-message" data-pm="jump"><b>${esc(m.name || '')}</b><span>${esc(m.text || attachLabel(m) || 'Сообщение')}</span></button>
-              <span class="pm-order"><button data-pm="up"${i ? '' : ' disabled'} title="Выше">↑</button><button data-pm="down"${i < pins.length - 1 ? '' : ' disabled'} title="Ниже">↓</button></span>
-              <button class="pm-unpin" data-pm="unpin" title="Открепить">${ICONS.close}</button>
+              <span class="pm-order"><button data-pm="up"${i ? '' : ' disabled'} aria-label="Выше">↑</button><button data-pm="down"${i < pins.length - 1 ? '' : ' disabled'} aria-label="Ниже">↓</button></span>
+              <button class="pm-unpin" data-pm="unpin" aria-label="Открепить">${ICONS.close}</button>
             </div>`).join('')}</div>`;
         pinnedManager.classList.remove('hidden');
         pinnedManager.querySelector('[data-pm="close"]').onclick = () => pinnedManager.classList.add('hidden');
@@ -1016,7 +1016,7 @@ export function chatRoomPanel(client) {
         const item = (act, label, icon, extra = '') =>
           `<button class="ctx-item${extra.includes('danger') ? ' danger' : ''}" data-act="${act}"${extra.includes('disabled') ? ' disabled' : ''}>${icon}<span>${label}</span></button>`;
         msgMenu.innerHTML = `
-          <div class="reaction-row">${QUICK_REACTIONS.map((r) => `<button class="react-btn" data-emoji="${r}">${r}</button>`).join('')}<button class="react-btn react-more" data-more title="Ещё реакции">+</button></div>
+          <div class="reaction-row">${QUICK_REACTIONS.map((r) => `<button class="react-btn" data-emoji="${r}">${r}</button>`).join('')}<button class="react-btn react-more" data-more aria-label="Ещё реакции">+</button></div>
           <div class="react-picker hidden">${REACTIONS_ALL.map((r) => `<button class="react-btn" data-emoji="${r}">${r}</button>`).join('')}</div>
           <div class="ctx-list">
             ${item('reply', 'Ответить', ICONS.reply)}
@@ -1132,7 +1132,7 @@ export function chatRoomPanel(client) {
 
         sheet.innerHTML = `
           <div class="info-top">
-            <button class="info-close" data-act="close" title="Закрыть">${ICONS.close}</button>
+            <button class="info-close" data-act="close" aria-label="Закрыть">${ICONS.close}</button>
             <div class="info-avatar" style="background:${avatarColor(chat.id)}">${chat.icon || esc(chat.name[0].toUpperCase())}</div>
             <div class="info-title">${esc(chat.name)}</div>
             <div class="info-sub">${esc(subtitle || typeText)}</div>

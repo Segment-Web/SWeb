@@ -50,20 +50,20 @@ export function chatViewPanel(client, chat) {
           <main class="feed" data-el="feed"></main>
           <div class="selection-bar hidden" data-el="selectionBar"></div>
           <footer class="composer">
-            <div class="reply-draft hidden" data-el="replyDraft"><b></b><span></span><button data-el="replyCancel" title="Отменить">×</button></div>
+            <div class="reply-draft hidden" data-el="replyDraft"><b></b><span></span><button data-el="replyCancel" aria-label="Отменить">×</button></div>
             <div class="composer-field">
               <input class="composer-input" data-el="input" placeholder="Сообщение..." autocomplete="off">
               <div class="composer-tools">
-                <button class="composer-tool" data-el="attach" title="Прикрепить файл" aria-label="Прикрепить файл">
+                <button class="composer-tool" data-el="attach" aria-label="Прикрепить файл">
                   <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.4 11.6 12 21a6 6 0 0 1-8.5-8.5l10-10a4 4 0 1 1 5.7 5.7L9.6 17.8a2 2 0 0 1-2.8-2.8l8.9-8.9"/></svg>
                 </button>
-                <button class="composer-tool" data-el="emoji" title="Эмодзи" aria-label="Эмодзи">
+                <button class="composer-tool" data-el="emoji" aria-label="Эмодзи">
                   <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8.5 10h.01"/><path d="M15.5 10h.01"/><path d="M8 14c1 1.4 2.3 2 4 2s3-.6 4-2"/></svg>
                 </button>
               </div>
               <input class="file-input" data-el="file" type="file" multiple>
             </div>
-            <button class="composer-send" data-el="send" title="Отправить" aria-label="Отправить">
+            <button class="composer-send" data-el="send" aria-label="Отправить">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>
             </button>
           </footer>

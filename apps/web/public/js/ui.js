@@ -521,11 +521,11 @@ const PIN_GLYPH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" s
 const CLOCK_GLYPH = '<svg viewBox="0 0 24 24" width="14" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
 const SINGLE_CHECK_GLYPH = '<svg viewBox="0 0 18 16" width="14" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.5l4 4 9-9"/></svg>';
 const statusGlyph = (m) => {
-  if (m.status === 'failed') return '<span class="msg-status failed" title="Не отправлено">!</span>';
-  if (m.status === 'sending') return `<span class="msg-status sending" title="Отправляется">${CLOCK_GLYPH}</span>`;
-  if (m.status === 'sent') return `<span class="msg-status sent" title="Отправлено">${SINGLE_CHECK_GLYPH}</span>`;
-  if (m.status === 'read') return `<span class="msg-status read" title="Прочитано">${CHECK_GLYPH}</span>`;
-  return `<span class="msg-status delivered" title="Доставлено">${CHECK_GLYPH}</span>`;
+  if (m.status === 'failed') return '<span class="msg-status failed">!</span>';
+  if (m.status === 'sending') return `<span class="msg-status sending">${CLOCK_GLYPH}</span>`;
+  if (m.status === 'sent') return `<span class="msg-status sent">${SINGLE_CHECK_GLYPH}</span>`;
+  if (m.status === 'read') return `<span class="msg-status read">${CHECK_GLYPH}</span>`;
+  return `<span class="msg-status delivered">${CHECK_GLYPH}</span>`;
 };
 
 const MUTE_GLYPH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-9.3-5"/><path d="M6 8c0 6-3 7-3 7h13"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/><path d="m3 3 18 18"/></svg>';
@@ -602,17 +602,17 @@ function chatItemHtml(c, state, selected = false) {
 
   const hasTime = lastMsg && Number.isFinite(new Date(lastMsg.ts).getTime());
   const time = hasTime ? chatDate(lastMsg.ts) : '';
-  const check = outgoing ? `<span class="chat-check" title="Отправлено">${CHECK_GLYPH}</span>` : '';
+  const check = outgoing ? `<span class="chat-check">${CHECK_GLYPH}</span>` : '';
   const unread = state.unread[c.id];
   const pinned = state.pinned?.has(c.id);
   const muted = state.muted?.has(c.id);
   const dot = state.unreadDot?.has(c.id);
-  const mute = muted ? `<span class="chat-mutemark" title="Уведомления выключены">${MUTE_GLYPH}</span>` : '';
+  const mute = muted ? `<span class="chat-mutemark">${MUTE_GLYPH}</span>` : '';
 
   let meta = '';
   if (unread) meta = `<span class="badge ${muted ? 'muted' : ''}">${unread}</span>`;
-  else if (dot) meta = `<span class="badge dot ${muted ? 'muted' : ''}" title="Непрочитанное"></span>`;
-  else if (pinned) meta = `<span class="chat-pinmark" title="Закреплено">${PIN_GLYPH}</span>`;
+  else if (dot) meta = `<span class="badge dot ${muted ? 'muted' : ''}"></span>`;
+  else if (pinned) meta = `<span class="chat-pinmark">${PIN_GLYPH}</span>`;
   return `
     <div class="chat-item ${c.id === state.currentRoom ? 'active' : ''} ${pinned ? 'pinned' : ''} ${selected ? 'selected' : ''}" data-room="${c.id}" draggable="${pinned}">
       <span class="chat-select">${selected ? '✓' : ''}</span>

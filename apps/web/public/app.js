@@ -118,7 +118,7 @@ const fwd = document.createElement('div');
 fwd.className = 'fwd-modal hidden';
 fwd.innerHTML = `
   <div class="fwd-box">
-    <div class="fwd-head"><b>Переслать в…</b><button class="fwd-close" title="Закрыть">✕</button></div>
+    <div class="fwd-head"><b>Переслать в…</b><button class="fwd-close" aria-label="Закрыть">✕</button></div>
     <input class="fwd-search" placeholder="Поиск чата" aria-label="Поиск чата">
     <div class="fwd-list"></div>
     <div class="fwd-foot">
@@ -201,33 +201,33 @@ lightbox.innerHTML = `
   <header class="lightbox-top">
     <div class="lightbox-info"><span class="lightbox-author-avatar"></span><span class="lightbox-author-copy"><b class="lightbox-title">Segment</b><span class="lightbox-counter"></span></span></div>
     <div class="lightbox-tools">
-      <button data-lb="rotate" title="Повернуть" aria-label="Повернуть">${ICON_ROTATE}</button>
-      <button data-lb="download" title="Скачать" aria-label="Скачать">${ICON_DOWNLOAD}</button><button class="lightbox-close" title="Закрыть" aria-label="Закрыть">${ICON_CLOSE}</button>
+      <button data-lb="rotate" aria-label="Повернуть">${ICON_ROTATE}</button>
+      <button data-lb="download" aria-label="Скачать">${ICON_DOWNLOAD}</button><button class="lightbox-close" aria-label="Закрыть">${ICON_CLOSE}</button>
     </div>
   </header>
-  <button class="lightbox-nav prev" title="Назад">${ICON_PREV}</button>
+  <button class="lightbox-nav prev" aria-label="Назад">${ICON_PREV}</button>
   <div class="lightbox-stage">
     <img class="lightbox-img" alt="">
     <div class="vplayer hidden">
       <video class="vplayer-video" playsinline></video>
-      <button class="vplayer-center" title="Плей">${ICON_PLAY}</button>
+      <button class="vplayer-center" aria-label="Воспроизвести">${ICON_PLAY}</button>
       <div class="vplayer-bar">
-        <button class="vplayer-play" title="Плей">${ICON_PLAY}</button>
+        <button class="vplayer-play" aria-label="Воспроизвести">${ICON_PLAY}</button>
         <span class="vplayer-cur">0:00</span>
         <div class="vplayer-seek"><div class="vplayer-buf"></div><div class="vplayer-fill"><span class="vplayer-knob"></span></div></div>
         <span class="vplayer-dur">0:00</span>
-        <button class="vplayer-mute" title="Звук">${ICON_VOL}</button>
-        <input class="vplayer-volume" type="range" min="0" max="1" step="0.05" value="1" title="Громкость" aria-label="Громкость">
+        <button class="vplayer-mute" aria-label="Звук">${ICON_VOL}</button>
+        <input class="vplayer-volume" type="range" min="0" max="1" step="0.05" value="1" aria-label="Громкость">
         <div class="vplayer-speed-wrap">
-          <button class="vplayer-speed" title="Скорость" aria-label="Скорость">1×</button>
+          <button class="vplayer-speed" aria-label="Скорость">1×</button>
           <div class="vplayer-speed-menu hidden">${[.5, .75, 1, 1.25, 1.5, 2].map((rate) => `<button data-speed="${rate}" class="${rate === 1 ? 'active' : ''}">${rate}×</button>`).join('')}</div>
         </div>
-        <button class="vplayer-pip" title="Мини-плеер" aria-label="Мини-плеер">${ICON_PIP}</button>
-        <button class="vplayer-full" title="На весь экран">${ICON_FULL}</button>
+        <button class="vplayer-pip" aria-label="Мини-плеер">${ICON_PIP}</button>
+        <button class="vplayer-full" aria-label="На весь экран">${ICON_FULL}</button>
       </div>
     </div>
   </div>
-  <button class="lightbox-nav next" title="Вперёд">${ICON_NEXT}</button>
+  <button class="lightbox-nav next" aria-label="Вперёд">${ICON_NEXT}</button>
   <footer class="lightbox-bottom"><div class="lightbox-caption"></div><div class="lightbox-thumbs"></div><div class="lightbox-help">Ctrl + колесо — масштаб · двойной клик — приблизить · стрелки — навигация</div></footer>`;
 document.body.appendChild(lightbox);
 const lightboxImg = lightbox.querySelector('.lightbox-img');
