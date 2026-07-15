@@ -127,6 +127,7 @@ export function chatRoomPanel(client) {
               <div class="fmt-group" aria-label="Форматирование текста">
               <button type="button" class="fmt-btn" data-fmt="B" title="Жирный · Ctrl+B"><b>B</b></button>
               <button type="button" class="fmt-btn" data-fmt="I" title="Курсив · Ctrl+I"><i>i</i></button>
+              <button type="button" class="fmt-btn" data-fmt="U" title="Подчёркнутый · Ctrl+U"><u>U</u></button>
               <button type="button" class="fmt-btn" data-fmt="S" title="Зачёркнутый · Ctrl+S"><s>S</s></button>
               <button type="button" class="fmt-btn mono" data-fmt="CODE" title="Моноширинный · Ctrl+E">&lt;/&gt;</button>
               <button type="button" class="fmt-btn" data-fmt="SPOILER" title="Спойлер">
@@ -203,6 +204,7 @@ export function chatRoomPanel(client) {
           const inner = domToMarkdown(n);
           if (n.nodeName === 'B' || n.nodeName === 'STRONG') out += `**${inner}**`;
           else if (n.nodeName === 'I' || n.nodeName === 'EM') out += `__${inner}__`;
+          else if (n.nodeName === 'U') out += `++${inner}++`;
           else if (n.nodeName === 'S' || n.nodeName === 'STRIKE' || n.nodeName === 'DEL') out += `~~${inner}~~`;
           else if (n.nodeName === 'CODE') out += `\`${inner}\``;
           else if (n.classList && n.classList.contains('spoiler')) out += `||${inner}||`;
@@ -217,6 +219,7 @@ export function chatRoomPanel(client) {
         s = s.replace(/\|\|([\s\S]+?)\|\|/g, '<span class="spoiler" data-spoiler>$1</span>');
         s = s.replace(/\*\*([^*\n]+?)\*\*/g, '<b>$1</b>');
         s = s.replace(/__([^_\n]+?)__/g, '<i>$1</i>');
+        s = s.replace(/\+\+([^+\n]+?)\+\+/g, '<u>$1</u>');
         s = s.replace(/~~([^~\n]+?)~~/g, '<s>$1</s>');
         return s.replace(/\n/g, '<br>');
       };
@@ -228,12 +231,12 @@ export function chatRoomPanel(client) {
         get() { return this.dataset.placeholder || ''; },
         set(v) { this.dataset.placeholder = v; },
       });
-      const FMT = { B: 'b', I: 'i', S: 's', CODE: 'code', SPOILER: 'spoiler' };
+      const FMT = { B: 'b', I: 'i', U: 'u', S: 's', CODE: 'code', SPOILER: 'spoiler' };
       const fmtAncestor = (node, kind) => {
         for (let el = node; el && el !== input; el = el.parentNode) {
           if (el.nodeType !== 1) continue;
           if (kind === 'SPOILER') { if (el.classList.contains('spoiler')) return el; }
-          else if (el.nodeName === FMT[kind].toUpperCase()) return el;
+          else if ({ B: ['B', 'STRONG'], I: ['I', 'EM'], U: ['U'], S: ['S', 'STRIKE', 'DEL'], CODE: ['CODE'] }[kind]?.includes(el.nodeName)) return el;
         }
         return null;
       };
@@ -256,6 +259,13 @@ export function chatRoomPanel(client) {
         if (!sel.rangeCount) return;
         const range = sel.getRangeAt(0);
         if (!input.contains(range.commonAncestorContainer)) return;
+        const nativeCommand = { B: 'bold', I: 'italic', U: 'underline', S: 'strikeThrough' }[kind];
+        if (nativeCommand) {
+          document.execCommand(nativeCommand);
+          input.dispatchEvent(new Event('input'));
+          syncFormatState();
+          return;
+        }
         // A selection can report the container (not a text node) as its boundary
         // when it spans a whole formatted run, so probe both ends and the common ancestor.
         let existing = fmtAncestor(range.startContainer, kind)
@@ -544,7 +554,7 @@ export function chatRoomPanel(client) {
               : a.kind === 'video'
                 ? `<span class="attach-thumb">${a.poster ? `<img src="${a.poster}" alt="">` : ''}<span class="attach-play">▶</span></span>`
                 : '<span class="attach-doc">📎</span>'}
-            ${a.kind === 'photo' ? '' : `<span class="attach-chip-name">${esc(a.name || 'Файл')}</span>`}
+            ${a.kind === 'photo' || a.kind === 'video' ? '' : `<span class="attach-chip-name">${esc(a.name || 'Файл')}</span>`}
             <button data-remove="${i}" title="Убрать">×</button>
           </div>`).join('');
         const spinner = processing
@@ -1393,8 +1403,8 @@ export function chatRoomPanel(client) {
       input.onkeydown = (e) => {
         if (acKeydown(e)) return;
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
-        else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && 'bise'.includes(e.key.toLowerCase())) {
-          const kind = { b: 'B', i: 'I', s: 'S', e: 'CODE' }[e.key.toLowerCase()];
+        else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && 'biuse'.includes(e.key.toLowerCase())) {
+          const kind = { b: 'B', i: 'I', u: 'U', s: 'S', e: 'CODE' }[e.key.toLowerCase()];
           if (kind) { e.preventDefault(); applyFormat(kind); }
         }
         else if (e.key === 'ArrowUp' && !input.value && !input.dataset.editing) {

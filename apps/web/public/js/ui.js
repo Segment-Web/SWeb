@@ -23,6 +23,7 @@ export function formatText(raw) {
 
   s = s.replace(/\*\*([^*\n]+?)\*\*/g, '<b>$1</b>');
   s = s.replace(/__([^_\n]+?)__/g, '<i>$1</i>');
+  s = s.replace(/\+\+([^+\n]+?)\+\+/g, '<u>$1</u>');
   s = s.replace(/~~([^~\n]+?)~~/g, '<s>$1</s>');
 
   s = s.replace(/(\d+)/g, (_, i) => codes[+i]);
@@ -563,7 +564,7 @@ function previewBody(m) {
   const media = (m.attachments || []).find((x) => x.kind === 'photo' || x.kind === 'video' || x.kind === 'circle');
   const src = media?.poster || media?.data || '';
   const thumb = src ? `<img class="chat-thumb" src="${esc(src)}" alt="">` : '';
-  if (m.text) return thumb + esc(m.text);
+  if (m.text) return thumb + formatText(m.text);
   if ((m.attachments || []).length) return `${thumb}<span class="chat-media">${esc(mediaWord(m))}</span>`;
   return '';
 }

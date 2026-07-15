@@ -186,6 +186,7 @@ const ICON_PAUSE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="curren
 const ICON_VOL = '<svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor"><path d="M3 10v4h4l5 5V5L7 10H3zm13 2a4 4 0 0 0-2-3.5v7A4 4 0 0 0 16 12z"/></svg>';
 const ICON_MUTE = '<svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor"><path d="M3 10v4h4l5 5V5L7 10H3z"/><path d="M16 8l5 8M21 8l-5 8" stroke="currentColor" stroke-width="2"/></svg>';
 const ICON_FULL = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
+const ICON_PIP = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><rect x="12" y="11" width="7" height="6" rx="1" fill="currentColor" stroke="none"/></svg>';
 const ICON_ROTATE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>';
 const ICON_DOWNLOAD = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
 const ICON_CLOSE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg>';
@@ -212,6 +213,9 @@ lightbox.innerHTML = `
         <div class="vplayer-seek"><div class="vplayer-buf"></div><div class="vplayer-fill"><span class="vplayer-knob"></span></div></div>
         <span class="vplayer-dur">0:00</span>
         <button class="vplayer-mute" title="Звук">${ICON_VOL}</button>
+        <input class="vplayer-volume" type="range" min="0" max="1" step="0.05" value="1" title="Громкость" aria-label="Громкость">
+        <select class="vplayer-speed" title="Скорость" aria-label="Скорость"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
+        <button class="vplayer-pip" title="Мини-плеер" aria-label="Мини-плеер">${ICON_PIP}</button>
         <button class="vplayer-full" title="На весь экран">${ICON_FULL}</button>
       </div>
     </div>
@@ -220,6 +224,7 @@ lightbox.innerHTML = `
   <footer class="lightbox-bottom"><div class="lightbox-caption"></div><div class="lightbox-thumbs"></div><div class="lightbox-help">Колесо — масштаб · двойной клик — приблизить · стрелки — навигация</div></footer>`;
 document.body.appendChild(lightbox);
 const lightboxImg = lightbox.querySelector('.lightbox-img');
+const lightboxStage = lightbox.querySelector('.lightbox-stage');
 const vplayer = lightbox.querySelector('.vplayer');
 const lightboxVideo = lightbox.querySelector('.vplayer-video');
 const lbTitle = lightbox.querySelector('.lightbox-title');
@@ -237,6 +242,9 @@ const vBuf = lightbox.querySelector('.vplayer-buf');
 const vCur = lightbox.querySelector('.vplayer-cur');
 const vDur = lightbox.querySelector('.vplayer-dur');
 const vMuteBtn = lightbox.querySelector('.vplayer-mute');
+const vVolume = lightbox.querySelector('.vplayer-volume');
+const vSpeed = lightbox.querySelector('.vplayer-speed');
+const vPipBtn = lightbox.querySelector('.vplayer-pip');
 const vFullBtn = lightbox.querySelector('.vplayer-full');
 const vFmt = (s) => {
   if (!Number.isFinite(s)) return '0:00';
@@ -273,11 +281,25 @@ vSeek.addEventListener('pointermove', (e) => { if (vScrubbing) vSeekTo(e); });
 vSeek.addEventListener('pointerup', () => { vScrubbing = false; });
 vPlayBtn.onclick = (e) => { e.stopPropagation(); vToggle(); };
 vCenterBtn.onclick = (e) => { e.stopPropagation(); vToggle(); };
-lightboxVideo.onclick = (e) => { e.stopPropagation(); vToggle(); };
+lightboxVideo.onclick = (e) => { e.stopPropagation(); if (!dragMoved) vToggle(); };
 vMuteBtn.onclick = (e) => {
   e.stopPropagation();
   lightboxVideo.muted = !lightboxVideo.muted;
   vMuteBtn.innerHTML = lightboxVideo.muted ? ICON_MUTE : ICON_VOL;
+};
+vVolume.oninput = () => {
+  lightboxVideo.volume = Number(vVolume.value);
+  lightboxVideo.muted = lightboxVideo.volume === 0;
+  vMuteBtn.innerHTML = lightboxVideo.muted ? ICON_MUTE : ICON_VOL;
+};
+vSpeed.onchange = () => { lightboxVideo.playbackRate = Number(vSpeed.value) || 1; };
+vPipBtn.hidden = !document.pictureInPictureEnabled || !lightboxVideo.requestPictureInPicture;
+vPipBtn.onclick = async (e) => {
+  e.stopPropagation();
+  try {
+    if (document.pictureInPictureElement) await document.exitPictureInPicture();
+    else await lightboxVideo.requestPictureInPicture();
+  } catch {}
 };
 const toggleFullscreen = () => {
   const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
@@ -299,21 +321,26 @@ let rotation = 0;
 
 
 const clampPan = () => {
-  const stage = lightbox.querySelector('.lightbox-stage');
-  const maxX = Math.max(0, (lightboxImg.offsetWidth * zoom - stage.clientWidth) / 2);
-  const maxY = Math.max(0, (lightboxImg.offsetHeight * zoom - stage.clientHeight) / 2);
+  const target = lbList[lbIndex]?.type === 'video' ? lightboxVideo : lightboxImg;
+  const maxX = Math.max(0, (target.offsetWidth * zoom - lightboxStage.clientWidth) / 2);
+  const maxY = Math.max(0, (target.offsetHeight * zoom - lightboxStage.clientHeight) / 2);
   panX = Math.max(-maxX, Math.min(maxX, panX));
   panY = Math.max(-maxY, Math.min(maxY, panY));
 };
 const applyZoom = () => {
   clampPan();
-  lightboxImg.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom}) rotate(${rotation}deg)`;
-  lightboxImg.style.cursor = zoom > 1 ? 'grab' : 'zoom-in';
-  lightboxImg.classList.toggle('zoomed', zoom > 1);
+  const isVideo = lbList[lbIndex]?.type === 'video';
+  const target = isVideo ? lightboxVideo : lightboxImg;
+  const other = isVideo ? lightboxImg : lightboxVideo;
+  other.style.transform = '';
+  target.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom}) rotate(${isVideo ? 0 : rotation}deg)`;
+  lightboxStage.style.cursor = zoom > 1 ? 'grab' : (isVideo ? 'default' : 'zoom-in');
+  target.classList.toggle('zoomed', zoom > 1);
 };
-const resetZoom = (resetRotation = true) => { zoom = 1; panX = 0; panY = 0; if (resetRotation) rotation = 0; lightboxImg.style.transform = rotation ? `rotate(${rotation}deg)` : ''; lightboxImg.classList.remove('zoomed'); };
+const resetZoom = (resetRotation = true) => { zoom = 1; panX = 0; panY = 0; if (resetRotation) rotation = 0; lightboxImg.style.transform = ''; lightboxVideo.style.transform = ''; lightboxImg.classList.remove('zoomed'); lightboxVideo.classList.remove('zoomed'); lightboxStage.style.cursor = ''; };
 const setZoom = (value) => { zoom = Math.max(.25, Math.min(8, value)); if (Math.abs(zoom - 1) < .015) zoom = 1; if (zoom === 1) { panX = 0; panY = 0; } applyZoom(); };
-lightbox.querySelector('.lightbox-stage').addEventListener('wheel', (e) => {
+lightboxImg.ondblclick = (e) => { e.stopPropagation(); setZoom(zoom > 1 ? 1 : 2.5); };
+lightboxStage.addEventListener('wheel', (e) => {
   e.preventDefault();
   const prev = zoom;
   zoom = Math.max(.25, Math.min(8, zoom * Math.exp(-e.deltaY * .0018)));
@@ -330,32 +357,37 @@ lightbox.querySelector('.lightbox-stage').addEventListener('wheel', (e) => {
   applyZoom();
 }, { passive: false });
 
-let dragging = false; let dragX = 0; let dragY = 0;
+let dragging = false; let dragX = 0; let dragY = 0; let dragMoved = false;
 const pinchPoints = new Map(); let pinchStart = null;
 const pinchDistance = () => { const p = [...pinchPoints.values()]; return p.length < 2 ? 0 : Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y); };
-lightboxImg.addEventListener('pointerdown', (e) => {
+lightboxStage.addEventListener('pointerdown', (e) => {
   if (e.pointerType !== 'touch') return; pinchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pinchPoints.size === 2) pinchStart = { distance: pinchDistance(), zoom };
 });
-lightboxImg.addEventListener('pointermove', (e) => {
+lightboxStage.addEventListener('pointermove', (e) => {
   if (!pinchPoints.has(e.pointerId)) return; pinchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pinchStart && pinchPoints.size === 2) setZoom(pinchStart.zoom * pinchDistance() / Math.max(1, pinchStart.distance));
 });
 const endPinch = (e) => { pinchPoints.delete(e.pointerId); if (pinchPoints.size < 2) pinchStart = null; };
-lightboxImg.addEventListener('pointerup', endPinch); lightboxImg.addEventListener('pointercancel', endPinch);
-lightboxImg.addEventListener('pointerdown', (e) => {
+lightboxStage.addEventListener('pointerup', endPinch); lightboxStage.addEventListener('pointercancel', endPinch);
+lightboxStage.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || e.target.closest('.vplayer-bar, button, input, select')) return;
   if (e.pointerType === 'touch' && pinchPoints.size > 1) return;
   if (zoom <= 1) return;
-  dragging = true; dragX = e.clientX - panX; dragY = e.clientY - panY;
-  lightboxImg.setPointerCapture(e.pointerId);
-  lightboxImg.style.cursor = 'grabbing';
+  dragging = true; dragMoved = false; dragX = e.clientX - panX; dragY = e.clientY - panY;
+  lightboxStage.setPointerCapture(e.pointerId);
+  lightboxStage.style.cursor = 'grabbing';
 });
-lightboxImg.addEventListener('pointermove', (e) => {
+lightboxStage.addEventListener('pointermove', (e) => {
   if (pinchPoints.size > 1) return;
   if (!dragging) return;
+  if (Math.abs(e.clientX - dragX - panX) + Math.abs(e.clientY - dragY - panY) > 3) dragMoved = true;
   panX = e.clientX - dragX; panY = e.clientY - dragY; applyZoom();
 });
-lightboxImg.addEventListener('pointerup', () => { dragging = false; if (zoom > 1) lightboxImg.style.cursor = 'grab'; });
+const endDrag = () => { dragging = false; if (zoom > 1) lightboxStage.style.cursor = 'grab'; setTimeout(() => { dragMoved = false; }, 0); };
+lightboxStage.addEventListener('pointerup', endDrag);
+lightboxStage.addEventListener('pointercancel', endDrag);
+lightboxStage.addEventListener('lostpointercapture', endDrag);
 
 let lbList = [];
 let lbIndex = 0;
@@ -371,6 +403,7 @@ const lbShow = () => {
   if (!item) return;
   resetZoom();
   const isVideo = item.type === 'video';
+  lightbox.querySelector('[data-lb="rotate"]').classList.toggle('hidden', isVideo);
   lightboxImg.classList.toggle('hidden', isVideo);
   vplayer.classList.toggle('hidden', !isVideo);
   if (isVideo) {
@@ -424,7 +457,7 @@ segmentApi.openImage = (list, index = 0) => segmentApi.openMedia(list, index);
 lightbox.querySelector('.lightbox-close').onclick = lbClose;
 lightbox.querySelector('.prev').onclick = (e) => { e.stopPropagation(); lbStep(-1); };
 lightbox.querySelector('.next').onclick = (e) => { e.stopPropagation(); lbStep(1); };
-lightbox.querySelector('[data-lb="rotate"]').onclick = (e) => { e.stopPropagation(); rotation = (rotation + 90) % 360; applyZoom(); };
+lightbox.querySelector('[data-lb="rotate"]').onclick = (e) => { e.stopPropagation(); rotation += 90; applyZoom(); };
 lightbox.querySelector('[data-lb="download"]').onclick = (e) => {
   e.stopPropagation(); const item = lbList[lbIndex]; if (!item?.src) return;
   const a = document.createElement('a'); a.href = item.src; a.download = item.name || (item.type === 'video' ? 'video' : 'photo'); a.click();
@@ -436,7 +469,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { e.stopImmediatePropagation(); lbClose(); }
   else if (e.key === 'ArrowLeft') lbStep(-1);
   else if (e.key === 'ArrowRight') lbStep(1);
-  else if (e.key.toLowerCase() === 'r') { rotation = (rotation + 90) % 360; applyZoom(); }
+  else if (e.key.toLowerCase() === 'r' && lbList[lbIndex]?.type !== 'video') { rotation += 90; applyZoom(); }
   else if (e.key.toLowerCase() === 'f' && lbList[lbIndex]?.type === 'video') toggleFullscreen();
   else if (e.key.toLowerCase() === 'm' && lbList[lbIndex]?.type === 'video') { lightboxVideo.muted = !lightboxVideo.muted; vMuteBtn.innerHTML = lightboxVideo.muted ? ICON_MUTE : ICON_VOL; }
   else if (e.key === ' ' && lbList[lbIndex]?.type === 'video') { e.preventDefault(); vToggle(); }

@@ -1102,7 +1102,17 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
 }
 .composer-input b, .composer-input strong { font-weight: 700; }
 .composer-input i, .composer-input em { font-style: italic; }
-.composer-input s { text-decoration: line-through; }
+.composer-input u, .text u { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+.composer-input s, .text s {
+  text-decoration: none;
+  background-image: linear-gradient(currentColor, currentColor);
+  background-repeat: no-repeat; background-position: 0 52%; background-size: 100% 1px;
+}
+.chat-last :where(b, strong) { font-weight: 650; }
+.chat-last :where(i, em) { font-style: italic; }
+.chat-last u { text-decoration: underline; text-underline-offset: 2px; }
+.chat-last s { text-decoration: line-through; }
+.chat-last a { color: inherit; text-decoration: none; pointer-events: none; }
 .composer-input code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em;
   background: var(--surface3); border-radius: 4px; padding: 0 3px;
@@ -1861,9 +1871,10 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
   transition: border-color .14s, background .14s, transform .14s;
 }
 .attach-chip:hover { border-color: color-mix(in srgb, var(--accent) 32%, var(--stroke)); background: var(--surface2); }
-.attach-chip.photo { position:relative; padding:0; width:76px; height:76px; border-radius:10px; overflow:hidden; background:#0a111a; }
+.attach-chip.photo, .attach-chip.video { position:relative; padding:0; width:76px; height:76px; border-radius:10px; overflow:hidden; background:#0a111a; }
 .attach-chip.photo > img { width:100%; height:100%; border-radius:0; }
-.attach-chip.photo > button { position:absolute; top:4px; right:4px; width:22px; height:22px; border-radius:50%; display:grid; place-items:center; background:rgba(0,0,0,.58); color:#fff; }
+.attach-chip.video > .attach-thumb { width:100%; height:100%; border-radius:0; }
+.attach-chip.video > button, .attach-chip.photo > button { position:absolute; top:4px; right:4px; width:22px; height:22px; border-radius:50%; display:grid; place-items:center; background:rgba(0,0,0,.58); color:#fff; }
 .attach-chip img { width: 30px; height: 30px; border-radius: 6px; object-fit: cover; }
 .attach-chip .attach-doc { width: 30px; height: 30px; display: grid; place-items: center; font-size: 16px; }
 .attach-chip .attach-thumb { position: relative; width: 30px; height: 30px; border-radius: 6px; overflow: hidden; background: #000; }
@@ -1875,7 +1886,7 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
 .attach-chip-name { font-size: 12px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attach-chip button { border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; }
 .attach-chip button:hover { color: var(--text); }
-.attach-chip.photo > button:hover { background:rgba(0,0,0,.78); color:#fff; }
+.attach-chip.photo > button:hover, .attach-chip.video > button:hover { background:rgba(0,0,0,.78); color:#fff; }
 .attach-chip.processing { color: var(--muted); font-size: 12px; padding: 6px 10px; }
 .attach-spinner {
   width: 15px; height: 15px; border-radius: 50%;
@@ -1918,7 +1929,8 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
 
 .vplayer { position: relative; border-radius: 12px; overflow: hidden; background: #000; }
 .vplayer.hidden { display: none; }
-.vplayer-video { display: block; max-width: 90vw; max-height: 88vh; }
+.vplayer-video { display: block; max-width: 90vw; max-height: 88vh; transform-origin: center center; transition: transform .08s ease-out; touch-action:none; }
+.vplayer-video.zoomed { transition:none; }
 .vplayer-center {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   width: 68px; height: 68px; border-radius: 50%; border: none; cursor: pointer;
@@ -1941,6 +1953,12 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
   display: grid; place-items: center; padding: 2px;
 }
 .vplayer-bar button:hover { color: var(--accent); }
+.vplayer-volume { width: 72px; height: 4px; accent-color: var(--accent); cursor: pointer; }
+.vplayer-speed {
+  height: 28px; padding: 0 5px; border: 0; border-radius: 7px;
+  background: rgba(255,255,255,.1); color: #fff; font: inherit; font-size: 12px; cursor: pointer;
+}
+.vplayer-speed option { background: #141b24; color: #fff; }
 .vplayer-cur, .vplayer-dur { color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; min-width: 34px; }
 .vplayer-dur { text-align: right; }
 .vplayer-seek {
@@ -1986,6 +2004,7 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
 .lightbox-tools button { width:38px; height:38px; display:grid; place-items:center; border:0; border-radius:10px; background:transparent; color:#c9d2da; cursor:pointer; font-size:20px; transition:background .14s,color .14s,transform .12s; }
 .lightbox-tools button:hover { background:rgba(255,255,255,.09); color:#fff; }
 .lightbox-tools button:active { transform:scale(.94); }
+.lightbox-tools button.hidden { display:none; }
 .lightbox-zoom { min-width:48px; text-align:center; color:#9eabb7; font-size:12px; font-variant-numeric:tabular-nums; }
 .lightbox .lightbox-close { position:static; width:38px; height:38px; background:transparent; font-size:24px; }
 .lightbox-stage { grid-column:2; grid-row:2; width:100%; height:100%; max-width:none; max-height:none; border-radius:0; overflow:hidden; }
