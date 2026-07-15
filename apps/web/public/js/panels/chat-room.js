@@ -1215,23 +1215,32 @@ export function chatRoomPanel(client) {
           }
         }, 90);
       });
+      const runEditorCommand = (command) => {
+        input.focus();
+        document.execCommand(command);
+        input.dispatchEvent(new Event('input'));
+        syncFormatState();
+      };
       for (const btn of formatBar.querySelectorAll('.fmt-btn')) {
         btn.addEventListener('mousedown', (e) => {
           e.preventDefault();
           if (btn.dataset.fmt) applyFormat(btn.dataset.fmt);
           else if (btn.dataset.command === 'clear') {
-            input.focus();
-            document.execCommand('removeFormat');
-            input.dispatchEvent(new Event('input'));
-            syncFormatState();
+            runEditorCommand('removeFormat');
           } else if (btn.dataset.command) {
-            input.focus();
-            document.execCommand(btn.dataset.command);
-            input.dispatchEvent(new Event('input'));
-            syncFormatState();
+            runEditorCommand(btn.dataset.command);
           }
         });
       }
+      const mouseHistory = (e) => {
+        if ((e.button !== 3 && e.button !== 4) || document.activeElement !== input) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.type === 'mousedown') runEditorCommand(e.button === 3 ? 'undo' : 'redo');
+      };
+      window.addEventListener('mousedown', mouseHistory, true);
+      window.addEventListener('mouseup', mouseHistory, true);
+      window.addEventListener('auxclick', mouseHistory, true);
       const syncComposerFormat = () => {
         if (document.activeElement === input) syncFormatState();
       };
@@ -1409,8 +1418,13 @@ export function chatRoomPanel(client) {
         clearTimeout(typingTimer);
         clearTimeout(holdTimer);
         document.removeEventListener('keydown', roomSearchShortcut);
+        document.removeEventListener('keydown', attachShortcut);
+        document.removeEventListener('keydown', deleteShortcut);
         document.removeEventListener('selectionchange', syncSelectionQuote);
         document.removeEventListener('selectionchange', syncComposerFormat);
+        window.removeEventListener('mousedown', mouseHistory, true);
+        window.removeEventListener('mouseup', mouseHistory, true);
+        window.removeEventListener('auxclick', mouseHistory, true);
         if (recSession) finishRecord(false);
       };
     },
