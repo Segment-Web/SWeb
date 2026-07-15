@@ -4,7 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Segment</title>
-<link rel="stylesheet" href="./styles.css?v=0.0.1-auth5">
+<link rel="icon" type="image/png" href="/logo.png">
+<link rel="apple-touch-icon" href="/logo.png">
+<link rel="stylesheet" href="./styles.css?v=0.0.1-auth6">
 
 <script type="importmap">
 {
@@ -19,7 +21,7 @@
 <body class="auth-pending">
 <div class="desktop-only-gate" id="desktopOnlyGate" aria-labelledby="desktopOnlyTitle">
   <div class="desktop-only-card">
-    <div class="logo" aria-hidden="true">S</div>
+    <div class="logo" aria-hidden="true"><img src="/logo.png" alt="" onerror="this.replaceWith(document.createTextNode('S'))"></div>
     <h1 id="desktopOnlyTitle">Segment пока доступен только на ПК</h1>
     <p>Мобильная версия ещё разрабатывается. Откройте Segment на компьютере или ноутбуке.</p>
   </div>
@@ -27,7 +29,7 @@
 
 <div class="gate" id="gate">
   <div class="card auth-card">
-    <div class="logo">S</div>
+    <div class="logo"><img src="/logo.png" alt="Segment" onerror="this.replaceWith(document.createTextNode('S'))"></div>
     <h1>Segment</h1>
     <div class="auth-progress" aria-hidden="true"><span data-progress="1"></span><span data-progress="2"></span><span data-progress="3"></span></div>
     <small class="auth-kicker" data-auth="kicker">Шаг 1 из 3</small>

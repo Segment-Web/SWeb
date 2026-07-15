@@ -129,9 +129,31 @@ export async function createAuth(config) {
           VALUES($1,$2,NOW()+($3::text)::interval,0,NOW()) ON CONFLICT(email) DO UPDATE SET
           code_hash=EXCLUDED.code_hash,expires_at=EXCLUDED.expires_at,attempts=0,requested_at=NOW()`, [email, sign(`${email}:${code}`), `${config.authCodeTtlMs} milliseconds`]);
         try {
+          const minutes = Math.max(1, Math.round(config.authCodeTtlMs / 60000));
+          const logoUrl = `${(config.publicUrl || 'https://web.segmnt.org').replace(/\/+$/, '')}/logo.png`;
+          const spaced = code.split('').join(' ');
           await mailer.sendMail({ from: config.smtp.from, to: email, subject: `${code} — код входа в Segment`,
-            text: `Код входа в Segment: ${code}\n\nОн действует 10 минут. Если вы не запрашивали код, проигнорируйте письмо.`,
-            html: `<div style="font-family:system-ui;max-width:520px"><h2>Вход в Segment</h2><p>Ваш одноразовый код:</p><p style="font-size:30px;font-weight:700;letter-spacing:6px">${code}</p><p>Код действует 10 минут. Никому его не сообщайте.</p></div>` });
+            text: `Ваш код входа в Segment:\n\n${code}\n\nКод действует ${minutes} минут и может быть использован только один раз.\nНикому не сообщайте этот код: мы никогда не спросим его по телефону или в письме.\n\nВы получили это письмо, потому что для вашего аккаунта Segment запросили код входа. Если это были не вы, просто проигнорируйте письмо.`,
+            html: `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f8fa;padding:24px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1f2328">
+  <tr><td align="center">
+    <table role="presentation" width="516" cellpadding="0" cellspacing="0" style="width:516px;max-width:100%">
+      <tr><td align="center" style="padding-bottom:16px">
+        <img src="${logoUrl}" width="48" height="48" alt="Segment" style="border-radius:12px;display:block">
+      </td></tr>
+      <tr><td align="center" style="font-size:22px;font-weight:600;padding-bottom:20px">Вход в Segment</td></tr>
+      <tr><td style="background:#ffffff;border:1px solid #d1d9e0;border-radius:12px;padding:24px 28px;font-size:15px;line-height:1.6">
+        <p style="margin:0 0 8px">Ваш код входа в Segment:</p>
+        <p style="margin:0 0 20px;text-align:center;font-size:30px;font-weight:600;letter-spacing:8px">${spaced}</p>
+        <p style="margin:0 0 16px">Код действует <b>${minutes} минут</b> и может быть использован только один раз.</p>
+        <p style="margin:0"><b>Никому не сообщайте этот код:</b> мы никогда не спросим его по телефону или в письме.</p>
+        <p style="margin:16px 0 0">Спасибо,<br>Команда Segment</p>
+      </td></tr>
+      <tr><td style="padding:16px 4px 0;font-size:12px;line-height:1.5;color:#59636e">
+        Вы получили это письмо, потому что для вашего аккаунта Segment запросили код входа. Если это были не вы, просто проигнорируйте письмо.
+      </td></tr>
+    </table>
+  </td></tr>
+</table>` });
         } catch (error) {
           await pool.query('DELETE FROM login_codes WHERE email=$1', [email]);
           console.error(JSON.stringify({ level: 'error', event: 'auth.email_failed', message: error.message }));
