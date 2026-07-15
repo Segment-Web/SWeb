@@ -2,6 +2,7 @@ import { renderFeed, renderMessage, renderSystem, showTyping, scrollFeedToBottom
 import { esc, attachLabel, fmtSize } from '../util.js';
 import { ICONS } from '../icons.js';
 import { chatViewPanel } from './chat-view.js';
+import { LIMITS } from '@segment/protocol';
 
 const TYPING_HIDE_MS = 2000;
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '🔥', '👏', '🥰', '😮', '😢'];
@@ -570,7 +571,20 @@ export function chatRoomPanel(client) {
 
 
       const addFiles = async (files, { asFiles = false } = {}) => {
-        const list = [...files];
+        const existingVideos = pending.filter((a) => a.kind === 'video').length;
+        const existingOther = pending.length - existingVideos;
+        let videos = existingVideos;
+        let other = existingOther;
+        const list = [...files].filter((file) => {
+          const isVideo = !asFiles && kindOf(file.type) === 'video';
+          if (isVideo && videos >= LIMITS.videosPerMessage) return false;
+          if (!isVideo && other >= LIMITS.photosAndFilesPerMessage) return false;
+          if (isVideo) videos++; else other++;
+          return true;
+        });
+        if (list.length < files.length) {
+          window.Segment?.toast?.(`В одном сообщении можно отправить до ${LIMITS.videosPerMessage} видео и до ${LIMITS.photosAndFilesPerMessage} фото или файлов`);
+        }
         if (!list.length) return;
         processing += list.length;
         renderAttachDraft();

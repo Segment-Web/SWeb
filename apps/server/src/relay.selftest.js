@@ -97,7 +97,7 @@ await settle();
 ok(firstOfType(bob.inbox, MessageType.Cipher), 'private-room frame reaches a member');
 ok(!firstOfType(carol.inbox, MessageType.Cipher), 'private-room frame does not reach a non-member');
 
-// Typing relays, and the history-key gossip survives the KeyShare hop.
+// Typing relays. History keys use a separate room-scoped encrypted route.
 bob.inbox.length = 0;
 alice.send({ type: MessageType.Typing, room: ROOM });
 await settle();
@@ -106,11 +106,20 @@ ok(firstOfType(bob.inbox, MessageType.Typing), 'typing relays');
 const bobId = firstOfType(alice.inbox, MessageType.Peer)?.id
   || firstOfType(alice.inbox, MessageType.Roster)?.members?.[0]?.id;
 bob.inbox.length = 0;
-alice.send({ type: MessageType.KeyShare, to: bobId, box: { ct: [1, 2] }, hist: { [PRIVATE]: new Array(32).fill(7) } });
+alice.send({ type: MessageType.KeyShare, to: bobId, box: { ct: [1, 2] } });
 await settle();
 const share = firstOfType(bob.inbox, MessageType.KeyShare);
 ok(Boolean(share), 'KeyShare is forwarded');
-ok(share?.hist?.[PRIVATE]?.length === 32, 'history-key gossip survives the relay (it used to be stripped)');
+
+bob.inbox.length = 0; carol.inbox.length = 0;
+alice.send({ type: MessageType.HistoryKeyRequest, room: PRIVATE });
+await settle();
+const keyRequest = firstOfType(bob.inbox, MessageType.HistoryKeyRequest);
+ok(Boolean(keyRequest) && !firstOfType(carol.inbox, MessageType.HistoryKeyRequest), 'history-key request is scoped to room members');
+alice.inbox.length = 0;
+bob.send({ type: MessageType.HistoryKeyShare, to: keyRequest.from, room: PRIVATE, box: { ct: [7, 8] } });
+await settle();
+ok(Boolean(firstOfType(alice.inbox, MessageType.HistoryKeyShare)), 'encrypted history-key share reaches the requesting member');
 
 for (const c of [alice, bob, carol]) c.ws.close();
 gateway.stop();

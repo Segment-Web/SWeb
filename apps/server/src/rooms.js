@@ -83,6 +83,9 @@ export async function createRooms(config, auth) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (room_id, seq)
     );
+    ALTER TABLE room_history ADD COLUMN IF NOT EXISTS client_event_id TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS room_history_event_idx
+      ON room_history(room_id, client_event_id) WHERE client_event_id IS NOT NULL;
   `);
 
   // Drop retired rooms. ON DELETE CASCADE takes their history, members and
@@ -199,18 +202,34 @@ export async function createRooms(config, auth) {
   };
 
   // Append one encrypted history envelope; returns its assigned sequence.
-  const appendHistory = async (user, roomId, iv, ct) => {
+  const appendHistory = async (user, roomId, eventId, iv, ct) => {
     if (!canAccess(user.id, roomId)) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
     if (typeof iv !== 'string' || iv.length > 256 || typeof ct !== 'string' || !ct.length || ct.length > 2 * 1024 * 1024) {
       throw Object.assign(new Error('ENVELOPE_INVALID'), { status: 400 });
     }
-    const row = await one(
-      `INSERT INTO room_history(room_id,seq,sender_id,iv,ct)
-       VALUES($1,(SELECT COALESCE(MAX(seq),0)+1 FROM room_history WHERE room_id=$1),$2,$3,$4)
-       RETURNING seq`,
-      [roomId, user.id, iv, ct],
-    );
-    return { seq: Number(row.seq) };
+    const stableId = typeof eventId === 'string' && /^[A-Za-z0-9_-]{6,96}$/.test(eventId) ? eventId : null;
+    if (stableId) {
+      const existingEvent = await one('SELECT seq FROM room_history WHERE room_id=$1 AND client_event_id=$2', [roomId, stableId]);
+      if (existingEvent) return { seq: Number(existingEvent.seq), duplicate: true };
+    }
+    for (let attempt = 0; attempt < 6; attempt++) {
+      try {
+        const row = await one(
+          `INSERT INTO room_history(room_id,seq,sender_id,client_event_id,iv,ct)
+           VALUES($1,(SELECT COALESCE(MAX(seq),0)+1 FROM room_history WHERE room_id=$1),$2,$3,$4,$5)
+           RETURNING seq`,
+          [roomId, user.id, stableId, iv, ct],
+        );
+        return { seq: Number(row.seq), duplicate: false };
+      } catch (error) {
+        if (error.code !== '23505') throw error;
+        if (stableId) {
+          const duplicate = await one('SELECT seq FROM room_history WHERE room_id=$1 AND client_event_id=$2', [roomId, stableId]);
+          if (duplicate) return { seq: Number(duplicate.seq), duplicate: true };
+        }
+      }
+    }
+    throw Object.assign(new Error('HISTORY_BUSY'), { status: 503 });
   };
 
   // Backfill envelopes the caller may see. 'full' visibility exposes everything;
@@ -352,7 +371,7 @@ export async function createRooms(config, auth) {
       if (req.method === 'POST' && url.pathname === '/api/rooms/history') {
         const body = await readJson(req, 4 * 1024 * 1024);
         if (!exists(String(body.roomId))) return json(res, 404, { error: 'NOT_FOUND' });
-        return json(res, 201, await appendHistory(user, String(body.roomId), body.iv, body.ct));
+        return json(res, 201, await appendHistory(user, String(body.roomId), body.eventId, body.iv, body.ct));
       }
       if (req.method === 'GET' && url.pathname === '/api/rooms/history') {
         const roomId = url.searchParams.get('roomId') || '';

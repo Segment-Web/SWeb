@@ -4,7 +4,7 @@
 
 
 
-const KEYS = { name: 'segment_name', username: 'segment_username', avatar: 'segment_avatar', notes: 'segment_saved', pinned: 'segment_pinned', color: 'segment_color', muted: 'segment_muted', archived: 'segment_archived', folders: 'segment_folders' };
+const KEYS = { name: 'segment_name', username: 'segment_username', avatar: 'segment_avatar', notes: 'segment_saved', pinned: 'segment_pinned', color: 'segment_color', muted: 'segment_muted', archived: 'segment_archived', folders: 'segment_folders', historyKeys: 'segment_history_keys', outbox: 'segment_outbox' };
 const NOTES_LIMIT = 200;
 
 // The retired 'general' room used to persist its whole log in localStorage. Purge
@@ -35,6 +35,10 @@ export const webStorage = {
 
   getPinned: () => JSON.parse(localStorage.getItem(KEYS.pinned) || '[]'),
   setPinned: (list) => localStorage.setItem(KEYS.pinned, JSON.stringify(list)),
+  getHistoryKeys: () => { try { return JSON.parse(localStorage.getItem(KEYS.historyKeys) || '{}'); } catch { return {}; } },
+  setHistoryKeys: (keys) => localStorage.setItem(KEYS.historyKeys, JSON.stringify(keys || {})),
+  getOutbox: () => { try { return JSON.parse(localStorage.getItem(KEYS.outbox) || '[]'); } catch { return []; } },
+  setOutbox: (items) => localStorage.setItem(KEYS.outbox, JSON.stringify(items || [])),
 
   clear: () => {
     localStorage.removeItem(KEYS.name);
@@ -46,5 +50,7 @@ export const webStorage = {
     localStorage.removeItem(KEYS.muted);
     localStorage.removeItem(KEYS.archived);
     localStorage.removeItem(KEYS.folders);
+    localStorage.removeItem(KEYS.historyKeys);
+    localStorage.removeItem(KEYS.outbox);
   },
 };

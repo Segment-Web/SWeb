@@ -31,6 +31,8 @@ export const LIMITS = {
   name: 24,
   message: 2000,
   history: 50,
+  photosAndFilesPerMessage: 100,
+  videosPerMessage: 50,
 };
 
 /** WebSocket envelope types. */
@@ -42,7 +44,10 @@ export const MessageType = {
   PreKeyRequest: 'prekey-request',
   PreKey: 'prekey',
   KeyShare: 'keyshare',
+  HistoryKeyRequest: 'history-key-request',
+  HistoryKeyShare: 'history-key-share',
   Cipher: 'cipher',
+  Ack: 'ack',
   Typing: 'typing',
   System: 'system',
 };
@@ -96,4 +101,15 @@ export function isCipherFrame(message, maxCtBytes) {
 /** Convert arbitrary input to a string and enforce a character limit. */
 export function clean(value, max) {
   return String(value ?? '').slice(0, max);
+}
+
+export function attachmentsWithinLimits(attachments) {
+  if (!Array.isArray(attachments)) return true;
+  let videos = 0;
+  let other = 0;
+  for (const item of attachments) {
+    if (item?.kind === 'video') videos++;
+    else if (item?.kind === 'photo' || item?.kind === 'file') other++;
+  }
+  return videos <= LIMITS.videosPerMessage && other <= LIMITS.photosAndFilesPerMessage;
 }

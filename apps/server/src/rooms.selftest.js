@@ -104,6 +104,16 @@ ok(ownerMine.data.rooms.some((r) => r.id === roomId), 'owner /mine includes priv
 const otherMine = await call('GET', '/api/rooms/mine', { user: other });
 ok(otherMine.data.rooms.some((r) => r.id === roomId), 'redeemer /mine includes joined room');
 
+// Retrying the same client event is acknowledged with its original sequence
+// instead of inserting a duplicate envelope.
+const idemRoom = (await call('POST', '/api/rooms', { user: owner, body: { type: 'chat', title: 'Idempotency' } })).data.room.id;
+const idemBody = { roomId: idemRoom, eventId: 'event-stable-1', iv: 'iv', ct: 'cipher' };
+const idemFirst = await call('POST', '/api/rooms/history', { user: owner, body: idemBody });
+const idemRetry = await call('POST', '/api/rooms/history', { user: owner, body: idemBody });
+const idemHistory = await call('GET', `/api/rooms/history?roomId=${idemRoom}`, { user: owner });
+ok(idemFirst.data.seq === idemRetry.data.seq && idemRetry.data.duplicate === true, 'history retry returns the original sequence');
+ok(idemHistory.data.envelopes.length === 1, 'history retry does not duplicate the envelope');
+
 // --- Encrypted history: append, join-point gating, one-way full visibility ---
 const env = (n) => ({ iv: `iv${n}`, ct: `cipher-${n}` });
 

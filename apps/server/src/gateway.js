@@ -130,13 +130,27 @@ export function attachGateway(server, config, auth, rooms) {
         return;
       }
       if (message.type === MessageType.KeyShare && typeof message.to === 'string' && message.to.length < 80 && message.box && typeof message.box === 'object') {
-        sendTo(message.to, { type: MessageType.KeyShare, from: client.id, x3dh: message.x3dh, box: message.box, hist: message.hist });
+        sendTo(message.to, { type: MessageType.KeyShare, from: client.id, x3dh: message.x3dh, box: message.box });
+        return;
+      }
+      if (message.type === MessageType.HistoryKeyRequest && rooms.exists(message.room) && rooms.canAccess(client.userId, message.room)) {
+        broadcastRoom(message.room, { type: MessageType.HistoryKeyRequest, from: client.id, room: message.room }, ws);
+        return;
+      }
+      if (message.type === MessageType.HistoryKeyShare && typeof message.to === 'string' && message.box && typeof message.box === 'object'
+        && rooms.exists(message.room) && rooms.canAccess(client.userId, message.room)) {
+        const target = clientById(message.to);
+        if (target && rooms.canAccess(target.userId, message.room)) {
+          sendTo(message.to, { type: MessageType.HistoryKeyShare, from: client.id, room: message.room, box: message.box });
+        }
         return;
       }
       if (message.type === MessageType.Cipher && rooms.exists(message.room)
         && rooms.canAccess(client.userId, message.room)
         && isCipherFrame(message, config.maxWsPayload)) {
-        broadcastRoom(message.room, { type: MessageType.Cipher, from: client.id, room: message.room, n: message.n, iv: message.iv, ct: message.ct }, ws);
+        const eventId = typeof message.eventId === 'string' && message.eventId.length <= 96 ? message.eventId : '';
+        broadcastRoom(message.room, { type: MessageType.Cipher, from: client.id, room: message.room, eventId, n: message.n, iv: message.iv, ct: message.ct }, ws);
+        if (eventId) send(ws, { type: MessageType.Ack, eventId });
         return;
       }
       if (message.type === MessageType.Typing && rooms.exists(message.room) && rooms.canAccess(client.userId, message.room)) {

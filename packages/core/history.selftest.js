@@ -81,6 +81,34 @@ ok(!C._messageById(roomId, 'm1'), 'client without the key cannot read history');
 await B._backfillRoom(roomId);
 ok(B.messages[roomId].filter((m) => m.id === 'm1').length === 1, 'backfill does not duplicate messages');
 
+// History keys survive a client restart on the same device.
+let persistedKeys = {};
+const persistentStorage = {
+  ...mkStorage(),
+  getHistoryKeys: () => persistedKeys,
+  setHistoryKeys: (keys) => { persistedKeys = structuredClone(keys); },
+};
+const persistentA = new SegmentClient({ storage: persistentStorage });
+persistentA._seedHistoryKey('persisted-room');
+const persistentReload = new SegmentClient({ storage: persistentStorage });
+ok(JSON.stringify(persistentReload._historyKey('persisted-room')) === JSON.stringify(persistentA._historyKey('persisted-room')), 'history key survives a same-device reload');
+
+// Mutations are history events too, so another device reconstructs current
+// state rather than only the original message.
+store.clear();
+A._backfilled.clear(); B._backfilled.clear();
+A._appliedEvents.clear(); B._appliedEvents.clear();
+A.messages[roomId] = []; B.messages[roomId] = [];
+A.self.name = 'A'; B.self.name = 'A';
+await A.sendEvent(roomId, { kind: 'message', message: { id: 'sync-m1', name: 'A', text: 'before', status: 'sending' } });
+await A.sendEvent(roomId, { kind: 'edit', id: 'sync-m1', text: 'after' });
+await A.sendEvent(roomId, { kind: 'reaction', id: 'sync-m1', emoji: 'ok', by: 'A' });
+await A.sendEvent(roomId, { kind: 'pin-message', ids: ['sync-m1'] });
+await B._backfillRoom(roomId);
+ok(B._messageById(roomId, 'sync-m1')?.text === 'after', 'message edits survive history backfill');
+ok(B._messageById(roomId, 'sync-m1')?.reactions?.ok?.includes('A'), 'reactions survive history backfill');
+ok(B.messages[roomId].pinnedIds?.[0] === 'sync-m1', 'pinned state survives history backfill');
+
 // --- Traceless delete: gone from the view AND unrecoverable from history ---
 store.clear();
 A._backfilled.clear(); B._backfilled.clear();
@@ -98,7 +126,7 @@ ok(store.get(roomId).length === 1, 'message is stored in history');
 ok(A.deleteMessage(roomId, 'm2') === true, 'author may delete their message');
 ok(!A._messageById(roomId, 'm2'), 'deleted message is removed from the view, not tombstoned');
 await new Promise((r) => setTimeout(r, 10)); // let the erase request settle
-ok(store.get(roomId).length === 0, 'stored envelope is erased, so it cannot be restored');
+ok(store.get(roomId).length === 1, 'original envelope is erased while the delete event remains for device sync');
 
 // A peer receiving the delete event drops it entirely too.
 B._applyEvent(roomId, { kind: 'message', message: { id: 'm3', name: 'A', text: 'bye' } }, { name: 'A' });

@@ -9,7 +9,7 @@
 // Run: node packages/protocol/selftest.js
 
 import { SenderKey, DoubleRatchet, createPreKeyBundle, x3dhInitiate } from '@segment/crypto';
-import { isCipherFrame, MAX_IV_BYTES, parseLink, SLUG_RE } from './index.js';
+import { isCipherFrame, MAX_IV_BYTES, parseLink, SLUG_RE, attachmentsWithinLimits } from './index.js';
 
 let pass = 0, fail = 0;
 const ok = (cond, label) => { if (cond) { pass++; console.log('ok   ' + label); } else { fail++; console.log('FAIL ' + label); } };
@@ -50,6 +50,11 @@ ok(parseLink('/@Alice')?.username === 'alice', 'parseLink lowercases a profile')
 ok(parseLink('/c/dev-talk')?.slug === 'dev-talk', 'parseLink reads a channel slug');
 ok(parseLink('/nope') === null, 'parseLink rejects an unknown path');
 ok(SLUG_RE.test('dev-talk') && !SLUG_RE.test('-bad'), 'slug rule accepts valid and rejects invalid');
+
+ok(attachmentsWithinLimits(Array.from({ length: 100 }, () => ({ kind: 'photo' }))), '100 photos fit in one message');
+ok(!attachmentsWithinLimits(Array.from({ length: 101 }, () => ({ kind: 'file' }))), '101 files are rejected');
+ok(attachmentsWithinLimits(Array.from({ length: 50 }, () => ({ kind: 'video' }))), '50 videos fit in one message');
+ok(!attachmentsWithinLimits(Array.from({ length: 51 }, () => ({ kind: 'video' }))), '51 videos are rejected');
 
 console.log(`\n${pass} ok, ${fail} fail`);
 if (fail) process.exit(1);
