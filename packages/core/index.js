@@ -27,7 +27,8 @@ const attachLabel = (m) => {
 };
 const preview = (m) => {
   const body = m.poll ? `📊 ${m.poll.question}` : (m.text || attachLabel(m));
-  return m.name ? `${m.name}: ${body}` : body;
+  const author = m.channelName || m.name;
+  return author ? `${author}: ${body}` : body;
 };
 const pickColor = () => COLORS[Math.floor(Math.random() * COLORS.length)];
 const mid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -167,15 +168,30 @@ export class SegmentClient {
     if (!room?.id) return null;
     const existing = this.chatById(room.id);
     if (existing) {
+      existing.name = room.title || existing.name;
+      existing.icon = room.icon || existing.icon;
+      existing.type = room.type || existing.type;
+      existing.slug = room.slug || existing.slug || '';
+      existing.isPublic = Boolean(room.isPublic);
       existing.ownerId = room.ownerId || existing.ownerId;
+      existing.historyKey = room.historyKey || existing.historyKey || '';
       existing.historyVisibility = room.historyVisibility || existing.historyVisibility;
     } else {
       this.chats.push({
         id: room.id, name: room.title, icon: room.icon || '💬', type: room.type, slug: room.slug || '',
-        ownerId: room.ownerId || '', historyVisibility: room.historyVisibility || 'joined',
+        ownerId: room.ownerId || '', isPublic: Boolean(room.isPublic), historyKey: room.historyKey || '', historyVisibility: room.historyVisibility || 'joined',
       });
       this.messages[room.id] ||= [];
       this._emit('chats');
+    }
+    if (room.historyKey) {
+      try {
+        const key = Array.from(this._unb64(room.historyKey));
+        if (key.length === 32) {
+          this.historyKeys.set(room.id, key);
+          this._persistHistoryKeys();
+        }
+      } catch {}
     }
     if (open) this.openRoom(room.id);
     return room.id;
@@ -185,8 +201,22 @@ export class SegmentClient {
   async loadRooms() {
     try {
       const { rooms } = await this._roomsApi('GET', '/api/rooms/mine');
-      for (const room of rooms || []) this._addServerRoom(room);
+      for (const room of rooms || []) {
+        this._addServerRoom(room);
+        await this._ensureOwnedRoomHistoryKey(room);
+      }
     } catch { /* offline or unauthenticated: keep local defaults */ }
+  }
+
+  async _ensureOwnedRoomHistoryKey(room) {
+    if (!room?.id || room.ownerId !== this.self.id) return;
+    const key = this._historyKey(room.id) || this._seedHistoryKey(room.id);
+    if (!room.isPublic || room.historyKey) return;
+    try {
+      const encoded = this._b64(new Uint8Array(key));
+      const { room: updated } = await this._roomsApi('POST', '/api/rooms/history/public-key', { roomId: room.id, key: encoded });
+      this._addServerRoom(updated);
+    } catch {}
   }
 
   async createChat({ name, icon, type } = {}) {
@@ -200,6 +230,7 @@ export class SegmentClient {
         const { room } = await this._roomsApi('POST', '/api/rooms', payload);
         if (icon) room.icon = icon;
         this._seedHistoryKey(room.id); // creator seeds the room's history key
+        await this._ensureOwnedRoomHistoryKey(room);
         return this._addServerRoom(room, { open: true });
       } catch (error) {
         if (error.code === 'SLUG_TAKEN') { payload.slug = this._slugify(clean); continue; }
@@ -454,6 +485,12 @@ export class SegmentClient {
 
   async sendEvent(roomId, event, local = true) {
     if (!roomId || !this.chatById(roomId) || !event) return;
+    const chat = this.chatById(roomId);
+    if (event.kind === 'message' && chat.type === ChatType.Channel && chat.ownerId && chat.ownerId !== this.self.id) return false;
+    if (event.kind === 'message' && event.message && chat.type === ChatType.Channel) {
+      event.message.channelName = chat.name;
+      event.message.channelIcon = chat.icon || '';
+    }
     event.eventId ||= event.message?.id || mid();
     if (local) this._applyEvent(roomId, event, this.self);
     if (roomId === SAVED_ID) {
@@ -461,7 +498,16 @@ export class SegmentClient {
       this.storage.setNotes(this.messages[SAVED_ID]);
       return true;
     }
-    const wire = await this._toWire(event);
+    let wire;
+    try { wire = await this._toWire(event); }
+    catch {
+      if (event.kind === 'message' && event.message) {
+        event.message.status = 'failed';
+        this._refreshRoom(roomId);
+      }
+      this._emit('error', { scope: 'attachmentUpload', code: 'UPLOAD_FAILED' });
+      return false;
+    }
     this._queueOutgoing(roomId, wire);
     return this._flushOutbox();
   }
@@ -698,12 +744,8 @@ export class SegmentClient {
   // Wire clone of an outgoing event: attachments uploaded, inline data stripped.
   async _toWire(event) {
     if (event.kind !== 'message' || !event.message?.attachments?.length) return event;
-    try {
-      const attachments = await Promise.all(event.message.attachments.map((a) => this._attachmentToWire(a)));
-      return { ...event, message: { ...event.message, attachments } };
-    } catch {
-      return event; // blob store unavailable: fall back to inline data
-    }
+    const attachments = await Promise.all(event.message.attachments.map((a) => this._attachmentToWire(a)));
+    return { ...event, message: { ...event.message, attachments } };
   }
 
   // ---- Encrypted server-side history ----
@@ -1077,7 +1119,7 @@ export class SegmentClient {
       const source = this._messageById(roomId, q.id);
       if (!source || source.deleted) return null;
       const fragment = (q.text || '').trim();
-      return { id: source.id, name: source.name, text: q.quote && fragment ? fragment : (source.text || ''), quote: Boolean(q.quote) };
+      return { id: source.id, name: source.channelName || source.name, text: q.quote && fragment ? fragment : (source.text || ''), quote: Boolean(q.quote) };
     }).filter(Boolean);
     if (!quotes.length) return null;
     if (quotes.length === 1) return quotes[0];
@@ -1105,6 +1147,11 @@ export class SegmentClient {
         message.username = author.username || '';
         message.avatar = author.avatar || '';
         message.color = author.color;
+      }
+      const chat = this.chatById(roomId);
+      if (chat?.type === ChatType.Channel) {
+        message.channelName = chat.name;
+        message.channelIcon = chat.icon || message.channelIcon || '';
       }
       this._addMessage(roomId, message);
       this._hydrateMessage(roomId, message);

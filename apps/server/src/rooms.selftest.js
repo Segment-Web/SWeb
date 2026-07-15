@@ -68,8 +68,13 @@ ok(!rooms.canAccess(other.id, roomId), 'non-member cannot access private room');
 // Create a public channel with a slug and resolve it by link.
 const channel = await call('POST', '/api/rooms', { user: owner, body: { type: 'channel', title: 'Dev', slug: 'dev-talk' } });
 ok(channel.status === 201 && channel.data.room.slug === 'dev-talk', 'create channel with slug');
+const publicKey = Buffer.alloc(32, 7).toString('base64');
+const claimedKey = await call('POST', '/api/rooms/history/public-key', { user: owner, body: { roomId: channel.data.room.id, key: publicKey } });
+ok(claimedKey.status === 200 && claimedKey.data.room.historyKey === publicKey, 'channel owner publishes its public history key');
+const forbiddenKey = await call('POST', '/api/rooms/history/public-key', { user: other, body: { roomId: channel.data.room.id, key: Buffer.alloc(32, 8).toString('base64') } });
+ok(forbiddenKey.status === 403, 'non-owner cannot replace a channel history key');
 const resolvedChannel = await call('GET', '/api/rooms/resolve?path=/c/dev-talk', { user: other });
-ok(resolvedChannel.data?.type === 'channel' && resolvedChannel.data.room.slug === 'dev-talk', 'resolve /c/dev-talk');
+ok(resolvedChannel.data?.type === 'channel' && resolvedChannel.data.room.slug === 'dev-talk' && resolvedChannel.data.room.historyKey === publicKey, 'resolve /c/dev-talk with its history key');
 
 // Duplicate slug is rejected.
 const dup = await call('POST', '/api/rooms', { user: other, body: { type: 'channel', title: 'X', slug: 'dev-talk' } });
@@ -101,6 +106,7 @@ ok(badToken.status === 400, 'bad invite token -> 400');
 // /mine reflects membership: owner sees the private room, redeemer too.
 const ownerMine = await call('GET', '/api/rooms/mine', { user: owner });
 ok(ownerMine.data.rooms.some((r) => r.id === roomId), 'owner /mine includes private room');
+ok(ownerMine.data.rooms.filter((r) => r.isPublic).every((r) => r.historyKey), 'seeded public rooms expose durable history keys');
 const otherMine = await call('GET', '/api/rooms/mine', { user: other });
 ok(otherMine.data.rooms.some((r) => r.id === roomId), 'redeemer /mine includes joined room');
 

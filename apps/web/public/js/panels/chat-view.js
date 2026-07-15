@@ -90,6 +90,12 @@ export function chatViewPanel(client, chat) {
       const fileInput = q('file');
       let replyTo = null;
       const selected = new Set();
+      const canPublish = chat.type !== 'channel' || !chat.ownerId || chat.ownerId === client.self.id;
+      input.disabled = !canPublish;
+      attachBtn.disabled = !canPublish;
+      emojiBtn.disabled = !canPublish;
+      q('send').disabled = !canPublish;
+      if (!canPublish) input.placeholder = 'Публиковать могут только владельцы канала';
 
       const current = () => client.chatById(chat.id);
       const messageById = (mid) => client.messages[chat.id]?.find((m) => m.id === mid);
@@ -294,6 +300,7 @@ export function chatViewPanel(client, chat) {
       ];
 
       const submit = () => {
+        if (!canPublish) return;
         if (input.dataset.editing) {
           client.editMessage(chat.id, input.dataset.editing, input.value);
           delete input.dataset.editing;

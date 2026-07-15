@@ -314,7 +314,8 @@ function attachSwipeReply(el, id, onReply) {
 }
 
 export function renderMessage(feed, m, myName, options = {}) {
-  const mine = m.name === myName;
+  const displayName = m.channelName || m.name || '';
+  const mine = !m.channelName && m.name === myName;
 
   const dateKey = new Date(m.ts).toDateString();
   const lastMsg = [...feed.querySelectorAll('.msg')].pop();
@@ -326,11 +327,11 @@ export function renderMessage(feed, m, myName, options = {}) {
     feed.appendChild(d);
   }
 
-  const grouped = !m.system && !needDivider && lastMsg && lastMsg.dataset.name === (m.name || '');
+  const grouped = !m.system && !needDivider && lastMsg && lastMsg.dataset.name === displayName;
   const el = document.createElement('div');
   const anim = options.animate === false ? '' : ' appear';
   el.className = `msg${mine ? ' mine' : ''}${grouped ? ' grouped' : ''}${m.deleted ? ' deleted' : ''}${options.isSelected?.(m.id) ? ' selected' : ''}${anim}`;
-  el.dataset.name = m.name || '';
+  el.dataset.name = displayName;
   el.dataset.date = dateKey;
   if (m.id) el.dataset.id = m.id;
   const time = new Date(m.ts).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
@@ -358,9 +359,9 @@ export function renderMessage(feed, m, myName, options = {}) {
     && !m.text && !m.replyTo && !forwardFrom;
   const link = m.deleted ? '' : linkCardHtml(m);
   el.innerHTML = `
-    <div class="avatar" style="background:${color}">${m.avatar ? `<img src="${esc(m.avatar)}" alt="">` : initials(m.name)}</div>
+    <div class="avatar" style="background:${color}">${m.channelIcon ? esc(m.channelIcon) : (m.avatar ? `<img src="${esc(m.avatar)}" alt="">` : initials(displayName))}</div>
     <div class="bubble${mediaOnly ? ' only-media' : ''}${circleOnly ? ' only-circle' : ''}${jumbo ? ' only-emoji' : ''}">
-      <div class="meta" style="color:${color}">${esc(m.name)}</div>
+      <div class="meta" style="color:${color}">${esc(displayName)}</div>
       ${forward}
       ${reply}
       ${attachments}
@@ -391,7 +392,7 @@ export function renderMessage(feed, m, myName, options = {}) {
   }
   const media = (m.attachments || [])
     .filter((x) => x.kind === 'photo' || x.kind === 'video')
-    .map((x) => ({ type: x.kind, src: x.data, poster: x.poster, name: x.name, size: x.size, duration: x.duration, author: m.name, color: m.color }));
+    .map((x) => ({ type: x.kind, src: x.data, poster: x.poster, name: x.name, size: x.size, duration: x.duration, author: m.channelName || m.name, color: m.color }));
   for (const cell of el.querySelectorAll('.media-cell')) {
     cell.onclick = (e) => {
       e.stopPropagation();
@@ -520,6 +521,7 @@ const PIN_GLYPH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" s
 const CLOCK_GLYPH = '<svg viewBox="0 0 24 24" width="14" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
 const SINGLE_CHECK_GLYPH = '<svg viewBox="0 0 18 16" width="14" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.5l4 4 9-9"/></svg>';
 const statusGlyph = (m) => {
+  if (m.status === 'failed') return '<span class="msg-status failed" title="Не отправлено">!</span>';
   if (m.status === 'sending') return `<span class="msg-status sending" title="Отправляется">${CLOCK_GLYPH}</span>`;
   if (m.status === 'sent') return `<span class="msg-status sent" title="Отправлено">${SINGLE_CHECK_GLYPH}</span>`;
   if (m.status === 'read') return `<span class="msg-status read" title="Прочитано">${CHECK_GLYPH}</span>`;
@@ -580,7 +582,7 @@ function chatItemHtml(c, state, selected = false) {
   const list = state.messages[c.id];
   const lastMsg = list.length ? list.at(-1) : null;
   const myName = state.self?.name;
-  const outgoing = !!(lastMsg && !lastMsg.system && myName && lastMsg.name === myName);
+  const outgoing = !!(lastMsg && !lastMsg.system && !lastMsg.channelName && myName && lastMsg.name === myName);
 
 
   let lastHtml;
@@ -593,7 +595,7 @@ function chatItemHtml(c, state, selected = false) {
     lastHtml = esc(lastMsg.text || '');
   } else {
     const showFrom = outgoing || (c.type !== 'dm' && c.type !== 'saved');
-    const who = outgoing ? 'Вы' : (lastMsg.name || '');
+    const who = outgoing ? 'Вы' : (lastMsg.channelName || lastMsg.name || '');
     const from = showFrom && who ? `<span class="chat-from">${esc(who)}: </span>` : '';
     lastHtml = from + previewBody(lastMsg);
   }
@@ -617,7 +619,7 @@ function chatItemHtml(c, state, selected = false) {
       <div class="chat-icon" style="background:${avatarColor(c.id)}">${c.icon || esc(initials(c.name))}</div>
       <div class="chat-info">
         <div class="chat-row">
-          <div class="chat-name"><span>${esc(c.name)}</span>${mute}</div>
+          <div class="chat-name"><span class="chat-type-icon">${c.type === 'channel' ? '📢' : (c.type === 'chat' ? '💬' : '')}</span><span>${esc(c.name)}</span>${mute}</div>
           <span class="chat-time">${check}<span>${time}</span></span>
         </div>
         <div class="chat-row ${lastHtml ? '' : 'empty-last'}">
@@ -654,10 +656,10 @@ function searchResultHtml(c, m, q) {
       <div class="chat-icon" style="background:${avatarColor(c.id)}">${c.icon || esc(initials(c.name))}</div>
       <div class="chat-info">
         <div class="chat-row">
-          <div class="chat-name"><span>${esc(c.name)}</span></div>
+          <div class="chat-name"><span class="chat-type-icon">${c.type === 'channel' ? '📢' : (c.type === 'chat' ? '💬' : '')}</span><span>${esc(c.name)}</span></div>
           <span class="chat-time"><span>${esc(chatDate(m.ts))}</span></span>
         </div>
-        <div class="chat-row"><div class="chat-last">${esc(m.name || '')}${m.name ? ': ' : ''}${snippet}</div></div>
+        <div class="chat-row"><div class="chat-last">${esc(m.channelName || m.name || '')}${m.channelName || m.name ? ': ' : ''}${snippet}</div></div>
       </div>
     </div>`;
 }

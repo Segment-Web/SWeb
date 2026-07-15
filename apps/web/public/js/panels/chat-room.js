@@ -1081,7 +1081,7 @@ export function chatRoomPanel(client) {
           if (m.name && !m.deleted) members.set(m.name, { name: m.name, color: m.color });
           if (m.deleted) continue;
           for (const a of m.attachments || []) {
-            if (a.kind === 'photo' || a.kind === 'video' || a.kind === 'circle') media.push({ ...a, author: m.name, color: m.color });
+            if (a.kind === 'photo' || a.kind === 'video' || a.kind === 'circle') media.push({ ...a, author: m.channelName || m.name, color: m.color });
             else if (a.kind === 'file') files.push({ a, m });
           }
           const urls = (m.text || '').match(/https?:\/\/[^\s]+/g);
@@ -1205,7 +1205,11 @@ export function chatRoomPanel(client) {
         statusEl.textContent = status.text;
         statusEl.classList.toggle('online', status.online);
         statusEl.classList.toggle('muted', !status.online);
-        input.placeholder = 'Сообщение...';
+        const canPublish = chat.type !== 'channel' || !chat.ownerId || chat.ownerId === client.self.id;
+        input.disabled = !canPublish;
+        attachBtn.disabled = !canPublish;
+        recBtn.disabled = !canPublish;
+        input.placeholder = canPublish ? 'Сообщение...' : 'Публиковать могут только владельцы канала';
         pollAttachBtn.classList.toggle('hidden', !!chat.local);
 
         renderFeed(feed, chat, messages, client.self.name, {
@@ -1257,6 +1261,7 @@ export function chatRoomPanel(client) {
 
       const submit = () => {
         if (!currentChat) return;
+        if (currentChat.type === 'channel' && currentChat.ownerId && currentChat.ownerId !== client.self.id) return;
         if (pending.length && !input.dataset.editing) {
           client.sendAttachments(currentChat.id, pending, input.value, replyTo);
           pending = [];

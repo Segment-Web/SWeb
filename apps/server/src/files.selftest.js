@@ -26,6 +26,7 @@ const call = async (method, url, { user = null, body, chunks: rawChunks } = {}) 
   let status = 0; const parts = []; let jsonMode = true;
   const res = {
     writeHead(code, headers) { status = code; if (headers && headers['Content-Type'] === 'application/octet-stream') jsonMode = false; return res; },
+    write(chunk) { if (chunk) parts.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)); return true; },
     end(chunk) { if (chunk) parts.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)); },
   };
   await files.handle(req, res);

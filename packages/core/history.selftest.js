@@ -109,6 +109,34 @@ ok(B._messageById(roomId, 'sync-m1')?.text === 'after', 'message edits survive h
 ok(B._messageById(roomId, 'sync-m1')?.reactions?.ok?.includes('A'), 'reactions survive history backfill');
 ok(B.messages[roomId].pinnedIds?.[0] === 'sync-m1', 'pinned state survives history backfill');
 
+// Attachment references are part of the encrypted history event, so media does
+// not disappear after a reload even though the file bytes live in blob storage.
+store.clear();
+A._backfilled.clear(); B._backfilled.clear();
+A._appliedEvents.clear(); B._appliedEvents.clear();
+A.messages[roomId] = []; B.messages[roomId] = [];
+const photoRef = { fileId: 'a'.repeat(64), key: Array(32).fill(3), iv: Array(12).fill(4), mime: 'image/png', size: 123 };
+await A.sendEvent(roomId, { kind: 'message', message: { id: 'photo-m1', name: 'A', text: '', attachments: [{ kind: 'photo', name: 'photo.png', blob: photoRef }] } });
+await B._backfillRoom(roomId);
+ok(B._messageById(roomId, 'photo-m1')?.attachments?.[0]?.blob?.fileId === photoRef.fileId, 'photo reference survives history backfill');
+
+// Public channels install their shared public history key and display posts as
+// the channel while retaining the encrypted sender identity internally.
+const channelId = 'channel-public';
+const channelKey = Array(32).fill(5);
+const channelKeyB64 = btoa(String.fromCharCode(...channelKey));
+A._addServerRoom({ id: channelId, title: 'News', type: 'channel', icon: 'N', isPublic: true, historyKey: channelKeyB64 });
+B._addServerRoom({ id: channelId, title: 'News', type: 'channel', icon: 'N', isPublic: true, historyKey: channelKeyB64 });
+ok(JSON.stringify(A._historyKey(channelId)) === JSON.stringify(channelKey), 'public channel installs its durable history key');
+store.clear();
+A._backfilled.clear(); B._backfilled.clear();
+A._appliedEvents.clear(); B._appliedEvents.clear();
+A.messages[channelId] = []; B.messages[channelId] = [];
+await A.sendEvent(channelId, { eventId: 'channel-post-1', kind: 'message', message: { id: 'channel-post-1', name: 'A', text: 'Update', attachments: [{ kind: 'photo', name: 'channel.png', blob: photoRef }] } });
+ok(A._messageById(channelId, 'channel-post-1')?.channelName === 'News', 'channel post is displayed under the channel identity');
+await B._backfillRoom(channelId);
+ok(B._messageById(channelId, 'channel-post-1')?.attachments?.[0]?.blob?.fileId === photoRef.fileId, 'public channel photo survives a simulated reload');
+
 // --- Traceless delete: gone from the view AND unrecoverable from history ---
 store.clear();
 A._backfilled.clear(); B._backfilled.clear();

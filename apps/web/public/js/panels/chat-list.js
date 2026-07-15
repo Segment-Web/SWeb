@@ -6,6 +6,7 @@
 import { renderChatList } from '../ui.js';
 import { ICONS } from '../icons.js';
 import { chatViewPanel } from './chat-view.js';
+import { esc } from '../util.js';
 
 export function chatListPanel(client) {
   return {
@@ -255,7 +256,7 @@ export function chatListPanel(client) {
       const openPreview = (id, x, y) => {
         const chat = client.chatById(id); if (!chat) return;
         const lines = (client.messages[id] || []).filter((m) => !m.system && !m.deleted).slice(-5).reverse();
-        preview.innerHTML = `<div class="chat-preview-head"><div class="chat-preview-avatar">${chat.icon || chat.name[0]}</div><div><h3>${chat.name}</h3><span>${chat.type === 'dm' ? 'Личный чат' : chat.type === 'channel' ? 'Канал' : 'Групповой чат'}</span></div></div><div class="chat-preview-messages">${lines.length ? lines.map((m) => `<div class="chat-preview-line"><b>${m.name || ''}</b>${m.name ? ': ' : ''}${m.text || 'Вложение'}</div>`).join('') : '<div class="chat-preview-empty">Сообщений пока нет</div>'}</div><button class="chat-preview-open">Открыть чат</button>`;
+        preview.innerHTML = `<div class="chat-preview-head"><div class="chat-preview-avatar">${esc(chat.icon || chat.name[0])}</div><div><h3>${esc(chat.name)}</h3><span>${chat.type === 'dm' ? 'Личный чат' : chat.type === 'channel' ? 'Канал' : 'Групповой чат'}</span></div></div><div class="chat-preview-messages">${lines.length ? lines.map((m) => { const author = m.channelName || m.name || ''; return `<div class="chat-preview-line"><b>${esc(author)}</b>${author ? ': ' : ''}${esc(m.text || 'Вложение')}</div>`; }).join('') : '<div class="chat-preview-empty">Сообщений пока нет</div>'}</div><button class="chat-preview-open">Открыть чат</button>`;
         preview.classList.remove('hidden');
         const r = preview.getBoundingClientRect();
         preview.style.left = `${Math.max(8, Math.min(x + 10, innerWidth - r.width - 8))}px`;

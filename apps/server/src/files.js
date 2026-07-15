@@ -5,8 +5,8 @@
 // (see docs/persistence-and-rooms.md).
 
 import { createHash, randomUUID } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
-import { mkdir, readFile, readdir, stat, unlink, rename } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { mkdir, readdir, stat, unlink, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -98,15 +98,22 @@ export async function createFiles(config, auth) {
       if (req.method === 'GET' && url.pathname.startsWith('/api/files/')) {
         const id = url.pathname.slice('/api/files/'.length);
         if (!HEX64.test(id)) return json(res, 404, { error: 'NOT_FOUND' });
-        let bytes;
-        try { bytes = await readFile(pathFor(id)); } catch { return json(res, 404, { error: 'NOT_FOUND' }); }
+        let info;
+        try { info = await stat(pathFor(id)); } catch { return json(res, 404, { error: 'NOT_FOUND' }); }
         res.writeHead(200, {
           'Content-Type': 'application/octet-stream',
-          'Content-Length': bytes.length,
+          'Content-Length': info.size,
           'Cache-Control': 'private, max-age=86400, immutable',
           'X-Content-Type-Options': 'nosniff',
         });
-        res.end(bytes);
+        const stream = createReadStream(pathFor(id));
+        await new Promise((resolve) => {
+          stream.on('error', () => { if (!res.headersSent) res.writeHead(500); res.destroy?.(); resolve(); });
+          stream.on('data', (chunk) => {
+            if (res.write(chunk) === false) { stream.pause(); res.once?.('drain', () => stream.resume()); }
+          });
+          stream.on('end', () => { res.end(); resolve(); });
+        });
         return true;
       }
       return json(res, 404, { error: 'NOT_FOUND' });

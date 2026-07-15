@@ -33,7 +33,7 @@ const readJson = (req, limit = 64 * 1024) => new Promise((resolve, reject) => {
   req.on('error', reject);
 });
 
-const publicRoom = (row) => ({ id: row.id, type: row.type, slug: row.slug || '', title: row.title, icon: row.icon || '', isPublic: row.is_public, ownerId: row.owner_id, historyVisibility: row.history_visibility || 'joined' });
+const publicRoom = (row) => ({ id: row.id, type: row.type, slug: row.slug || '', title: row.title, icon: row.icon || '', isPublic: row.is_public, ownerId: row.owner_id, historyKey: row.is_public ? (row.history_key || '') : '', historyVisibility: row.history_visibility || 'joined' });
 
 export async function createRooms(config, auth) {
   const pool = auth.pool;
@@ -47,9 +47,11 @@ export async function createRooms(config, auth) {
       is_public BOOLEAN NOT NULL DEFAULT FALSE,
       owner_id UUID REFERENCES users(id) ON DELETE SET NULL,
       history_visibility VARCHAR(16) NOT NULL DEFAULT 'joined',
+      history_key TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     ALTER TABLE rooms ADD COLUMN IF NOT EXISTS history_visibility VARCHAR(16) NOT NULL DEFAULT 'joined';
+    ALTER TABLE rooms ADD COLUMN IF NOT EXISTS history_key TEXT;
     CREATE TABLE IF NOT EXISTS room_members (
       room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -105,6 +107,13 @@ export async function createRooms(config, auth) {
        ON CONFLICT (id) DO NOTHING`,
       [room.id, room.type, room.id, room.name, room.icon],
     );
+  }
+  // Seeded public rooms have no owner who could publish a history key. Their
+  // content is public by definition, so a server-distributed room key lets every
+  // signed-in client decrypt the same durable history without weakening private
+  // room keys.
+  for (const row of (await pool.query('SELECT id FROM rooms WHERE is_public=TRUE AND owner_id IS NULL AND history_key IS NULL')).rows) {
+    await pool.query('UPDATE rooms SET history_key=$2 WHERE id=$1 AND history_key IS NULL', [row.id, randomBytes(32).toString('base64')]);
   }
 
   // In-memory access index for the gateway (single-process authoritative view).
@@ -179,6 +188,15 @@ export async function createRooms(config, auth) {
       [hashToken(token), roomId, user.id, `${ttlMs} milliseconds`, 0],
     );
     return { token };
+  };
+
+  const claimPublicHistoryKey = async (user, roomId, key) => {
+    if (typeof key !== 'string' || !/^[A-Za-z0-9+/]{43}=$/.test(key)) throw Object.assign(new Error('KEY_INVALID'), { status: 400 });
+    const room = await one('SELECT * FROM rooms WHERE id=$1', [roomId]);
+    if (!room) throw Object.assign(new Error('NOT_FOUND'), { status: 404 });
+    if (!room.is_public || room.owner_id !== user.id) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
+    const updated = await one('UPDATE rooms SET history_key=COALESCE(history_key,$2) WHERE id=$1 RETURNING *', [roomId, key]);
+    return publicRoom(updated);
   };
 
   const redeemInvite = async (user, token) => {
@@ -372,6 +390,10 @@ export async function createRooms(config, auth) {
         const body = await readJson(req, 4 * 1024 * 1024);
         if (!exists(String(body.roomId))) return json(res, 404, { error: 'NOT_FOUND' });
         return json(res, 201, await appendHistory(user, String(body.roomId), body.eventId, body.iv, body.ct));
+      }
+      if (req.method === 'POST' && url.pathname === '/api/rooms/history/public-key') {
+        const body = await readJson(req);
+        return json(res, 200, { room: await claimPublicHistoryKey(user, String(body.roomId), body.key) });
       }
       if (req.method === 'GET' && url.pathname === '/api/rooms/history') {
         const roomId = url.searchParams.get('roomId') || '';
