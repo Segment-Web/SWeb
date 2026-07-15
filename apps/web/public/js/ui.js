@@ -41,12 +41,12 @@ function emojiOnly(text) {
 }
 
 
-function pollHtml(m, myName) {
+function pollHtml(m, myName, myId = '') {
   const p = m.poll;
   if (!p) return '';
   const counts = p.options.map((_, i) => Object.values(p.votes || {}).filter((v) => v === i).length);
   const total = counts.reduce((a, b) => a + b, 0);
-  const myVote = p.votes?.[myName];
+  const myVote = p.votes?.[myId] ?? p.votes?.[myName];
   const opts = p.options.map((opt, i) => {
     const pct = total ? Math.round((counts[i] / total) * 100) : 0;
     const chosen = myVote === i;
@@ -205,11 +205,11 @@ function showReactTip(chip) {
 }
 function hideReactTip() { reactTip?.classList.remove('show'); }
 
-function reactionsHtml(m, myName) {
+function reactionsHtml(m, myName, myId = '') {
   const entries = Object.entries(m.reactions || {}).filter(([, names]) => names?.length);
   if (!entries.length) return '';
   return `<div class="msg-reactions">${entries.map(([emoji, names]) =>
-    `<button class="reaction-chip ${names.includes(myName) ? 'mine' : ''}" data-reaction="${esc(emoji)}" data-names="${esc(names.join('|'))}">${esc(emoji)} <span>${names.length}</span></button>`).join('')}</div>`;
+    `<button class="reaction-chip ${names.includes(myId) || names.includes(myName) ? 'mine' : ''}" data-reaction="${esc(emoji)}" data-names="${esc(names.join('|'))}">${esc(emoji)} <span>${names.length}</span></button>`).join('')}</div>`;
 }
 
 
@@ -316,7 +316,7 @@ function attachSwipeReply(el, id, onReply) {
 
 export function renderMessage(feed, m, myName, options = {}) {
   const displayName = m.channelName || m.name || '';
-  const mine = !m.channelName && m.name === myName;
+  const mine = !m.channelName && (m.authorId && options.myId ? m.authorId === options.myId : m.name === myName);
 
   const dateKey = new Date(m.ts).toDateString();
   const lastMsg = [...feed.querySelectorAll('.msg')].pop();
@@ -366,12 +366,12 @@ export function renderMessage(feed, m, myName, options = {}) {
       ${forward}
       ${reply}
       ${attachments}
-      ${pollHtml(m, myName)}
+      ${pollHtml(m, myName, options.myId)}
       ${textHtml}
       ${link}
       ${image}
       <div class="time">${edited}${time}${mine && !m.deleted ? statusGlyph(m) : ''}</div>
-      ${reactionsHtml(m, myName)}
+      ${reactionsHtml(m, myName, options.myId)}
     </div>`;
   if (options.onMessageClick && options.selectionMode) {
     el.addEventListener('click', (e) => {

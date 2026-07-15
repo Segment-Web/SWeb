@@ -87,6 +87,12 @@ export function chatRoomPanel(client) {
     id: 'chat-room',
     title: 'Чат',
     mount(body) {
+      const isOwnMessage = (message) => {
+        if (!message) return false;
+        if (message.authorId && client.self.id) return message.authorId === client.self.id;
+        if (message.username && client.self.username) return message.username === client.self.username;
+        return message.name === client.self.name;
+      };
       body.innerHTML = `
         <div class="room">
           <header class="room-head" data-el="head">
@@ -818,6 +824,7 @@ export function chatRoomPanel(client) {
       const closeRoomSearch = () => { roomSearchBar.classList.add('hidden'); roomSearchInput.value = ''; roomSearchIds = []; roomSearchIndex = -1; updateRoomSearch(); };
 
       const feedOptions = () => ({
+        myId: client.self.id || '',
         onMessageContext: openMessageMenu,
         onReaction: (id, emoji) => client.toggleReaction(currentChat.id, id, emoji),
         onQuickReaction: (id, emoji) => client.toggleReaction(currentChat.id, id, emoji),
@@ -882,7 +889,7 @@ export function chatRoomPanel(client) {
           selectionBar.innerHTML = '';
           return;
         }
-        const ownOnly = messages.every((m) => m.name === client.self.name);
+        const ownOnly = messages.every(isOwnMessage);
         const pinnedIds = client.messages[currentChat.id]?.pinnedIds || (client.messages[currentChat.id]?.pinnedId ? [client.messages[currentChat.id].pinnedId] : []);
         const onePinned = messages.length === 1 && pinnedIds.includes(messages[0].id);
         const plural = messages.length === 1 ? 'сообщение' : 'сообщения';
@@ -1039,7 +1046,7 @@ export function chatRoomPanel(client) {
       function openMessageMenu(id, x, y) {
         const message = messageById(id);
         if (!currentChat || !message || message.system) return;
-        const mine = message.name === client.self.name;
+        const mine = isOwnMessage(message);
         const pinnedIds = client.messages[currentChat.id]?.pinnedIds || (client.messages[currentChat.id]?.pinnedId ? [client.messages[currentChat.id].pinnedId] : []);
         const pinned = pinnedIds.includes(id);
         const msgEl = feed.querySelector(`.msg[data-id="${id}"]`);
@@ -1434,7 +1441,7 @@ export function chatRoomPanel(client) {
         if (e.key !== 'Delete' || !currentChat) return;
         if (/INPUT|TEXTAREA/.test(e.target.tagName) || e.target.isContentEditable) return;
         const messages = selectedMessages();
-        if (!messages.length || !messages.every((m) => m.name === client.self.name)) return;
+        if (!messages.length || !messages.every(isOwnMessage)) return;
         e.preventDefault();
         messages.forEach((m) => client.deleteMessage(currentChat.id, m.id));
         selected.clear();
@@ -1546,7 +1553,7 @@ export function chatRoomPanel(client) {
         if (!list) return false;
         for (let i = list.length - 1; i >= 0; i--) {
           const m = list[i];
-          if (!m.system && !m.deleted && m.name === client.self.name && m.text) {
+          if (!m.system && !m.deleted && isOwnMessage(m) && m.text) {
             input.value = m.text;
             input.dataset.editing = m.id;
             syncActions();

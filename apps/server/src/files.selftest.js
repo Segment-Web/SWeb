@@ -3,8 +3,8 @@
 //
 // Run: node apps/server/src/files.selftest.js
 
-import { Readable } from 'node:stream';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { PassThrough, Readable } from 'node:stream';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createFiles } from './files.js';
@@ -17,11 +17,11 @@ const files = await createFiles(config, auth);
 let pass = 0, fail = 0;
 const ok = (cond, label) => { if (cond) { pass++; console.log('ok   ' + label); } else { fail++; console.log('FAIL ' + label); } };
 
-const call = async (method, url, { user = null, body, chunks: rawChunks, headers = {} } = {}) => {
+const call = async (method, url, { user = null, body, chunks: rawChunks, stream = null, headers = {} } = {}) => {
   const chunks = rawChunks
     ? rawChunks.map((c) => (Buffer.isBuffer(c) ? c : Buffer.from(c)))
     : (body === undefined ? [] : [Buffer.isBuffer(body) ? body : Buffer.from(body)]);
-  const req = Readable.from(chunks);
+  const req = stream || Readable.from(chunks);
   req.method = method; req.url = url; req.headers = { origin: '', ...headers }; req._user = user;
   let status = 0; let responseHeaders = {}; const parts = []; let jsonMode = true;
   const res = {
@@ -90,6 +90,23 @@ const complete = await call('POST', `/api/files/uploads/${resumeId}/complete`, {
 const resumedBack = await call('GET', `/api/files/${complete.data.id}`, { user: resumeUser });
 ok(resume.status === 201 && chunkA.data.offset === 6 && head.headers['Upload-Offset'] === '6', 'resumable upload reports its acknowledged offset');
 ok(chunkB.data.offset === 12 && complete.status === 201 && resumedBack.bytes.toString() === 'hello-resume', 'resumable upload finalizes and round-trips');
+
+// Cancellation cannot delete a resumable upload while a PATCH still owns its
+// file lock. Once the chunk completes, a retry removes both metadata and bytes.
+const raceUser = { id: 'u3' };
+const race = await call('POST', '/api/files/uploads', { user: raceUser, headers: { 'upload-length': '8' } });
+const raceId = race.data.uploadId;
+const slowBody = new PassThrough();
+const activePatch = call('PATCH', `/api/files/uploads/${raceId}`, { user: raceUser, stream: slowBody, headers: { 'upload-offset': '0' } });
+await new Promise((resolve) => setTimeout(resolve, 10));
+const busyDelete = await call('DELETE', `/api/files/uploads/${raceId}`, { user: raceUser });
+slowBody.end('12345678');
+const finishedPatch = await activePatch;
+const deletedUpload = await call('DELETE', `/api/files/uploads/${raceId}`, { user: raceUser });
+const missingUpload = await call('HEAD', `/api/files/uploads/${raceId}`, { user: raceUser });
+const uploadFiles = await readdir(dir);
+ok(busyDelete.status === 409 && finishedPatch.status === 200, 'active upload chunk blocks concurrent cancellation');
+ok(deletedUpload.status === 200 && missingUpload.status === 404 && !uploadFiles.includes(`.upload-${raceId}`), 'cancellation retry removes upload metadata and temporary bytes');
 
 // The per-account limiter prevents one authenticated client from filling disk.
 const limited = await call('POST', '/api/files', { user, body: 'one-upload-too-many' });

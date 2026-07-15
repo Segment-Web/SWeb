@@ -201,8 +201,9 @@ export class Workspace {
     if (!source?.isConnected) return null;
     const sourceRect = source.getBoundingClientRect();
     const side = sourceRect.left + sourceRect.width / 2 <= window.innerWidth / 2 ? 'left' : 'right';
-    const limit = Math.max(minWidth, Math.min(maxWidth, window.innerWidth - SURFACE_EDGE_PX * 2));
-    let width = clamp(sourceRect.width, minWidth, limit);
+    const widthLimit = () => Math.max(0, Math.min(maxWidth, window.innerWidth - SURFACE_EDGE_PX * 2));
+    const effectiveMinWidth = () => Math.min(minWidth, widthLimit());
+    let width = clamp(sourceRect.width, effectiveMinWidth(), widthLimit());
 
     const element = document.createElement('section');
     element.className = `workspace-surface workspace-surface-${side}${className ? ` ${className}` : ''}`;
@@ -217,6 +218,7 @@ export class Workspace {
 
     const place = () => {
       const rect = source.getBoundingClientRect();
+      width = clamp(width, effectiveMinWidth(), widthLimit());
       element.style.width = `${width}px`;
       if (side === 'left') {
         element.style.left = `${clamp(rect.left, SURFACE_EDGE_PX, window.innerWidth - width - SURFACE_EDGE_PX)}px`;
@@ -232,7 +234,7 @@ export class Workspace {
     if (typeof dispose !== 'function') dispose = () => {};
     const syncFromSource = () => {
       if (!source.isConnected || this._surface?.element !== element) return;
-      width = clamp(source.getBoundingClientRect().width, minWidth, limit);
+      width = clamp(source.getBoundingClientRect().width, effectiveMinWidth(), widthLimit());
       place();
     };
     const sourceResizeObserver = new ResizeObserver(syncFromSource);
@@ -247,7 +249,7 @@ export class Workspace {
       const startWidth = width;
       const onMove = (moveEvent) => {
         const delta = (moveEvent.clientX - startX) * (side === 'left' ? 1 : -1);
-        const desired = clamp(startWidth + delta, minWidth, limit);
+        const desired = clamp(startWidth + delta, effectiveMinWidth(), widthLimit());
         width = this._resizePanelWidth(sourceId, desired);
         place();
       };
@@ -263,7 +265,7 @@ export class Workspace {
 
     this._surfaceResizeController?.abort();
     this._surfaceResizeController = new AbortController();
-    window.addEventListener('resize', place, { signal: this._surfaceResizeController.signal });
+    window.addEventListener('resize', syncFromSource, { signal: this._surfaceResizeController.signal });
     requestAnimationFrame(() => element.classList.add('is-open'));
     return element;
   }

@@ -173,16 +173,26 @@ export async function createFiles(config, auth) {
           } finally { uploadLocks.delete(id); }
         }
         if (req.method === 'POST' && uploadMatch[2] === 'complete') {
-          if (Number(row.received_size) !== Number(row.expected_size)) return json(res, 409, { error: 'UPLOAD_INCOMPLETE', offset: Number(row.received_size) });
-          const tmp = uploadPath(id); const fileId = await hashFile(tmp); const target = pathFor(fileId);
-          try { await stat(target); await unlink(tmp).catch(() => {}); } catch { await rename(tmp, target); }
-          await deleteUpload(id);
-          return json(res, 201, { id: fileId, size: Number(row.received_size) });
+          if (uploadLocks.has(id)) return json(res, 409, { error: 'UPLOAD_BUSY', offset: Number(row.received_size) });
+          uploadLocks.add(id);
+          try {
+            const current = await findUpload(id, user.id);
+            if (!current) return json(res, 404, { error: 'UPLOAD_NOT_FOUND' });
+            if (Number(current.received_size) !== Number(current.expected_size)) return json(res, 409, { error: 'UPLOAD_INCOMPLETE', offset: Number(current.received_size) });
+            const tmp = uploadPath(id); const fileId = await hashFile(tmp); const target = pathFor(fileId);
+            try { await stat(target); await unlink(tmp).catch(() => {}); } catch { await rename(tmp, target); }
+            await deleteUpload(id);
+            return json(res, 201, { id: fileId, size: Number(current.received_size) });
+          } finally { uploadLocks.delete(id); }
         }
         if (req.method === 'DELETE' && !uploadMatch[2]) {
-          await deleteUpload(id, user.id);
-          await unlink(uploadPath(id)).catch(() => {});
-          return json(res, 200, { ok: true });
+          if (uploadLocks.has(id)) return json(res, 409, { error: 'UPLOAD_BUSY', offset: Number(row.received_size) });
+          uploadLocks.add(id);
+          try {
+            await deleteUpload(id, user.id);
+            await unlink(uploadPath(id)).catch(() => {});
+            return json(res, 200, { ok: true });
+          } finally { uploadLocks.delete(id); }
         }
       }
 

@@ -84,6 +84,7 @@ export function attachGateway(server, config, auth, rooms) {
   };
   const publicOf = (client) => ({
     id: client.id,
+    userId: client.userId,
     name: client.name,
     username: client.username,
     avatar: avatarUrl(client),

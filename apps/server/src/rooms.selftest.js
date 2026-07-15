@@ -32,6 +32,8 @@ const third = await mkUser('third_u');
 const config = { production: false, allowedOrigins: [], publicUrl: '', roomInviteTtlMs: 3600000 };
 const auth = { pool, userFromRequest: async (req) => req._user ?? null };
 const rooms = await createRooms(config, auth);
+const membershipChanges = [];
+rooms.onMembershipChange((change) => membershipChanges.push(change));
 
 let pass = 0, fail = 0;
 const ok = (cond, label) => { if (cond) { pass++; console.log('ok   ' + label); } else { fail++; console.log('FAIL ' + label); } };
@@ -96,8 +98,13 @@ ok(forbidden.status === 403, 'non-member invite -> 403');
 const invite = await call('POST', '/api/rooms/invite', { user: owner, body: { roomId } });
 ok(invite.status === 201 && invite.data.token, 'owner mints invite');
 const joined = await call('POST', '/api/rooms/join', { user: other, body: { token: invite.data.token } });
-ok(joined.status === 200 && joined.data.room?.id === roomId, 'redeem invite -> joined room');
+ok(joined.status === 200 && joined.data.room?.id === roomId && joined.data.room.joined === true, 'redeem invite -> joined room');
 ok(rooms.canAccess(other.id, roomId), 'redeemer now has access');
+const membershipEventsAfterJoin = membershipChanges.length;
+const joinedAgain = await call('POST', '/api/rooms/join', { user: other, body: { token: invite.data.token } });
+const inviteUsage = await pool.query('SELECT uses FROM room_invites WHERE token_hash IS NOT NULL AND room_id=$1', [roomId]);
+ok(joinedAgain.status === 200 && joinedAgain.data.room.joined === false, 'redeeming an invite twice is idempotent');
+ok(inviteUsage.rows[0].uses === 1 && membershipChanges.length === membershipEventsAfterJoin, 'duplicate redemption does not consume invite or emit membership change');
 
 // Bad invite token is rejected.
 const badToken = await call('POST', '/api/rooms/join', { user: other, body: { token: 'nope' } });

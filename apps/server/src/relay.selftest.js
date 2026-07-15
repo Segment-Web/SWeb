@@ -62,6 +62,7 @@ await settle();
 
 ok(firstOfType(alice.inbox, MessageType.Roster), 'joining yields a roster');
 ok(firstOfType(bob.inbox, MessageType.Peer) || firstOfType(alice.inbox, MessageType.Peer), 'peers are announced');
+ok(firstOfType(alice.inbox, MessageType.Roster)?.members?.every((member) => member.userId), 'peer records include stable account ids');
 
 // Alice encrypts a real message with her sender key and relays it.
 const senderKey = SenderKey.create();

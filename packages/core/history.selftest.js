@@ -21,7 +21,7 @@ globalThis.fetch = async (url, options = {}) => {
       return { ok: false, status: 400, json: async () => ({ error: 'ENVELOPE_INVALID' }) };
     }
     const list = store.get(body.roomId) || [];
-    list.push({ seq: list.length + 1, keyId: body.keyId || '', iv: body.iv, ct: body.ct });
+    list.push({ seq: list.length + 1, senderId: 'user-a', keyId: body.keyId || '', iv: body.iv, ct: body.ct });
     store.set(body.roomId, list);
     return { ok: true, status: 201, json: async () => ({ seq: list.length }) };
   }
@@ -49,6 +49,9 @@ const roomId = 'chat-abc';
 const A = new SegmentClient({ storage: mkStorage() });
 const B = new SegmentClient({ storage: mkStorage() });
 const C = new SegmentClient({ storage: mkStorage() });
+Object.assign(A.self, { id: 'user-a', name: 'A', username: 'alice' });
+Object.assign(B.self, { id: 'user-b', name: 'B', username: 'bob' });
+Object.assign(C.self, { id: 'user-c', name: 'C', username: 'carol' });
 for (const cl of [A, B, C]) cl._addServerRoom({ id: roomId, title: 'R', type: 'chat', icon: '💬' });
 
 // A creates the room and seeds its history key.
@@ -118,7 +121,7 @@ await A.sendEvent(roomId, { kind: 'reaction', id: 'sync-m1', emoji: 'ok', by: 'A
 await A.sendEvent(roomId, { kind: 'pin-message', ids: ['sync-m1'] });
 await B._backfillRoom(roomId);
 ok(B._messageById(roomId, 'sync-m1')?.text === 'after', 'message edits survive history backfill');
-ok(B._messageById(roomId, 'sync-m1')?.reactions?.ok?.includes('A'), 'reactions survive history backfill');
+ok(B._messageById(roomId, 'sync-m1')?.reactions?.ok?.includes('user-a'), 'reactions survive history backfill');
 ok(B.messages[roomId].pinnedIds?.[0] === 'sync-m1', 'pinned state survives history backfill');
 
 // Attachment references are part of the encrypted history event, so media does
@@ -169,10 +172,44 @@ await new Promise((r) => setTimeout(r, 10)); // let the erase request settle
 ok(store.get(roomId).length === 1, 'original envelope is erased while the delete event remains for device sync');
 
 // A peer receiving the delete event drops it entirely too.
-B._applyEvent(roomId, { kind: 'message', message: { id: 'm3', name: 'A', text: 'bye' } }, { name: 'A' });
+B._applyEvent(roomId, { kind: 'message', message: { id: 'm3', name: 'A', text: 'bye' } }, { id: 'user-a', name: 'A', username: 'alice' });
 ok(B._messageById(roomId, 'm3'), 'peer has the message');
-B._applyEvent(roomId, { kind: 'delete', id: 'm3' }, { name: 'A' });
+B._applyEvent(roomId, { kind: 'delete', id: 'm3' }, { id: 'user-a', name: 'A', username: 'alice' });
 ok(!B._messageById(roomId, 'm3'), 'peer removes the message on delete, leaving no trace');
+
+// Authenticated event authorship is authoritative. A room member cannot edit,
+// delete or rotate keys on behalf of another account, and reaction ownership
+// cannot be forged through the event payload's display name.
+const secureRoom = 'chat-secure-events';
+for (const cl of [A, B]) cl._addServerRoom({ id: secureRoom, title: 'Secure', type: 'chat', icon: 'S', ownerId: 'user-a' });
+A._seedHistoryKey(secureRoom); B._adoptHistoryKeys(A.historyKeysExport());
+B._applyEvent(secureRoom, { kind: 'message', message: { id: 'owned', text: 'original' } }, { id: 'user-a', name: 'A', username: 'alice' });
+B._applyEvent(secureRoom, { kind: 'edit', id: 'owned', text: 'forged' }, { id: 'user-b', name: 'B', username: 'bob' });
+B._applyEvent(secureRoom, { kind: 'delete', id: 'owned' }, { id: 'user-b', name: 'B', username: 'bob' });
+ok(B._messageById(secureRoom, 'owned')?.text === 'original', 'non-author cannot edit or delete another account message');
+B._applyEvent(secureRoom, { kind: 'reaction', id: 'owned', emoji: 'ok', by: 'A' }, { id: 'user-b', name: 'B', username: 'bob' });
+ok(B._messageById(secureRoom, 'owned')?.reactions?.ok?.includes('user-b') && !B._messageById(secureRoom, 'owned')?.reactions?.ok?.includes('A'), 'reaction actor cannot be spoofed by payload');
+const secureKeyBefore = JSON.stringify(B._historyKey(secureRoom));
+B._applyEvent(secureRoom, { kind: 'history-key-rotate', key: Array(32).fill(22) }, { id: 'user-b', name: 'B' });
+ok(JSON.stringify(B._historyKey(secureRoom)) === secureKeyBefore, 'non-owner cannot rotate room history key');
+B._applyEvent(secureRoom, { kind: 'history-key-rotate', key: Array(32).fill(23) }, { id: 'user-a', name: 'A' });
+ok(JSON.stringify(B._historyKey(secureRoom)) === JSON.stringify(Array(32).fill(23)), 'room owner can rotate room history key');
+
+// A membership change may arrive while another outbox flush is active. The
+// rotation stays queued under the old history key while the owner immediately
+// adopts the new key for subsequent messages.
+const raceRoom = 'chat-rotation-race';
+A._addServerRoom({ id: raceRoom, title: 'Race', type: 'chat', icon: 'R', ownerId: 'user-a' });
+A._seedHistoryKey(raceRoom);
+const oldRaceKeyId = A._historyKeyId(A._historyKey(raceRoom));
+A.ws = { readyState: 1 };
+A._flushingOutbox = true;
+await A._rotateRoomHistoryKey(raceRoom);
+A._flushingOutbox = false;
+const queuedRotation = A.outbox.find((item) => item.roomId === raceRoom && item.event.kind === 'history-key-rotate');
+ok(Boolean(queuedRotation) && queuedRotation.historyKeyId === oldRaceKeyId, 'queued rotation retains the previous history key');
+ok(A._historyKeyId(A._historyKey(raceRoom)) !== oldRaceKeyId, 'owner adopts the rotated key while outbox is busy');
+A.outbox = A.outbox.filter((item) => item !== queuedRotation);
 
 // A backfill cannot bring the erased message back.
 A._backfilled.clear();

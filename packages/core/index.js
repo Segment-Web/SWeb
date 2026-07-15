@@ -427,7 +427,7 @@ export class SegmentClient {
     this._emit('room', { chat: this.chatById(id), messages: this.messages[id] });
     this._emit('chats');
     this._emit('status', this._statusText());
-    const readIds = this.messages[id]?.filter((m) => !m.system && !m.deleted && m.name !== this.self.name).map((m) => m.id) || [];
+    const readIds = this.messages[id]?.filter((m) => !m.system && !m.deleted && !this._sameAuthor(m, this.self)).map((m) => m.id) || [];
     if (readIds.length && id !== SAVED_ID) this.sendEvent(id, { kind: 'receipt', ids: readIds, state: 'read' }, false);
   }
 
@@ -582,14 +582,15 @@ export class SegmentClient {
   editMessage(roomId, messageId, text) {
     const clean = (text || '').trim();
     const message = this._messageById(roomId, messageId);
-    if (!clean || !message || message.name !== this.self.name || message.deleted) return false;
+    if (!clean || !message || !this._sameAuthor(message, this.self) || message.deleted) return false;
     this.sendEvent(roomId, { kind: 'edit', id: messageId, text: clean });
     return true;
   }
 
   deleteMessage(roomId, messageId) {
     const message = this._messageById(roomId, messageId);
-    if (!message || message.deleted || (message.name && message.name !== this.self.name)) return false;
+    const chat = this.chatById(roomId);
+    if (!message || message.deleted || (!this._sameAuthor(message, this.self) && chat?.ownerId !== this.self.id)) return false;
     this.sendEvent(roomId, { kind: 'delete', id: messageId });
     this._eraseFromHistory(roomId, message); // otherwise a backfill resurrects it
     return true;
@@ -639,13 +640,13 @@ export class SegmentClient {
 
   _queueOutgoing(roomId, event) {
     if (!event?.eventId || this.outbox.some((item) => item.event?.eventId === event.eventId)) return;
-    this.outbox.push({ roomId, event });
+    this.outbox.push({ roomId, event, historyKeyId: this._historyKeyId(this._historyKey(roomId)) });
     this._persistOutbox();
   }
 
   async _deliverOutgoing(item) {
-    const { roomId, event } = item;
-    const historyAck = await this._storeToHistory(roomId, event);
+    const { roomId, event, historyKeyId = '' } = item;
+    const historyAck = await this._storeToHistory(roomId, event, historyKeyId);
     await this._ensureCrypto();
     const box = await this.senderKey.encrypt(JSON.stringify({ segment: 'event', ...event }));
     const frame = { type: MessageType.Cipher, room: roomId, eventId: event.eventId, n: box.n, iv: box.iv, ct: box.ct };
@@ -768,9 +769,17 @@ export class SegmentClient {
     } finally { this._activeUploads.delete(session.uploadId); }
   }
 
-  cancelUpload(id) {
+  async cancelUpload(id) {
     this._activeUploads.get(id)?.abort();
-    fetch(`/api/files/uploads/${id}`, { method: 'DELETE', credentials: 'same-origin' }).catch(() => {});
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        const response = await fetch(`/api/files/uploads/${id}`, { method: 'DELETE', credentials: 'same-origin' });
+        if (response.ok || response.status === 404) return true;
+        if (response.status !== 409) return false;
+      } catch { /* the aborted PATCH may still be releasing its server lock */ }
+      await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
+    }
+    return false;
   }
 
   async _downloadBlob(fileId) {
@@ -907,9 +916,9 @@ export class SegmentClient {
   historyKeyArchiveExport() { return Object.fromEntries(this.historyKeyArchive); }
 
   // Persist one event to server history, encrypted to the room's history key.
-  async _storeToHistory(roomId, event) {
+  async _storeToHistory(roomId, event, historyKeyId = '') {
     if (roomId === SAVED_ID) return;
-    const key = this._historyKey(roomId);
+    const key = this._historyKeyFor(roomId, historyKeyId) || this._historyKey(roomId);
     if (!key || !event) return null;
     const clean = event.message ? { ...event, message: { ...event.message } } : event;
     if (clean.message) delete clean.message.status;
@@ -978,7 +987,7 @@ export class SegmentClient {
             if (local) local.seq ||= env.seq;
             else event.message.seq = env.seq;
           }
-          this._applyEvent(roomId, event, {});
+          this._applyEvent(roomId, event, { id: env.senderId || '' });
         }
         if (page.length < 200) break;
       }
@@ -1000,7 +1009,7 @@ export class SegmentClient {
 
   _addPeer(m) {
     if (this.peers.has(m.id)) return;
-    this.peers.set(m.id, { name: m.name, username: m.username, avatar: m.avatar, color: m.color, bundle: m.bundle, pendingCiphers: [] });
+    this.peers.set(m.id, { userId: m.userId || '', name: m.name, username: m.username, avatar: m.avatar, color: m.color, bundle: m.bundle, pendingCiphers: [] });
   }
 
 
@@ -1081,8 +1090,8 @@ export class SegmentClient {
     const chat = this.chatById(roomId);
     if (!chat || chat.ownerId !== this.self.id || !this._historyKey(roomId) || this.ws?.readyState !== 1) return;
     const key = Array.from(randomFileKey());
-    const delivered = await this.sendEvent(roomId, { kind: 'history-key-rotate', key }, false);
-    if (delivered) this._installRotatedHistoryKey(roomId, key);
+    await this.sendEvent(roomId, { kind: 'history-key-rotate', key }, false);
+    this._installRotatedHistoryKey(roomId, key);
   }
 
   async _onCipher(msg) {
@@ -1096,7 +1105,7 @@ export class SegmentClient {
     let text;
     try { text = await p.view.decrypt({ n: msg.n, iv: msg.iv, ct: msg.ct }); } catch { return; }
     const event = parseEnvelope(text);
-    this._applyEvent(msg.room, event, { name: p.name, username: p.username, avatar: p.avatar, color: p.color });
+    this._applyEvent(msg.room, event, { id: p.userId, name: p.name, username: p.username, avatar: p.avatar, color: p.color });
     if (event.kind === 'message' && event.message?.id) {
       this.sendEvent(msg.room, { kind: 'receipt', ids: [event.message.id], state: msg.room === this.currentRoom ? 'read' : 'delivered' }, false);
     }
@@ -1202,6 +1211,7 @@ export class SegmentClient {
   _makeMessage(text, replyTo = null, extra = {}) {
     return {
       id: mid(),
+      authorId: this.self.id || '',
       name: this.self.name,
       username: this.self.username,
       avatar: this.self.avatar,
@@ -1268,6 +1278,7 @@ export class SegmentClient {
       const message = event.message || this._makeMessage(event.text || '');
       if (!attachmentsWithinLimits(message.attachments)) return;
       if (message.id && this._messageById(roomId, message.id)) return;
+      if (author.id) message.authorId = author.id;
       if (author.name) {
         message.name = author.name;
         message.username = author.username || '';
@@ -1289,7 +1300,7 @@ export class SegmentClient {
       let changed = false;
       for (const id of event.ids || []) {
         const receiptMessage = this._messageById(roomId, id);
-        if (!receiptMessage || receiptMessage.name !== this.self.name) continue;
+        if (!receiptMessage || !this._sameAuthor(receiptMessage, this.self)) continue;
         const by = author.username || author.name || '';
         if (by) {
           receiptMessage.receipts ||= {};
@@ -1302,6 +1313,8 @@ export class SegmentClient {
       return;
     }
     if (event.kind === 'history-key-rotate') {
+      const chat = this.chatById(roomId);
+      if (!chat?.ownerId || !author.id || author.id !== chat.ownerId) return;
       if (this._installRotatedHistoryKey(roomId, event.key)) {
         this._backfilled.delete(roomId);
         this._backfillRoom(roomId);
@@ -1313,16 +1326,17 @@ export class SegmentClient {
     if (event.kind === 'reaction' && message) {
       message.reactions ||= {};
       message.reactions[event.emoji] ||= [];
-      const by = event.by || author.name || 'user';
       const list = message.reactions[event.emoji];
-      const i = list.indexOf(by);
-      if (i === -1) list.push(by);
-      else list.splice(i, 1);
-      if (!list.length) delete message.reactions[event.emoji];
+      const actors = this._actorKeys(author, event.by);
+      const active = list.some((value) => actors.includes(value));
+      message.reactions[event.emoji] = list.filter((value) => !actors.includes(value));
+      if (!active) message.reactions[event.emoji].push(actors[0]);
+      if (!message.reactions[event.emoji].length) delete message.reactions[event.emoji];
       this._refreshRoom(roomId);
       return;
     }
     if (event.kind === 'edit' && message) {
+      if (!this._sameAuthor(message, author)) return;
       message.text = event.text;
       message.edited = Date.now();
       this.lastText[roomId] = preview(message);
@@ -1330,6 +1344,8 @@ export class SegmentClient {
       return;
     }
     if (event.kind === 'delete' && message) {
+      const chat = this.chatById(roomId);
+      if (!this._sameAuthor(message, author) && chat?.ownerId !== author.id) return;
       // Traceless: the message is removed outright, not tombstoned. The stored
       // envelope is erased separately (see _eraseFromHistory), so a backfill
       // cannot bring it back either.
@@ -1347,9 +1363,10 @@ export class SegmentClient {
       return;
     }
     if (event.kind === 'poll-vote' && message?.poll) {
-      const by = event.by || author.name || 'user';
-      if (message.poll.votes[by] === event.option) delete message.poll.votes[by];
-      else message.poll.votes[by] = event.option;
+      const actors = this._actorKeys(author, event.by);
+      const previous = actors.map((actor) => message.poll.votes[actor]).find((value) => value !== undefined);
+      for (const actor of actors) delete message.poll.votes[actor];
+      if (previous !== event.option) message.poll.votes[actors[0]] = event.option;
       this._refreshRoom(roomId);
       return;
     }
@@ -1363,6 +1380,18 @@ export class SegmentClient {
       this.messages[roomId].pinnedId = this.messages[roomId].pinnedIds.at(-1) || null;
       this._refreshRoom(roomId);
     }
+  }
+
+  _sameAuthor(message, author = {}) {
+    if (!message) return false;
+    if (message.authorId || author.id) return Boolean(message.authorId && author.id && message.authorId === author.id);
+    if (message.username || author.username) return Boolean(message.username && author.username && message.username === author.username);
+    return Boolean(message.name && author.name && message.name === author.name);
+  }
+
+  _actorKeys(author = {}, legacy = '') {
+    const verified = [...new Set([author.id, author.username, author.name].filter(Boolean))];
+    return verified.length ? verified : [legacy || 'user'];
   }
 
 

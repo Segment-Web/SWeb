@@ -213,24 +213,34 @@ export async function createRooms(config, auth) {
   };
 
   const redeemInvite = async (user, token) => {
-    const invite = await one(
-      'SELECT * FROM room_invites WHERE token_hash=$1 AND expires_at>NOW()',
-      [hashToken(String(token || ''))],
-    );
-    if (!invite) throw Object.assign(new Error('INVITE_INVALID'), { status: 400 });
-    if (invite.max_uses > 0 && invite.uses >= invite.max_uses) throw Object.assign(new Error('INVITE_EXHAUSTED'), { status: 410 });
-    // Record the join point so 'joined' visibility hides history sent before it.
-    await pool.query(
-      `INSERT INTO room_members(room_id,user_id,join_seq)
-       VALUES($1,$2,(SELECT COALESCE(MAX(seq),0) FROM room_history WHERE room_id=$1))
-       ON CONFLICT DO NOTHING`,
-      [invite.room_id, user.id],
-    );
-    await pool.query('UPDATE room_invites SET uses=uses+1 WHERE token_hash=$1', [invite.token_hash]);
+    const tokenHash = hashToken(String(token || ''));
+    const connection = await pool.connect();
+    let invite; let joined = false;
+    try {
+      await connection.query('BEGIN');
+      invite = (await connection.query(
+        'SELECT * FROM room_invites WHERE token_hash=$1 AND expires_at>NOW() FOR UPDATE',
+        [tokenHash],
+      )).rows[0] || null;
+      if (!invite) throw Object.assign(new Error('INVITE_INVALID'), { status: 400 });
+      if (invite.max_uses > 0 && invite.uses >= invite.max_uses) throw Object.assign(new Error('INVITE_EXHAUSTED'), { status: 410 });
+      const inserted = await connection.query(
+        `INSERT INTO room_members(room_id,user_id,join_seq)
+         VALUES($1,$2,(SELECT COALESCE(MAX(seq),0) FROM room_history WHERE room_id=$1))
+         ON CONFLICT DO NOTHING RETURNING room_id`,
+        [invite.room_id, user.id],
+      );
+      joined = inserted.rowCount > 0;
+      if (joined) await connection.query('UPDATE room_invites SET uses=uses+1 WHERE token_hash=$1', [tokenHash]);
+      await connection.query('COMMIT');
+    } catch (error) {
+      await connection.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally { connection.release(); }
     indexMember(invite.room_id, user.id);
-    emitMembership({ roomId: invite.room_id, userId: user.id, action: 'joined' });
+    if (joined) emitMembership({ roomId: invite.room_id, userId: user.id, action: 'joined' });
     const room = await one('SELECT * FROM rooms WHERE id=$1', [invite.room_id]);
-    return room ? publicRoom(room) : null;
+    return room ? { ...publicRoom(room), joined } : null;
   };
 
   // Append one encrypted history envelope; returns its assigned sequence.
