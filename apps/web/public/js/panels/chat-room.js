@@ -114,6 +114,15 @@ export function chatRoomPanel(client) {
             <div class="reply-draft hidden" data-el="replyDraft"><b></b><span></span><button data-el="replyCancel" title="Отменить">×</button></div>
             <div class="attach-draft hidden" data-el="attachDraft"></div>
             <div class="autocomplete hidden" data-el="autocomplete"></div>
+            <div class="composer-format" data-el="format">
+              <button type="button" class="fmt-btn" data-fmt="B" title="Жирный · Ctrl+B"><b>B</b></button>
+              <button type="button" class="fmt-btn" data-fmt="I" title="Курсив · Ctrl+I"><i>i</i></button>
+              <button type="button" class="fmt-btn" data-fmt="S" title="Зачёркнутый · Ctrl+S"><s>S</s></button>
+              <button type="button" class="fmt-btn mono" data-fmt="CODE" title="Моноширинный · Ctrl+E">&lt;/&gt;</button>
+              <button type="button" class="fmt-btn" data-fmt="SPOILER" title="Спойлер">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="2.5"/></svg>
+              </button>
+            </div>
             <div class="composer-field">
               <div class="attach-wrap" data-el="attachWrap">
                 <button class="composer-tool" data-el="attach" title="Прикрепить" aria-label="Прикрепить">
@@ -125,7 +134,7 @@ export function chatRoomPanel(client) {
                   <button data-att="poll"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Опрос</span></button>
                 </div>
               </div>
-              <input class="composer-input" data-el="input" placeholder="Сообщение..." autocomplete="off">
+              <div class="composer-input" data-el="input" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Сообщение..."></div>
               <button class="composer-tool" data-el="emoji" title="Эмодзи" aria-label="Эмодзи">
                 <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 10h.01"/><path d="M15.5 10h.01"/><path d="M8.2 14.2c.9 1.2 2.2 1.8 3.8 1.8s2.9-.6 3.8-1.8"/></svg>
               </button>
@@ -164,6 +173,106 @@ export function chatRoomPanel(client) {
       const typingEl = q('typing');
       const selectionBar = q('selectionBar');
       const input = q('input');
+      const formatBar = q('format');
+
+      // --- Rich composer: contenteditable that renders inline formatting and
+      // serializes back to the markdown wire format (**b** __i__ ~~s~~ `c` ||spoiler||). ---
+      const domToMarkdown = (node) => {
+        let out = '';
+        for (const n of node.childNodes) {
+          if (n.nodeType === 3) { out += n.nodeValue; continue; }
+          if (n.nodeName === 'BR') { out += '\n'; continue; }
+          const inner = domToMarkdown(n);
+          if (n.nodeName === 'B' || n.nodeName === 'STRONG') out += `**${inner}**`;
+          else if (n.nodeName === 'I' || n.nodeName === 'EM') out += `__${inner}__`;
+          else if (n.nodeName === 'S' || n.nodeName === 'STRIKE' || n.nodeName === 'DEL') out += `~~${inner}~~`;
+          else if (n.nodeName === 'CODE') out += `\`${inner}\``;
+          else if (n.classList && n.classList.contains('spoiler')) out += `||${inner}||`;
+          else if (n.nodeName === 'DIV' || n.nodeName === 'P') out += (out && !out.endsWith('\n') ? '\n' : '') + inner;
+          else out += inner;
+        }
+        return out;
+      };
+      const markdownToHtml = (md) => {
+        let s = esc(md);
+        s = s.replace(/`([^`\n]+?)`/g, '<code>$1</code>');
+        s = s.replace(/\|\|([\s\S]+?)\|\|/g, '<span class="spoiler" data-spoiler>$1</span>');
+        s = s.replace(/\*\*([^*\n]+?)\*\*/g, '<b>$1</b>');
+        s = s.replace(/__([^_\n]+?)__/g, '<i>$1</i>');
+        s = s.replace(/~~([^~\n]+?)~~/g, '<s>$1</s>');
+        return s.replace(/\n/g, '<br>');
+      };
+      Object.defineProperty(input, 'value', {
+        get() { return domToMarkdown(this).replace(/\n$/, ''); },
+        set(md) { this.innerHTML = md ? markdownToHtml(String(md)) : ''; syncFormatState(); },
+      });
+      Object.defineProperty(input, 'placeholder', {
+        get() { return this.dataset.placeholder || ''; },
+        set(v) { this.dataset.placeholder = v; },
+      });
+      const FMT = { B: 'b', I: 'i', S: 's', CODE: 'code', SPOILER: 'spoiler' };
+      const fmtAncestor = (node, kind) => {
+        for (let el = node; el && el !== input; el = el.parentNode) {
+          if (el.nodeType !== 1) continue;
+          if (kind === 'SPOILER') { if (el.classList.contains('spoiler')) return el; }
+          else if (el.nodeName === FMT[kind].toUpperCase()) return el;
+        }
+        return null;
+      };
+      const syncFormatState = () => {
+        const sel = window.getSelection();
+        const node = sel && sel.rangeCount && input.contains(sel.anchorNode) ? sel.anchorNode : null;
+        for (const btn of formatBar.querySelectorAll('.fmt-btn')) {
+          btn.classList.toggle('active', !!(node && fmtAncestor(node, btn.dataset.fmt)));
+        }
+      };
+      const unwrap = (el) => {
+        const parent = el.parentNode;
+        while (el.firstChild) parent.insertBefore(el.firstChild, el);
+        parent.removeChild(el);
+        parent.normalize();
+      };
+      const applyFormat = (kind) => {
+        input.focus();
+        const sel = window.getSelection();
+        if (!sel.rangeCount) return;
+        const range = sel.getRangeAt(0);
+        if (!input.contains(range.commonAncestorContainer)) return;
+        // A selection can report the container (not a text node) as its boundary
+        // when it spans a whole formatted run, so probe both ends and the common ancestor.
+        let existing = fmtAncestor(range.startContainer, kind)
+          || fmtAncestor(range.endContainer, kind)
+          || fmtAncestor(range.commonAncestorContainer, kind);
+        if (!existing && !range.collapsed) {
+          const only = range.cloneContents();
+          if (only.childNodes.length === 1 && fmtAncestor(only.firstChild, kind) === null) {
+            const single = only.firstChild;
+            if (single.nodeType === 1 && (kind === 'SPOILER'
+              ? single.classList?.contains('spoiler')
+              : single.nodeName === FMT[kind].toUpperCase())) {
+              // whole selection is one formatted run living directly under a boundary node
+              for (const el of input.querySelectorAll(kind === 'SPOILER' ? '.spoiler' : FMT[kind])) {
+                if (range.intersectsNode(el) && range.toString() === el.textContent) { existing = el; break; }
+              }
+            }
+          }
+        }
+        if (existing) { unwrap(existing); }
+        else {
+          if (range.collapsed) return;
+          const wrap = kind === 'SPOILER'
+            ? Object.assign(document.createElement('span'), { className: 'spoiler' })
+            : document.createElement(FMT[kind]);
+          if (kind === 'SPOILER') wrap.dataset.spoiler = '';
+          try { range.surroundContents(wrap); }
+          catch { wrap.appendChild(range.extractContents()); range.insertNode(wrap); }
+          sel.removeAllRanges();
+          const r = document.createRange(); r.selectNodeContents(wrap); sel.addRange(r);
+        }
+        input.dispatchEvent(new Event('input'));
+        syncFormatState();
+      };
+
       const msgMenu = q('msgMenu');
       const sheet = q('sheet');
       const emojiMenu = q('emojiMenu');
@@ -239,10 +348,14 @@ export function chatRoomPanel(client) {
       const acApply = (i) => {
         const it = acItems[i];
         if (!it || !acToken) return;
-        const val = input.value;
-        input.value = val.slice(0, acToken.start) + it.value + val.slice(acToken.end);
-        const caret = acToken.start + it.value.length;
-        input.setSelectionRange(caret, caret);
+        const { node, start, end } = acToken;
+        node.nodeValue = node.nodeValue.slice(0, start) + it.value + node.nodeValue.slice(end);
+        const caret = start + it.value.length;
+        const sel = window.getSelection();
+        const r = document.createRange();
+        r.setStart(node, Math.min(caret, node.nodeValue.length));
+        r.collapse(true);
+        sel.removeAllRanges(); sel.addRange(r);
         acClose();
         syncActions();
         if (currentChat) drafts[currentChat.id] = input.value;
@@ -258,25 +371,29 @@ export function chatRoomPanel(client) {
       };
 
       const acUpdate = () => {
-        const caret = input.selectionStart;
-        const before = input.value.slice(0, caret);
+        const sel = window.getSelection();
+        if (!sel.rangeCount || !sel.isCollapsed || !input.contains(sel.anchorNode) || sel.anchorNode.nodeType !== 3) { acClose(); return; }
+        const node = sel.anchorNode;
+        const caret = sel.anchorOffset;
+        const before = node.nodeValue.slice(0, caret);
+        const atStart = node === input.firstChild;
         let mt;
 
-        if ((mt = /^\/(\w*)$/.exec(before))) {
+        if (atStart && (mt = /^\/(\w*)$/.exec(before))) {
           const q2 = mt[1].toLowerCase();
-          acToken = { start: 0, end: caret };
+          acToken = { node, start: 0, end: caret };
           acItems = SLASH.filter((s) => s.cmd.startsWith(q2)).map((s) => ({
             icon: '/', label: `/${s.cmd}`, hint: s.desc, value: s.insert,
           }));
         } else if ((mt = /(^|\s)@(\w{0,20})$/.exec(before))) {
           const q2 = mt[2].toLowerCase();
-          acToken = { start: caret - mt[2].length - 1, end: caret };
+          acToken = { node, start: caret - mt[2].length - 1, end: caret };
           acItems = chatMembers().filter((n) => n.toLowerCase().startsWith(q2)).slice(0, 6).map((n) => ({
             icon: n[0].toUpperCase(), label: n, hint: '', value: `@${n} `,
           }));
         } else if ((mt = /(^|\s):([a-z0-9_+]{2,30})$/.exec(before))) {
           const q2 = mt[2].toLowerCase();
-          acToken = { start: caret - mt[2].length - 1, end: caret };
+          acToken = { node, start: caret - mt[2].length - 1, end: caret };
           acItems = Object.entries(EMOJI_MAP).filter(([k]) => k.startsWith(q2)).slice(0, 8).map(([k, e]) => ({
             icon: e, label: `:${k}:`, hint: '', value: `${e} `,
           }));
@@ -1072,6 +1189,12 @@ export function chatRoomPanel(client) {
         acUpdate();
       });
       input.addEventListener('blur', () => setTimeout(acClose, 120));
+      for (const btn of formatBar.querySelectorAll('.fmt-btn')) {
+        btn.addEventListener('mousedown', (e) => { e.preventDefault(); applyFormat(btn.dataset.fmt); });
+      }
+      document.addEventListener('selectionchange', () => {
+        if (document.activeElement === input) syncFormatState();
+      });
       feed.addEventListener('scroll', updateScrollDown, { passive: true });
       scrollDown.onclick = () => { awayCount = 0; scrollFeedToBottom(feed); updateScrollDown(); };
       replyCancel.onclick = () => setReply(null);
@@ -1198,16 +1321,6 @@ export function chatRoomPanel(client) {
         }
       };
 
-      const wrapSelection = (mark) => {
-        const s = input.selectionStart, e = input.selectionEnd;
-        const val = input.value;
-        input.value = val.slice(0, s) + mark + val.slice(s, e) + mark + val.slice(e);
-        input.selectionStart = s + mark.length;
-        input.selectionEnd = e + mark.length;
-        syncActions();
-        if (currentChat) drafts[currentChat.id] = input.value;
-      };
-
       const editLast = () => {
         const list = currentChat ? client.messages[currentChat.id] : null;
         if (!list) return false;
@@ -1227,10 +1340,10 @@ export function chatRoomPanel(client) {
 
       input.onkeydown = (e) => {
         if (acKeydown(e)) return;
-        if (e.key === 'Enter') submit();
-        else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && 'biscu'.includes(e.key.toLowerCase())) {
-          const mark = { b: '**', i: '__', s: '~~', u: '__', c: '`' }[e.key.toLowerCase()];
-          if (mark && input.selectionStart !== input.selectionEnd) { e.preventDefault(); wrapSelection(mark); }
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+        else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && 'bise'.includes(e.key.toLowerCase())) {
+          const kind = { b: 'B', i: 'I', s: 'S', e: 'CODE' }[e.key.toLowerCase()];
+          if (kind) { e.preventDefault(); applyFormat(kind); }
         }
         else if (e.key === 'ArrowUp' && !input.value && !input.dataset.editing) {
           if (editLast()) e.preventDefault();

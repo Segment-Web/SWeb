@@ -1054,11 +1054,42 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
 .composer-field:focus-within { border-color:color-mix(in srgb, var(--accent) 68%, var(--stroke)); box-shadow:0 0 0 3px rgba(90,167,236,.08); }
 .composer-input:focus, .composer-input:focus-visible { outline: none; box-shadow: none; }
 .composer-input {
-  flex: 1 1 auto; min-width: 0; height: 40px;
-  padding: 0 4px; border: none;
+  flex: 1 1 auto; min-width: 0;
+  min-height: 40px; max-height: 168px; overflow-y: auto;
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 9px 4px; border: none;
   background: transparent;
-  color: var(--text); font-size: 14.5px; font-family: inherit; outline: none;
+  color: var(--text); font-size: 14.5px; line-height: 1.4; font-family: inherit; outline: none;
+  white-space: pre-wrap; word-break: break-word;
 }
+.composer-input:empty::before {
+  content: attr(data-placeholder); color: var(--muted); pointer-events: none;
+}
+.composer-input b, .composer-input strong { font-weight: 700; }
+.composer-input i, .composer-input em { font-style: italic; }
+.composer-input s { text-decoration: line-through; }
+.composer-input code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em;
+  background: var(--surface3); border-radius: 4px; padding: 0 3px;
+}
+.composer-input .spoiler {
+  background: color-mix(in srgb, var(--muted) 32%, transparent);
+  border-radius: 4px; padding: 0 2px; color: var(--text);
+}
+.composer-format {
+  display: flex; align-items: center; gap: 2px;
+  padding: 2px 6px 4px; margin-bottom: 2px;
+}
+.composer-format .fmt-btn {
+  width: 30px; height: 28px; border: none; border-radius: 7px; cursor: pointer;
+  background: transparent; color: var(--muted);
+  font-size: 14px; line-height: 1; display: grid; place-items: center;
+  transition: background .12s, color .12s;
+}
+.composer-format .fmt-btn.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+.composer-format .fmt-btn:hover { background: var(--surface3); color: var(--text); }
+.composer-format .fmt-btn.active { background: color-mix(in srgb, var(--accent) 24%, transparent); color: var(--accent); }
+.room.is-empty .composer-format { display: none; }
 .composer-tool {
   width: 34px; height: 34px; border-radius: 50%; border: none; cursor: pointer;
   background: transparent; color: var(--muted);
