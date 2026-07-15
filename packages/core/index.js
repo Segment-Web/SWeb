@@ -245,12 +245,21 @@ export class SegmentClient {
   async createInvite(roomId) {
     if (!this.chatById(roomId)) return null;
     const { token } = await this._roomsApi('POST', '/api/rooms/invite', { roomId });
-    return `${location.origin}/j/${token}`;
+    const key = this._historyKey(roomId);
+    const fragment = key ? `#k=${this._b64(new Uint8Array(key)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')}` : '';
+    return `${location.origin}/j/${token}${fragment}`;
   }
 
   // Redeem an invite token and open the joined room.
-  async joinByToken(token) {
+  async joinByToken(token, encodedKey = '') {
     const { room } = await this._roomsApi('POST', '/api/rooms/join', { token });
+    if (encodedKey) {
+      try {
+        const padded = encodedKey.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(encodedKey.length / 4) * 4, '=');
+        const key = Array.from(this._unb64(padded));
+        if (key.length === 32) this._adoptHistoryKeys({ [room.id]: key });
+      } catch {}
+    }
     return this._addServerRoom(room, { open: true });
   }
 

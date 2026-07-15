@@ -729,7 +729,7 @@ const bootRooms = async () => {
   const path = location.pathname;
   let match;
   if ((match = path.match(/^\/j\/([A-Za-z0-9_-]{16,64})$/))) {
-    try { await client.joinByToken(match[1]); segmentApi.toast('Вы присоединились к чату'); }
+    try { await client.joinByToken(match[1], new URLSearchParams(location.hash.slice(1)).get('k') || ''); segmentApi.toast('Вы присоединились к чату'); }
     catch { segmentApi.toast('Ссылка-приглашение недействительна'); }
     history.replaceState(null, '', '/');
   } else if ((match = path.match(/^\/c\/([a-z0-9-]{3,32})$/i))) {
