@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { createFiles } from './files.js';
 
 const dir = await mkdtemp(join(tmpdir(), 'segment-files-'));
-const config = { production: false, allowedOrigins: [], publicUrl: '', fileDir: dir, fileMaxBytes: 1024, fileTtlMs: 0 };
+const config = { production: false, allowedOrigins: [], publicUrl: '', fileDir: dir, fileMaxBytes: 1024, fileTtlMs: 0, fileUploadsPerMinute: 6 };
 const auth = { userFromRequest: async (req) => req._user ?? null };
 const files = await createFiles(config, auth);
 
@@ -77,6 +77,10 @@ ok(big.status === 413, 'oversized streamed upload -> 413');
 // Empty upload -> 400.
 const empty = await call('POST', '/api/files', { user, body: Buffer.alloc(0) });
 ok(empty.status === 400, 'empty upload -> 400');
+
+// The per-account limiter prevents one authenticated client from filling disk.
+const limited = await call('POST', '/api/files', { user, body: 'one-upload-too-many' });
+ok(limited.status === 429, 'per-user upload rate limit -> 429');
 
 files.close();
 await rm(dir, { recursive: true, force: true });

@@ -58,7 +58,7 @@ The server observes accounts, public prekeys, room identifiers, membership, IP a
 Run:
 
 ```bash
-npm run check
+pnpm check
 ```
 
 The suite covers direct sessions, sender keys, signed-prekey validation, Double Ratchet direction changes, out-of-order delivery, room-scoped relay, encrypted history replay, attachment encryption and reliable retry behavior.

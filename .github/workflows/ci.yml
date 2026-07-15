@@ -26,12 +26,14 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run check
-      - run: npm run test:auth
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm test:auth
         env:
           TEST_DATABASE_URL: postgresql://segment:segment_test@localhost:5432/segment_test
+      - run: docker build --tag segment:ci .

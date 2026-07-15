@@ -1,6 +1,6 @@
 # Architecture
 
-Segment is an npm-workspaces monorepo split into a browser UI, reusable client core, shared protocol and cryptography packages, and a Node.js server.
+Segment is a pnpm workspace split into a browser UI, reusable client core, shared protocol and cryptography packages, and a Node.js server.
 
 ```text
 apps/web -> packages/core -> packages/protocol
@@ -22,13 +22,15 @@ apps/web -> packages/core -> packages/protocol
 | `apps/server` | Static delivery, authentication, room membership, encrypted history, encrypted files and WebSocket relay. |
 | `apps/web` | Desktop browser UI built from independent panels. |
 
-Node resolves shared packages through npm workspaces. The browser resolves the same sources through the import map in `apps/web/public/index.html`; the server exposes them under `/shared/`.
+Node resolves shared packages through the pnpm workspace. The browser resolves the same sources through the import map in `apps/web/public/index.html`; the server exposes them under `/shared/`.
 
 ## Client core
 
 `@segment/core` exposes an event-based client used by the browser UI. It owns connection state, the reliable outbox, room state, encrypted history backfill, attachment transport and update application. Platform storage is supplied through an adapter so future clients can reuse the core without browser dependencies.
 
 Every durable client event has a stable identifier. The server acknowledges stored events, and the client retries unacknowledged work without creating duplicate history entries.
+
+Per-room history sequence numbers are allocated through an atomic PostgreSQL counter. Concurrent senders therefore do not contend on `MAX(seq)` scans or generate duplicate sequence numbers.
 
 ## Rooms and history
 
@@ -49,3 +51,5 @@ A panel implements `{ id, title, mount(body), weight? }` and registers with the 
 The server never needs plaintext private message bodies or plaintext attachment bytes. It does authenticate users and observe transport metadata, room identifiers, membership, IP addresses, timing and typing events. Segment must not be described as metadata-private.
 
 The encryption protocol is unaudited. See [docs/encryption.md](docs/encryption.md) for the implemented key model and current limitations.
+
+The current runtime is intentionally a single application process. It is sized for the first deployment stage; horizontal scaling requires shared presence and relay coordination. See [docs/SCALING.md](docs/SCALING.md).

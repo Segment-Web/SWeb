@@ -2,7 +2,7 @@
 // admin rights), points the server at it, enables the test mail transport so
 // login codes come back in the response, then boots the Segment server.
 //
-// Run: npm run dev:local
+// Run: pnpm dev:local
 
 import { existsSync } from 'node:fs';
 import EmbeddedPostgres from 'embedded-postgres';

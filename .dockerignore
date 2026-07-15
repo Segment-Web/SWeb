@@ -1,5 +1,8 @@
 node_modules
+.pnpm-store
 .git
 .env
 *.log
 .Codex
+.claude
+PROJECT_CONTEXT.local.md

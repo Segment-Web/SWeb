@@ -32,7 +32,13 @@ const publicUser = (user) => user ? ({ id: user.id, email: user.email, username:
 export async function createAuth(config) {
   if (config.production && (!config.authSecret || config.authSecret.includes('replace-with'))) throw new Error('AUTH_SECRET must be set in production');
   const secret = config.authSecret || randomBytes(32).toString('hex');
-  const pool = new Pool({ connectionString: config.databaseUrl, max: 10, idleTimeoutMillis: 30000 });
+  const pool = new Pool({
+    connectionString: config.databaseUrl,
+    max: config.databasePoolMax,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: config.databaseConnectionTimeoutMs,
+    maxUses: 7500,
+  });
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       id UUID PRIMARY KEY, email TEXT NOT NULL UNIQUE, username VARCHAR(24) NOT NULL UNIQUE,
@@ -51,6 +57,9 @@ export async function createAuth(config) {
       expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at);
+    CREATE INDEX IF NOT EXISTS login_codes_expires_at_idx ON login_codes(expires_at);
+    CREATE INDEX IF NOT EXISTS registration_tokens_expires_at_idx ON registration_tokens(expires_at);
   `);
 
   const smtpReady = Boolean(config.smtp.test || (config.smtp.host && config.smtp.user && config.smtp.pass));
@@ -63,11 +72,23 @@ export async function createAuth(config) {
   const sign = (value) => createHmac('sha256', secret).update(value).digest('hex');
   const equal = (a, b) => { const x = Buffer.from(a || '', 'hex'); const y = Buffer.from(b || '', 'hex'); return x.length === y.length && timingSafeEqual(x, y); };
   const cookie = (token, maxAge) => `${COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${config.production ? '; Secure' : ''}`;
-  const cleanup = async () => pool.query(`
-    DELETE FROM login_codes WHERE expires_at < NOW();
-    DELETE FROM registration_tokens WHERE expires_at < NOW();
-    DELETE FROM sessions WHERE expires_at < NOW();
-  `);
+  const cleanup = async () => {
+    await pool.query(`
+      DELETE FROM login_codes WHERE expires_at < NOW();
+      DELETE FROM registration_tokens WHERE expires_at < NOW();
+      DELETE FROM sessions WHERE expires_at < NOW();
+    `);
+    const cutoff = Date.now() - 10 * 60 * 1000;
+    for (const [ip, requests] of codeRequests) {
+      const recent = requests.filter((time) => time >= cutoff);
+      if (recent.length) codeRequests.set(ip, recent); else codeRequests.delete(ip);
+    }
+  };
+  await cleanup();
+  const cleanupTimer = setInterval(() => cleanup().catch((error) => {
+    console.error(JSON.stringify({ level: 'error', event: 'auth.cleanup_failed', message: error.message }));
+  }), 15 * 60 * 1000);
+  cleanupTimer.unref();
   const one = async (sql, params = []) => (await pool.query(sql, params)).rows[0] || null;
   const userFromRequest = async (req) => {
     const token = parseCookies(req)[COOKIE]; if (!token) return null;
@@ -96,7 +117,6 @@ export async function createAuth(config) {
         if (config.publicUrl) { try { allowed.add(new URL(config.publicUrl).origin); } catch {} }
         if (!origin || !allowed.has(origin)) return json(res, 403, { error: 'ORIGIN_FORBIDDEN' });
       }
-      await cleanup();
       if (req.method === 'GET' && url.pathname.startsWith('/api/auth/avatar/')) {
         if (!await userFromRequest(req)) return json(res, 401, { error: 'UNAUTHORIZED' });
         const id = url.pathname.slice('/api/auth/avatar/'.length);
@@ -216,5 +236,7 @@ export async function createAuth(config) {
       return json(res, error.status || 500, { error: error.code === '23505' ? 'USERNAME_TAKEN' : (error.message || 'INTERNAL_ERROR') });
     }
   };
-  return { handle, userFromRequest, publicUser, pool, close: () => pool.end(), smtpReady };
+  const ready = async () => { await pool.query('SELECT 1'); return true; };
+  const close = async () => { clearInterval(cleanupTimer); await pool.end(); };
+  return { handle, userFromRequest, publicUser, pool, ready, close, smtpReady };
 }

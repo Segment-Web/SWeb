@@ -22,6 +22,8 @@ export async function createFiles(config, auth) {
   const dir = config.fileDir;
   const maxBytes = config.fileMaxBytes;
   const ttlMs = config.fileTtlMs;
+  const uploadLimit = config.fileUploadsPerMinute || 60;
+  const uploadsByUser = new Map();
   await mkdir(dir, { recursive: true });
   const pathFor = (id) => join(dir, id);
 
@@ -64,6 +66,11 @@ export async function createFiles(config, auth) {
   });
 
   const sweep = async () => {
+    const minuteAgo = Date.now() - 60000;
+    for (const [userId, requests] of uploadsByUser) {
+      const recent = requests.filter((time) => time >= minuteAgo);
+      if (recent.length) uploadsByUser.set(userId, recent); else uploadsByUser.delete(userId);
+    }
     if (!ttlMs) return;
     const cutoff = Date.now() - ttlMs;
     let names;
@@ -93,6 +100,11 @@ export async function createFiles(config, auth) {
       if (!user) return json(res, 401, { error: 'UNAUTHORIZED' });
 
       if (req.method === 'POST' && url.pathname === '/api/files') {
+        const now = Date.now();
+        const recent = (uploadsByUser.get(user.id) || []).filter((time) => now - time < 60000);
+        if (recent.length >= uploadLimit) return json(res, 429, { error: 'TOO_MANY_UPLOADS' });
+        recent.push(now);
+        uploadsByUser.set(user.id, recent);
         return json(res, 201, await put(req));
       }
       if (req.method === 'GET' && url.pathname.startsWith('/api/files/')) {
@@ -123,5 +135,5 @@ export async function createFiles(config, auth) {
     }
   };
 
-  return { handle, close: () => clearInterval(timer) };
+  return { handle, close: () => { clearInterval(timer); uploadsByUser.clear(); } };
 }

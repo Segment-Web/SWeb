@@ -41,6 +41,7 @@ export const MessageType = {
   Roster: 'roster',
   Peer: 'peer',
   PeerLeft: 'peer-left',
+  Presence: 'presence',
   PreKeyRequest: 'prekey-request',
   PreKey: 'prekey',
   KeyShare: 'keyshare',

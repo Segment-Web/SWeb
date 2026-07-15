@@ -12,6 +12,7 @@ const publicBundle = (bundle) => bundle && typeof bundle === 'object' ? {
 
 export function attachGateway(server, config, auth, rooms) {
   const clients = new Map();
+  const clientsById = new Map();
   const ipCounts = new Map();
   const allowedOrigins = new Set(config.allowedOrigins);
   if (config.publicUrl) {
@@ -44,7 +45,13 @@ export function attachGateway(server, config, auth, rooms) {
   });
 
   const avatarUrl = (client) => client.avatar ? `/api/auth/avatar/${client.userId}` : '';
-  const online = () => [...clients.values()].filter((client) => client.joined).map((client) => ({ name: client.name, username: client.username, avatar: avatarUrl(client) }));
+  const online = () => {
+    const users = new Map();
+    for (const client of clients.values()) {
+      if (client.joined) users.set(client.userId, { name: client.name, username: client.username, avatar: avatarUrl(client) });
+    }
+    return [...users.values()];
+  };
   const isWritable = (ws) => ws.readyState === WebSocket.OPEN && ws.bufferedAmount < config.maxWsPayload * 2;
   const send = (ws, message) => {
     if (isWritable(ws)) ws.send(JSON.stringify(message));
@@ -54,6 +61,15 @@ export function attachGateway(server, config, auth, rooms) {
       if (ws !== except && client.joined) send(ws, message);
     }
   };
+  let presenceTimer = null;
+  const schedulePresence = () => {
+    if (presenceTimer) return;
+    presenceTimer = setTimeout(() => {
+      presenceTimer = null;
+      broadcast({ type: MessageType.Presence, online: online() });
+    }, 250);
+    presenceTimer.unref();
+  };
   // Deliver only to joined sockets whose user may access the room. Public rooms
   // reach everyone; private rooms reach members only.
   const broadcastRoom = (roomId, message, except = null) => {
@@ -61,11 +77,10 @@ export function attachGateway(server, config, auth, rooms) {
       if (ws !== except && client.joined && rooms.canAccess(client.userId, roomId)) send(ws, message);
     }
   };
-  const clientById = (id) => [...clients.values()].find((client) => client.id === id);
+  const clientById = (id) => clientsById.get(id)?.client;
   const sendTo = (id, message) => {
-    for (const [ws, client] of clients) {
-      if (client.id === id) { send(ws, message); return; }
-    }
+    const target = clientsById.get(id);
+    if (target) send(target.ws, message);
   };
   const publicOf = (client) => ({
     id: client.id,
@@ -92,6 +107,7 @@ export function attachGateway(server, config, auth, rooms) {
       color: request.segmentUser.color,
     };
     clients.set(ws, client);
+    clientsById.set(client.id, { ws, client });
     ws.on('error', () => {});
     ws.on('pong', () => { client.isAlive = true; });
 
@@ -117,8 +133,9 @@ export function attachGateway(server, config, auth, rooms) {
         client.bundle = message.bundle && typeof message.bundle === 'object' ? message.bundle : null;
         const members = [...clients.values()].filter((other) => other.joined && other !== client).map(publicOf);
         send(ws, { type: MessageType.Roster, self: { id: client.id }, members, online: online() });
-        broadcast({ type: MessageType.Peer, ...publicOf(client), online: online() }, ws);
-        broadcast({ type: MessageType.System, text: `${client.name} в чате`, online: online() });
+        broadcast({ type: MessageType.Peer, ...publicOf(client) }, ws);
+        broadcast({ type: MessageType.System, text: `${client.name} в чате` }, ws);
+        schedulePresence();
         return;
       }
 
@@ -160,11 +177,13 @@ export function attachGateway(server, config, auth, rooms) {
 
     ws.on('close', () => {
       clients.delete(ws);
+      clientsById.delete(client.id);
       const remaining = (ipCounts.get(ip) || 1) - 1;
       if (remaining > 0) ipCounts.set(ip, remaining); else ipCounts.delete(ip);
       if (client.joined) {
-        broadcast({ type: MessageType.PeerLeft, id: client.id, online: online() });
-        broadcast({ type: MessageType.System, text: `${client.name} вышел`, online: online() });
+        broadcast({ type: MessageType.PeerLeft, id: client.id });
+        broadcast({ type: MessageType.System, text: `${client.name} вышел` });
+        schedulePresence();
       }
     });
   });
@@ -182,6 +201,7 @@ export function attachGateway(server, config, auth, rooms) {
     stats: () => ({ connections: clients.size, joined: [...clients.values()].filter((client) => client.joined).length }),
     stop: () => {
       clearInterval(heartbeat);
+      if (presenceTimer) clearTimeout(presenceTimer);
       for (const ws of wss.clients) ws.close(1001, 'Server restarting');
       wss.close();
     },

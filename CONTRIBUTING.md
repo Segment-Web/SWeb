@@ -5,10 +5,11 @@ Contributions to Segment are welcome.
 ## Setup
 
 1. Fork and clone the repository.
-2. Install dependencies with `npm install`.
-3. Copy `.env.example` to `.env` and configure PostgreSQL.
-4. Start the project with `npm start`.
-5. Create a focused branch such as `feature/short-name`.
+2. Enable the pinned package manager with `corepack enable pnpm && corepack install`.
+3. Install dependencies with `pnpm install --frozen-lockfile`.
+4. Copy `.env.example` to `.env` and configure PostgreSQL.
+5. Start the project with `pnpm start`.
+6. Create a focused branch such as `feature/short-name`.
 
 ## Repository areas
 
@@ -29,4 +30,4 @@ Keep protocol and core code independent from Node-specific and DOM-specific APIs
 - Keep each pull request focused on one feature or fix.
 - Include screenshots or recordings for visible interface changes.
 
-Run `npm run check` before opening a pull request.
+Run `pnpm check` before opening a pull request.

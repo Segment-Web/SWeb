@@ -14,13 +14,15 @@ export function loadConfig() {
     publicUrl: process.env.PUBLIC_URL || '',
     allowedOrigins: list(process.env.ALLOWED_ORIGINS),
     trustProxy: process.env.TRUST_PROXY === '1',
-    maxConnections: int('MAX_CONNECTIONS', 500, 2, 100000),
+    maxConnections: int('MAX_CONNECTIONS', 2000, 2, 100000),
     maxConnectionsPerIp: int('MAX_CONNECTIONS_PER_IP', 20, 1, 1000),
     maxWsPayload: int('MAX_WS_PAYLOAD', 16 * 1024 * 1024, 64 * 1024, 64 * 1024 * 1024),
     messagesPerMinute: int('MESSAGES_PER_MINUTE', 240, 10, 10000),
     heartbeatMs: int('WS_HEARTBEAT_MS', 30000, 5000, 120000),
     shutdownMs: int('SHUTDOWN_TIMEOUT_MS', 10000, 1000, 60000),
     databaseUrl: process.env.DATABASE_URL || 'postgresql://segment:segment@localhost:5432/segment',
+    databasePoolMax: int('DATABASE_POOL_MAX', 20, 2, 100),
+    databaseConnectionTimeoutMs: int('DATABASE_CONNECTION_TIMEOUT_MS', 5000, 1000, 30000),
     authSecret: process.env.AUTH_SECRET || '',
     authCodeTtlMs: int('AUTH_CODE_TTL_MS', 10 * 60 * 1000, 60000, 60 * 60 * 1000),
     authSessionTtlMs: int('AUTH_SESSION_TTL_MS', 30 * 24 * 60 * 60 * 1000, 60 * 60 * 1000, 365 * 24 * 60 * 60 * 1000),
@@ -29,6 +31,7 @@ export function loadConfig() {
     fileDir: process.env.FILE_DIR || './data/files',
     fileMaxBytes: int('FILE_MAX_BYTES', 100 * 1024 * 1024, 64 * 1024, 500 * 1024 * 1024),
     fileTtlMs: int('FILE_TTL_MS', 0, 0, 365 * 24 * 60 * 60 * 1000),
+    fileUploadsPerMinute: int('FILE_UPLOADS_PER_MINUTE', 60, 1, 1000),
     smtp: {
       // Development only: deliver login codes to a fake transport and return the
       // code in the response, so local testing needs no real mail provider.

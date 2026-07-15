@@ -10,7 +10,7 @@
     "start": "node src/index.js"
   },
   "dependencies": {
-    "@segment/protocol": "*",
+    "@segment/protocol": "workspace:*",
     "nodemailer": "^9.0.3",
     "pg": "^8.16.0",
     "ws": "^8.18.0"

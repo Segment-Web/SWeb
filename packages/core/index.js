@@ -1011,7 +1011,7 @@ export class SegmentClient {
         break;
 
       case MessageType.Peer:
-        this.online = msg.online;
+        if (Array.isArray(msg.online)) this.online = msg.online;
         this._addPeer(msg);
         this._maybeInitiate(msg.id);
         this._emit('status', this._statusText());
@@ -1019,7 +1019,12 @@ export class SegmentClient {
 
       case MessageType.PeerLeft:
         await this._onPeerLeft(msg.id);
-        this.online = msg.online;
+        if (Array.isArray(msg.online)) this.online = msg.online;
+        this._emit('status', this._statusText());
+        break;
+
+      case MessageType.Presence:
+        if (Array.isArray(msg.online)) this.online = msg.online;
         this._emit('status', this._statusText());
         break;
 
@@ -1051,7 +1056,7 @@ export class SegmentClient {
         break;
 
       case MessageType.System:
-        this.online = msg.online;
+        if (Array.isArray(msg.online)) this.online = msg.online;
         if (this.currentRoom && this.currentRoom !== SAVED_ID) this._addMessage(this.currentRoom, { system: true, text: msg.text });
         this._emit('status', this._statusText());
         break;

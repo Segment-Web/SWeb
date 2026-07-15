@@ -5,10 +5,7 @@
   "description": "Segment is an extensible open-source messenger with end-to-end encryption.",
   "type": "module",
   "license": "AGPL-3.0-only",
-  "workspaces": [
-    "packages/*",
-    "apps/*"
-  ],
+  "packageManager": "pnpm@11.13.0",
   "scripts": {
     "start": "node apps/server/src/index.js",
     "dev": "node apps/server/src/index.js",
@@ -22,13 +19,11 @@
     "test:relay": "node apps/server/src/relay.selftest.js"
   },
   "engines": {
-    "node": ">=22.13"
+    "node": ">=22.13",
+    "pnpm": ">=11.13.0 <12"
   },
   "devDependencies": {
     "embedded-postgres": "^18.4.0-beta.17",
     "pg-mem": "^3.0.14"
-  },
-  "allowScripts": {
-    "@embedded-postgres/windows-x64@18.4.0-beta.17": true
   }
 }

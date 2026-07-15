@@ -48,10 +48,12 @@ export async function createRooms(config, auth) {
       owner_id UUID REFERENCES users(id) ON DELETE SET NULL,
       history_visibility VARCHAR(16) NOT NULL DEFAULT 'joined',
       history_key TEXT,
+      history_seq BIGINT NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     ALTER TABLE rooms ADD COLUMN IF NOT EXISTS history_visibility VARCHAR(16) NOT NULL DEFAULT 'joined';
     ALTER TABLE rooms ADD COLUMN IF NOT EXISTS history_key TEXT;
+    ALTER TABLE rooms ADD COLUMN IF NOT EXISTS history_seq BIGINT NOT NULL DEFAULT 0;
     CREATE TABLE IF NOT EXISTS room_members (
       room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -73,6 +75,7 @@ export async function createRooms(config, auth) {
       max_uses INTEGER NOT NULL DEFAULT 0,
       uses INTEGER NOT NULL DEFAULT 0
     );
+    CREATE INDEX IF NOT EXISTS room_invites_expires_at_idx ON room_invites(expires_at);
     -- Encrypted history envelopes. The server stores opaque ciphertext (encrypted
     -- to the room's history key, which it never holds) plus a monotonic per-room
     -- sequence used for ordering and join-point visibility gating.
@@ -89,6 +92,12 @@ export async function createRooms(config, auth) {
     CREATE UNIQUE INDEX IF NOT EXISTS room_history_event_idx
       ON room_history(room_id, client_event_id) WHERE client_event_id IS NOT NULL;
   `);
+
+  // Bring the atomic per-room counter forward when upgrading an existing
+  // database that already contains history rows.
+  for (const row of (await pool.query('SELECT room_id, MAX(seq) AS seq FROM room_history GROUP BY room_id')).rows) {
+    await pool.query('UPDATE rooms SET history_seq=GREATEST(history_seq,$2) WHERE id=$1', [row.room_id, row.seq]);
+  }
 
   // Drop retired rooms. ON DELETE CASCADE takes their history, members and
   // invites with them, so the room is gone for everyone, not just for one client.
@@ -230,24 +239,22 @@ export async function createRooms(config, auth) {
       const existingEvent = await one('SELECT seq FROM room_history WHERE room_id=$1 AND client_event_id=$2', [roomId, stableId]);
       if (existingEvent) return { seq: Number(existingEvent.seq), duplicate: true };
     }
-    for (let attempt = 0; attempt < 6; attempt++) {
-      try {
-        const row = await one(
-          `INSERT INTO room_history(room_id,seq,sender_id,client_event_id,iv,ct)
-           VALUES($1,(SELECT COALESCE(MAX(seq),0)+1 FROM room_history WHERE room_id=$1),$2,$3,$4,$5)
-           RETURNING seq`,
-          [roomId, user.id, stableId, iv, ct],
-        );
-        return { seq: Number(row.seq), duplicate: false };
-      } catch (error) {
-        if (error.code !== '23505') throw error;
-        if (stableId) {
-          const duplicate = await one('SELECT seq FROM room_history WHERE room_id=$1 AND client_event_id=$2', [roomId, stableId]);
-          if (duplicate) return { seq: Number(duplicate.seq), duplicate: true };
-        }
+    const assigned = await one('UPDATE rooms SET history_seq=history_seq+1 WHERE id=$1 RETURNING history_seq', [roomId]);
+    if (!assigned) throw Object.assign(new Error('NOT_FOUND'), { status: 404 });
+    try {
+      const row = await one(
+        `INSERT INTO room_history(room_id,seq,sender_id,client_event_id,iv,ct)
+         VALUES($1,$2,$3,$4,$5,$6) RETURNING seq`,
+        [roomId, assigned.history_seq, user.id, stableId, iv, ct],
+      );
+      return { seq: Number(row.seq), duplicate: false };
+    } catch (error) {
+      if (error.code === '23505' && stableId) {
+        const duplicate = await one('SELECT seq FROM room_history WHERE room_id=$1 AND client_event_id=$2', [roomId, stableId]);
+        if (duplicate) return { seq: Number(duplicate.seq), duplicate: true };
       }
+      throw error;
     }
-    throw Object.assign(new Error('HISTORY_BUSY'), { status: 503 });
   };
 
   // Backfill envelopes the caller may see. 'full' visibility exposes everything;

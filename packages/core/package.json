@@ -8,7 +8,7 @@
   "main": "index.js",
   "exports": "./index.js",
   "dependencies": {
-    "@segment/protocol": "*",
-    "@segment/crypto": "*"
+    "@segment/protocol": "workspace:*",
+    "@segment/crypto": "workspace:*"
   }
 }

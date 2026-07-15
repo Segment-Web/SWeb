@@ -1,13 +1,15 @@
 FROM node:22-alpine
 
+RUN npm install --global pnpm@11.13.0 && pnpm config set store-dir /pnpm/store
+
 WORKDIR /app
-COPY package*.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/server/package.json apps/server/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY packages/core/package.json packages/core/package.json
 COPY packages/crypto/package.json packages/crypto/package.json
 COPY packages/protocol/package.json packages/protocol/package.json
-RUN npm ci --omit=dev
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prod --frozen-lockfile
 
 COPY apps ./apps
 COPY packages ./packages

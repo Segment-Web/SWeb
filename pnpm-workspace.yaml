@@ -1,0 +1,10 @@
+packages:
+  - apps/*
+  - packages/*
+
+saveWorkspaceProtocol: true
+strictPeerDependencies: true
+minimumReleaseAge: 1440
+
+allowBuilds:
+  '@embedded-postgres/windows-x64': true

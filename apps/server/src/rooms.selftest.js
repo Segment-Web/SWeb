@@ -128,6 +128,16 @@ const h1 = await call('POST', '/api/rooms/history', { user: owner, body: { roomI
 const h2 = await call('POST', '/api/rooms/history', { user: owner, body: { roomId, ...env(2) } });
 ok(h1.data.seq === 1 && h2.data.seq === 2, 'history seq increments per room');
 
+// Concurrent appends receive distinct sequences without retrying MAX(seq).
+const concurrentRoom = (await call('POST', '/api/rooms', { user: owner, body: { type: 'chat', title: 'Concurrent' } })).data.room.id;
+const concurrent = await Promise.all(Array.from({ length: 20 }, (_, i) => call('POST', '/api/rooms/history', {
+  user: owner,
+  body: { roomId: concurrentRoom, eventId: `concurrent-${i}`, ...env(i) },
+})));
+const concurrentSeqs = concurrent.map((result) => result.data.seq);
+ok(new Set(concurrentSeqs).size === 20 && Math.min(...concurrentSeqs) === 1 && Math.max(...concurrentSeqs) === 20,
+  'concurrent history appends receive unique sequences');
+
 // A newly joined member records join_seq = 2, so 'joined' visibility hides 1..2.
 const roomForJoin = created.data.room.id;
 const invite2 = await call('POST', '/api/rooms/invite', { user: owner, body: { roomId: roomForJoin } });

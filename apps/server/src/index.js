@@ -21,12 +21,29 @@ const server = createServer(async (req, res) => {
     res.end(body);
     return;
   }
+  if (req.url?.split('?')[0] === '/readyz') {
+    try {
+      await auth.ready();
+      const body = JSON.stringify({ ok: true, service: 'segment' });
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(body);
+    } catch {
+      res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ ok: false, service: 'segment' }));
+    }
+    return;
+  }
   if (await auth.handle(req, res)) return;
   if (await rooms.handle(req, res)) return;
   if (await files.handle(req, res)) return;
   handleStatic(req, res);
 });
 gateway = attachGateway(server, config, auth, rooms);
+
+server.requestTimeout = 120000;
+server.headersTimeout = 15000;
+server.keepAliveTimeout = 65000;
+server.maxRequestsPerSocket = 1000;
 
 server.listen(config.port, config.host, () => {
   console.log(JSON.stringify({ level: 'info', event: 'server.started', host: config.host, port: config.port, production: config.production }));

@@ -4,6 +4,7 @@ node_modules/
 # Logs
 *.log
 npm-debug.log*
+pnpm-debug.log*
 
 # Environment
 .env
@@ -14,6 +15,8 @@ npm-debug.log*
 Thumbs.db
 .idea/
 .vscode/
+.claude/
+PROJECT_CONTEXT.local.md
 
 # Local file-store blobs (interim disk backend)
 data/
