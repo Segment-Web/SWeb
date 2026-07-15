@@ -58,6 +58,7 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault(); document.querySelector('.panel[data-id="chat-list"] .chat-search input')?.focus(); return;
   }
   if (e.key === 'Escape') {
+    if (workspace?.closeSurface()) { e.stopImmediatePropagation(); return; }
     document.querySelectorAll('.ctx-menu:not(.hidden), .chat-preview:not(.hidden), .settings-sheet:not(.hidden)').forEach((el) => el.classList.add('hidden'));
     if (!typing) client.closeRoom();
     return;

@@ -17,6 +17,7 @@ const EDGE_PX = 24;
 const TRASH_HIT_PX = 46;
 const TRASH_GLOW_PX = 150;
 const PREVIEW_DELAY = 350;
+const SURFACE_EDGE_PX = 8;
 
 const DOCK_PALETTE = ['#7a8294', '#6382b8', '#8a7462', '#6c8d7a', '#8b6f85', '#b8794f', '#5f9ea0', '#9a6f9a'];
 const LAYOUT_KEY = 'segment_layout_v1';
@@ -30,6 +31,7 @@ export class Workspace {
     this.frames = {};       // id -> { wrapper, dispose }
     this.docked = [];
     this._unread = new Set();
+    this._surface = null;
 
     this.tree = this._defaultTree(this.panels);
     try {
@@ -132,6 +134,144 @@ export class Workspace {
 
     this.paletteEl.addEventListener('pointerenter', () => clearTimeout(this._previewHideT));
     this.paletteEl.addEventListener('pointerleave', () => this._hidePreview());
+  }
+
+
+  _horizontalSizingTarget(id, node = this.tree) {
+    if (!node || node.type === 'leaf') return null;
+    for (let index = 0; index < node.children.length; index++) {
+      const child = node.children[index];
+      if (!this._containsLeaf(child, id)) continue;
+      return this._horizontalSizingTarget(id, child)
+        || (node.dir === 'row' ? { node, index } : null);
+    }
+    return null;
+  }
+
+  _containsLeaf(node, id) {
+    if (!node) return false;
+    if (node.type === 'leaf') return node.id === id;
+    return node.children.some((child) => this._containsLeaf(child, id));
+  }
+
+  _resizePanelWidth(id, requestedWidth) {
+    const frame = this.frames[id]?.wrapper;
+    const target = this._horizontalSizingTarget(id);
+    if (!frame?.isConnected || !target) return requestedWidth;
+
+    let branchEl = frame;
+    while (branchEl.parentElement && !branchEl.parentElement.classList.contains('split-row')) {
+      branchEl = branchEl.parentElement;
+    }
+    const splitEl = branchEl.parentElement;
+    if (!splitEl?.classList.contains('split-row')) return requestedWidth;
+
+    const childEls = [...splitEl.children].filter((child) => !child.classList.contains('splitter'));
+    if (childEls.length !== target.node.children.length || childEls[target.index] !== branchEl) return requestedWidth;
+
+    const available = childEls.reduce((sum, child) => sum + child.getBoundingClientRect().width, 0);
+    const otherMin = childEls.reduce((sum, child, index) => (
+      index === target.index ? sum : sum + this._minSize(child, true)
+    ), 0);
+    const minTarget = this._minSize(branchEl, true);
+    const width = clamp(requestedWidth, minTarget, Math.max(minTarget, available - otherMin));
+    const totalWeight = target.node.children.reduce((sum, child) => sum + (child.weight || 0), 0) || 1;
+    const targetWeight = totalWeight * (width / available);
+    const remainingWeight = Math.max(0, totalWeight - targetWeight);
+    const otherWeight = target.node.children.reduce((sum, child, index) => (
+      index === target.index ? sum : sum + (child.weight || 0)
+    ), 0) || 1;
+
+    target.node.children.forEach((child, index) => {
+      child.weight = index === target.index
+        ? targetWeight
+        : remainingWeight * ((child.weight || 0) / otherWeight);
+      childEls[index].style.flex = `${child.weight / totalWeight} 1 0`;
+    });
+    this._persist();
+    return width;
+  }
+
+  openSurface({ id, sourceId, minWidth = 300, maxWidth = 680, className = '', mount }) {
+    if (!id || !sourceId || typeof mount !== 'function') return null;
+    if (this._surface?.id === id) return this._surface.element;
+    this.closeSurface();
+
+    const source = this.frames[sourceId]?.wrapper;
+    if (!source?.isConnected) return null;
+    const sourceRect = source.getBoundingClientRect();
+    const side = sourceRect.left + sourceRect.width / 2 <= window.innerWidth / 2 ? 'left' : 'right';
+    const limit = Math.max(minWidth, Math.min(maxWidth, window.innerWidth - SURFACE_EDGE_PX * 2));
+    let width = clamp(sourceRect.width, minWidth, limit);
+
+    const element = document.createElement('section');
+    element.className = `workspace-surface workspace-surface-${side}${className ? ` ${className}` : ''}`;
+    element.dataset.surfaceId = id;
+    element.setAttribute('role', 'dialog');
+    element.setAttribute('aria-modal', 'true');
+    element.innerHTML = `
+      <button class="workspace-surface-close" type="button" aria-label="Закрыть"></button>
+      <div class="workspace-surface-body"></div>
+      <div class="workspace-surface-resizer" aria-hidden="true"></div>`;
+    document.body.appendChild(element);
+
+    const place = () => {
+      const rect = source.getBoundingClientRect();
+      element.style.width = `${width}px`;
+      if (side === 'left') {
+        element.style.left = `${clamp(rect.left, SURFACE_EDGE_PX, window.innerWidth - width - SURFACE_EDGE_PX)}px`;
+        element.style.right = 'auto';
+      } else {
+        element.style.right = `${clamp(window.innerWidth - rect.right, SURFACE_EDGE_PX, window.innerWidth - width - SURFACE_EDGE_PX)}px`;
+        element.style.left = 'auto';
+      }
+    };
+    place();
+
+    let dispose = mount(element.querySelector('.workspace-surface-body'), () => this.closeSurface(id));
+    if (typeof dispose !== 'function') dispose = () => {};
+    this._surface = { id, sourceId, element, dispose, place };
+
+    element.querySelector('.workspace-surface-close').addEventListener('click', () => this.closeSurface(id));
+    element.querySelector('.workspace-surface-resizer').addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = width;
+      const onMove = (moveEvent) => {
+        const delta = (moveEvent.clientX - startX) * (side === 'left' ? 1 : -1);
+        const desired = clamp(startWidth + delta, minWidth, limit);
+        width = this._resizePanelWidth(sourceId, desired);
+        place();
+      };
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        document.body.classList.remove('is-resizing-surface');
+      };
+      document.body.classList.add('is-resizing-surface');
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    });
+
+    this._surfaceResizeController?.abort();
+    this._surfaceResizeController = new AbortController();
+    window.addEventListener('resize', place, { signal: this._surfaceResizeController.signal });
+    requestAnimationFrame(() => element.classList.add('is-open'));
+    return element;
+  }
+
+  closeSurface(id = null) {
+    const surface = this._surface;
+    if (!surface || (id && surface.id !== id)) return false;
+    this._surface = null;
+    this._surfaceResizeController?.abort();
+    this._surfaceResizeController = null;
+    surface.dispose?.();
+    surface.element.classList.remove('is-open');
+    surface.element.classList.add('is-closing');
+    setTimeout(() => surface.element.remove(), 180);
+    return true;
   }
 
 

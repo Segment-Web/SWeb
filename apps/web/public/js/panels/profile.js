@@ -24,7 +24,6 @@ export function profilePanel(client) {
               <span class="profile-state">не в сети</span>
             </div>
           </div>
-          <div class="settings-sheet hidden" data-el="settings"></div>
           <button class="profile-settings" aria-label="Настройки">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           </button>
@@ -34,9 +33,6 @@ export function profilePanel(client) {
       const nameEl = body.querySelector('.profile-name');
       const stateEl = body.querySelector('.profile-state');
       const dotEl = body.querySelector('.status-dot');
-      const settings = body.querySelector('[data-el="settings"]');
-      document.body.appendChild(settings);
-
       const setProfile = (name) => {
         nameEl.textContent = name || 'гость';
         if (client.self.avatar) avatarEl.innerHTML = `<img src="${client.self.avatar}" alt="">`;
@@ -44,11 +40,10 @@ export function profilePanel(client) {
         avatarEl.style.background = client.self.color;
       };
 
-      const renderSettings = () => {
+      const renderSettings = (settings, close) => {
         settings.innerHTML = `
           <div class="sheet-head">
             <b>Настройки</b>
-            <button data-act="close" aria-label="Закрыть">×</button>
           </div>
           <label class="settings-label">Имя</label>
           <div class="settings-name">
@@ -69,7 +64,6 @@ export function profilePanel(client) {
           <button class="settings-action" data-act="reset-layout">Сбросить раскладку панелей</button>
           <button class="ctx-item danger" data-act="logout">Выйти</button>`;
 
-        settings.querySelector('[data-act="close"]').onclick = () => settings.classList.add('hidden');
         const nameInput = settings.querySelector('[data-el="name"]');
         settings.querySelector('[data-act="save"]').onclick = async () => {
           const response = await fetch('/api/auth/profile', { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: nameInput.value }) });
@@ -84,20 +78,20 @@ export function profilePanel(client) {
           btn.onclick = () => {
             fetch('/api/auth/profile', { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ color: btn.dataset.color }) })
               .then((response) => response.json().then((data) => ({ response, data })))
-              .then(({ response, data }) => { if (!response.ok) return; client.self = { ...client.self, ...data.user }; client.storage.setColor(data.user.color); setProfile(client.self.name); renderSettings(); });
+              .then(({ response, data }) => { if (!response.ok) return; client.self = { ...client.self, ...data.user }; client.storage.setColor(data.user.color); setProfile(client.self.name); renderSettings(settings, close); });
           };
         }
         const prefs = window.Segment?.uiPrefs || {};
         for (const btn of settings.querySelectorAll('[data-density]')) {
           btn.classList.toggle('active', btn.dataset.density === (prefs.density || 'comfortable'));
-          btn.onclick = () => { window.Segment?.saveUiPrefs?.({ density: btn.dataset.density }); renderSettings(); };
+          btn.onclick = () => { window.Segment?.saveUiPrefs?.({ density: btn.dataset.density }); renderSettings(settings, close); };
         }
         const scale = settings.querySelector('[data-el="scale"]'); const scaleValue = settings.querySelector('[data-el="scaleValue"]');
         scale.value = prefs.scale || 1; scaleValue.textContent = `${Math.round(scale.value * 100)}%`;
         scale.oninput = () => { scaleValue.textContent = `${Math.round(scale.value * 100)}%`; window.Segment?.saveUiPrefs?.({ scale: Number(scale.value) }); };
         const reduce = settings.querySelector('[data-el="reduce"]'); reduce.checked = !!prefs.reduceMotion;
         reduce.onchange = () => window.Segment?.saveUiPrefs?.({ reduceMotion: reduce.checked });
-        settings.querySelector('[data-act="reset-layout"]').onclick = () => { window.Segment?.workspace?.resetLayout(); window.Segment?.toast?.('Раскладка сброшена'); settings.classList.add('hidden'); };
+        settings.querySelector('[data-act="reset-layout"]').onclick = () => { window.Segment?.workspace?.resetLayout(); window.Segment?.toast?.('Раскладка сброшена'); close(); };
         settings.querySelector('[data-act="logout"]').onclick = async () => {
           await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
           client.logout();
@@ -115,24 +109,19 @@ export function profilePanel(client) {
 
       body.querySelector('.profile-settings').onclick = (e) => {
         e.stopPropagation();
-        const willShow = settings.classList.contains('hidden');
-        if (willShow) renderSettings();
-        settings.classList.toggle('hidden', !willShow);
-        if (willShow) {
-          const anchor = e.currentTarget.getBoundingClientRect(); const r = settings.getBoundingClientRect();
-          settings.style.left = `${Math.max(8, Math.min(anchor.right - r.width, innerWidth - r.width - 8))}px`;
-          settings.style.top = `${Math.max(8, Math.min(anchor.bottom + 8, innerHeight - r.height - 8))}px`;
-        }
+        window.Segment?.workspace?.openSurface({
+          id: 'settings',
+          sourceId: 'profile',
+          minWidth: 320,
+          maxWidth: 620,
+          className: 'settings-surface',
+          mount(settings, close) { renderSettings(settings, close); },
+        });
       };
-      document.addEventListener('pointerdown', (e) => {
-        if (!settings.classList.contains('hidden')
-          && !settings.contains(e.target)
-          && !e.target.closest('.profile-settings')) settings.classList.add('hidden');
-      });
 
       setProfile(client.self.name);
 
-      return () => { settings.remove(); offs.forEach((off) => off()); };
+      return () => { window.Segment?.workspace?.closeSurface('settings'); offs.forEach((off) => off()); };
     },
   };
 }
