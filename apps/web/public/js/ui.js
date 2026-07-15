@@ -274,6 +274,7 @@ function attachSwipeReply(el, id, onReply) {
   if (!bubble) return;
   const onDown = (e) => {
     if (e.button != null && e.button !== 0) return;
+    if (el.closest('.feed.selection-mode')) return;
     if (e.target.closest('a, button, input, .media-cell, .msg-voice, .msg-circle, .reaction-chip')) return;
     startX = e.clientX; startY = e.clientY; dx = 0; active = true; decided = false; pointerId = e.pointerId;
     try { el.setPointerCapture(e.pointerId); } catch {}
@@ -370,7 +371,13 @@ export function renderMessage(feed, m, myName, options = {}) {
       <div class="time">${edited}${time}${mine && !m.deleted ? statusGlyph(m) : ''}</div>
       ${reactionsHtml(m, myName)}
     </div>`;
-  if (options.onMessageClick) {
+  if (options.onMessageClick && options.selectionMode) {
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (!el.dataset.swiped) options.onMessageClick(m.id);
+    }, true);
+  } else if (options.onMessageClick) {
     el.onclick = (e) => {
       if (e.target.closest('button') || el.dataset.swiped) return;
       options.onMessageClick(m.id);

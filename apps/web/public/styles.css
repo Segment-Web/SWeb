@@ -711,7 +711,10 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
 }
 .feed::-webkit-scrollbar { width: 7px; }
 .feed::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 999px; }
-.msg { display: flex; gap: 6px; max-width: 76%; position: relative; isolation: isolate; align-items: flex-end; margin-top: 5px; }
+.msg { display: flex; gap: 6px; width: 100%; max-width: 100%; position: relative; isolation: isolate; align-items: flex-end; margin-top: 5px; }
+.msg > .bubble { max-width: 76%; }
+.feed.selection-mode .msg { cursor: pointer; user-select: none; }
+.feed.selection-mode .msg img { -webkit-user-drag: none; user-drag: none; }
 
 .msg + .msg { margin-top: 2px; }
 .msg.mine { align-self: flex-end; flex-direction: row-reverse; }

@@ -351,6 +351,7 @@ export function chatRoomPanel(client) {
       let awayCount = 0;
       const drafts = {};
       const selected = new Set();
+      let suppressSelectionClick = false;
 
 
       let acItems = [];   // [{ label, hint, apply }]
@@ -773,7 +774,8 @@ export function chatRoomPanel(client) {
         onVote: (id, opt) => client.votePoll(currentChat.id, id, opt),
         onReply: (id) => setReply(messageById(id)),
         onReplyJump: jumpToMessage,
-        onMessageClick: (id) => { if (selected.size) toggleSelected(id); },
+        onMessageClick: (id) => { if (selected.size && !suppressSelectionClick) toggleSelected(id); },
+        selectionMode: selected.size > 0,
         isSelected: (id) => selected.has(id),
       });
 
@@ -823,6 +825,7 @@ export function chatRoomPanel(client) {
 
       const renderSelectionBar = () => {
         const messages = selectedMessages();
+        feed.classList.toggle('selection-mode', !!messages.length);
         selectionBar.classList.toggle('hidden', !messages.length);
         if (!messages.length) {
           selectionBar.innerHTML = '';
@@ -866,6 +869,50 @@ export function chatRoomPanel(client) {
           };
         }
       };
+
+
+      let selectionSweep = null;
+      const sweepMessageAt = (x, y) => {
+        const msg = document.elementFromPoint(x, y)?.closest?.('.msg[data-id]');
+        if (!msg || !feed.contains(msg) || selectionSweep?.seen.has(msg.dataset.id)) return;
+        if (!selectionSweep.moved) {
+          if (selectionSweep.select) selected.add(selectionSweep.startId);
+          else selected.delete(selectionSweep.startId);
+          feed.querySelector(`.msg[data-id="${CSS.escape(selectionSweep.startId)}"]`)?.classList.toggle('selected', selectionSweep.select);
+        }
+        selectionSweep.seen.add(msg.dataset.id);
+        selectionSweep.moved = true;
+        if (selectionSweep.select) selected.add(msg.dataset.id);
+        else selected.delete(msg.dataset.id);
+        msg.classList.toggle('selected', selectionSweep.select);
+        renderSelectionBar();
+      };
+      const startSelectionSweep = (e) => {
+        if (e.button !== 0 || !selected.size) return;
+        const msg = e.target.closest?.('.msg[data-id]');
+        if (!msg || !feed.contains(msg)) return;
+        selectionSweep = { pointerId: e.pointerId, startId: msg.dataset.id, select: !selected.has(msg.dataset.id), seen: new Set([msg.dataset.id]), moved: false };
+        try { feed.setPointerCapture(e.pointerId); } catch {}
+      };
+      const moveSelectionSweep = (e) => {
+        if (!selectionSweep || selectionSweep.pointerId !== e.pointerId) return;
+        sweepMessageAt(e.clientX, e.clientY);
+        if (selectionSweep.moved) e.preventDefault();
+      };
+      const endSelectionSweep = (e) => {
+        if (!selectionSweep || selectionSweep.pointerId !== e.pointerId) return;
+        const moved = selectionSweep.moved;
+        selectionSweep = null;
+        if (moved) {
+          suppressSelectionClick = true;
+          setTimeout(() => { suppressSelectionClick = false; }, 0);
+          renderRoom(currentChat, client.messages[currentChat.id] || []);
+        }
+      };
+      feed.addEventListener('pointerdown', startSelectionSweep);
+      feed.addEventListener('pointermove', moveSelectionSweep);
+      feed.addEventListener('pointerup', endSelectionSweep);
+      feed.addEventListener('pointercancel', endSelectionSweep);
 
 
       const renderPinnedBar = () => {
@@ -1437,6 +1484,10 @@ export function chatRoomPanel(client) {
         window.removeEventListener('mousedown', mouseHistory, true);
         window.removeEventListener('mouseup', mouseHistory, true);
         window.removeEventListener('auxclick', mouseHistory, true);
+        feed.removeEventListener('pointerdown', startSelectionSweep);
+        feed.removeEventListener('pointermove', moveSelectionSweep);
+        feed.removeEventListener('pointerup', endSelectionSweep);
+        feed.removeEventListener('pointercancel', endSelectionSweep);
         if (recSession) finishRecord(false);
       };
     },

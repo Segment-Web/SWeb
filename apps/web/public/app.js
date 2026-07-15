@@ -34,6 +34,10 @@ applyUiPrefs();
 const segmentApi = { client, registry, workspace: null, forwardDraft: null, uiPrefs, applyUiPrefs };
 window.Segment = segmentApi;
 
+// Segment provides its own contextual actions. Suppress browser/vendor menus
+// so right-click behaves consistently across messages, media and empty areas.
+document.addEventListener('contextmenu', (e) => e.preventDefault());
+
 const mountWorkspace = () => {
   if (workspace) return;
   const root = document.createElement('div');
