@@ -876,6 +876,7 @@ export function chatRoomPanel(client) {
         const msg = document.elementFromPoint(x, y)?.closest?.('.msg[data-id]');
         if (!msg || !feed.contains(msg) || selectionSweep?.seen.has(msg.dataset.id)) return;
         if (!selectionSweep.moved) {
+          try { feed.setPointerCapture(selectionSweep.pointerId); } catch {}
           if (selectionSweep.select) selected.add(selectionSweep.startId);
           else selected.delete(selectionSweep.startId);
           feed.querySelector(`.msg[data-id="${CSS.escape(selectionSweep.startId)}"]`)?.classList.toggle('selected', selectionSweep.select);
@@ -888,11 +889,10 @@ export function chatRoomPanel(client) {
         renderSelectionBar();
       };
       const startSelectionSweep = (e) => {
-        if (e.button !== 0 || !selected.size) return;
+        if (e.button !== 0) return;
         const msg = e.target.closest?.('.msg[data-id]');
         if (!msg || !feed.contains(msg)) return;
         selectionSweep = { pointerId: e.pointerId, startId: msg.dataset.id, select: !selected.has(msg.dataset.id), seen: new Set([msg.dataset.id]), moved: false };
-        try { feed.setPointerCapture(e.pointerId); } catch {}
       };
       const moveSelectionSweep = (e) => {
         if (!selectionSweep || selectionSweep.pointerId !== e.pointerId) return;
@@ -913,6 +913,14 @@ export function chatRoomPanel(client) {
       feed.addEventListener('pointermove', moveSelectionSweep);
       feed.addEventListener('pointerup', endSelectionSweep);
       feed.addEventListener('pointercancel', endSelectionSweep);
+      const blockSweepClick = (e) => {
+        if (!suppressSelectionClick) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      };
+      const blockMediaDrag = (e) => { if (e.target.closest?.('.msg img, .msg video')) e.preventDefault(); };
+      feed.addEventListener('click', blockSweepClick, true);
+      feed.addEventListener('dragstart', blockMediaDrag);
 
 
       const renderPinnedBar = () => {
@@ -1488,6 +1496,8 @@ export function chatRoomPanel(client) {
         feed.removeEventListener('pointermove', moveSelectionSweep);
         feed.removeEventListener('pointerup', endSelectionSweep);
         feed.removeEventListener('pointercancel', endSelectionSweep);
+        feed.removeEventListener('click', blockSweepClick, true);
+        feed.removeEventListener('dragstart', blockMediaDrag);
         if (recSession) finishRecord(false);
       };
     },

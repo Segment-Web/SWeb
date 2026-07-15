@@ -231,6 +231,7 @@ lightbox.innerHTML = `
   <footer class="lightbox-bottom"><div class="lightbox-caption"></div><div class="lightbox-thumbs"></div><div class="lightbox-help">Ctrl + колесо — масштаб · двойной клик — приблизить · стрелки — навигация</div></footer>`;
 document.body.appendChild(lightbox);
 const lightboxImg = lightbox.querySelector('.lightbox-img');
+lightboxImg.draggable = false;
 const lightboxStage = lightbox.querySelector('.lightbox-stage');
 const vplayer = lightbox.querySelector('.vplayer');
 const lightboxVideo = lightbox.querySelector('.vplayer-video');
@@ -348,8 +349,8 @@ let rotation = 0;
 
 const clampPan = () => {
   const target = lbList[lbIndex]?.type === 'video' ? lightboxVideo : lightboxImg;
-  const maxX = Math.max(0, (target.offsetWidth * zoom - lightboxStage.clientWidth) / 2);
-  const maxY = Math.max(0, (target.offsetHeight * zoom - lightboxStage.clientHeight) / 2);
+  const maxX = Math.max(0, target.offsetWidth * (zoom - 1) / 2);
+  const maxY = Math.max(0, target.offsetHeight * (zoom - 1) / 2);
   panX = Math.max(-maxX, Math.min(maxX, panX));
   panY = Math.max(-maxY, Math.min(maxY, panY));
 };
