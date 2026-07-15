@@ -385,7 +385,7 @@ lightboxStage.addEventListener('wheel', (e) => {
   applyZoom();
 }, { passive: false });
 
-let dragging = false; let dragX = 0; let dragY = 0; let dragMoved = false;
+let dragging = false; let dragX = 0; let dragY = 0; let dragMoved = false; let suppressStageClick = false;
 const pinchPoints = new Map(); let pinchStart = null;
 const pinchDistance = () => { const p = [...pinchPoints.values()]; return p.length < 2 ? 0 : Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y); };
 lightboxStage.addEventListener('pointerdown', (e) => {
@@ -402,6 +402,17 @@ lightboxStage.addEventListener('pointerdown', (e) => {
   if (e.button !== 0 || e.target.closest('.vplayer-bar, button, input, select')) return;
   if (e.pointerType === 'touch' && pinchPoints.size > 1) return;
   if (zoom <= 1) return;
+  if (lbList[lbIndex]?.type !== 'video') {
+    const stageRect = lightboxStage.getBoundingClientRect();
+    const quarterTurn = Math.abs(Math.round(rotation / 90)) % 2 === 1;
+    const baseWidth = quarterTurn ? lightboxImg.offsetHeight : lightboxImg.offsetWidth;
+    const baseHeight = quarterTurn ? lightboxImg.offsetWidth : lightboxImg.offsetHeight;
+    const centerX = stageRect.left + stageRect.width / 2;
+    const centerY = stageRect.top + stageRect.height / 2;
+    if (e.clientX < centerX - baseWidth / 2 || e.clientX > centerX + baseWidth / 2
+      || e.clientY < centerY - baseHeight / 2 || e.clientY > centerY + baseHeight / 2) return;
+  }
+  suppressStageClick = false;
   dragging = true; dragMoved = false; dragX = e.clientX - panX; dragY = e.clientY - panY;
   lightboxStage.setPointerCapture(e.pointerId);
   lightboxStage.style.cursor = 'grabbing';
@@ -412,7 +423,12 @@ lightboxStage.addEventListener('pointermove', (e) => {
   if (Math.abs(e.clientX - dragX - panX) + Math.abs(e.clientY - dragY - panY) > 3) dragMoved = true;
   panX = e.clientX - dragX; panY = e.clientY - dragY; applyZoom();
 });
-const endDrag = () => { dragging = false; if (zoom > 1) lightboxStage.style.cursor = 'grab'; setTimeout(() => { dragMoved = false; }, 0); };
+const endDrag = () => {
+  if (dragMoved) suppressStageClick = true;
+  dragging = false;
+  if (zoom > 1) lightboxStage.style.cursor = 'grab';
+  setTimeout(() => { dragMoved = false; }, 0);
+};
 lightboxStage.addEventListener('pointerup', endDrag);
 lightboxStage.addEventListener('pointercancel', endDrag);
 lightboxStage.addEventListener('lostpointercapture', endDrag);
@@ -496,7 +512,10 @@ lightbox.querySelector('[data-lb="download"]').onclick = (e) => {
   const a = document.createElement('a'); a.href = item.src; a.download = item.name || (item.type === 'video' ? 'video' : 'photo'); a.click();
 };
 lightbox.onclick = (e) => { vSpeedMenu.classList.add('hidden'); if (e.target === lightbox) lbClose(); };
-lightbox.querySelector('.lightbox-stage').onclick = (e) => { if (e.target.classList.contains('lightbox-stage')) lbClose(); };
+lightbox.querySelector('.lightbox-stage').onclick = (e) => {
+  if (suppressStageClick) { suppressStageClick = false; return; }
+  if (e.target.classList.contains('lightbox-stage')) lbClose();
+};
 document.addEventListener('keydown', (e) => {
   if (lightbox.classList.contains('hidden')) return;
   if (e.key === 'Escape') { e.stopImmediatePropagation(); lbClose(); }
