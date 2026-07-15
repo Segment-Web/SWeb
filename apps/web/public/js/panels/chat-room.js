@@ -112,6 +112,7 @@ export function chatRoomPanel(client) {
           </button>
           <div class="typing" data-el="typing"></div>
           <footer class="composer">
+            <div class="upload-progress hidden" data-el="uploadProgress"><span><i></i></span><b>Загрузка…</b><button aria-label="Отменить">×</button></div>
             <div class="reply-draft hidden" data-el="replyDraft"><b></b><span></span><button data-el="replyCancel" aria-label="Отменить">×</button></div>
             <div class="attach-draft hidden" data-el="attachDraft"></div>
             <div class="autocomplete hidden" data-el="autocomplete"></div>
@@ -170,6 +171,11 @@ export function chatRoomPanel(client) {
               <button class="composer-round primary hidden" data-el="send" aria-label="Отправить">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2.5 11 13"/><path d="M21.5 2.5 15 21.5l-4-8.5-8.5-4z"/></svg>
               </button>
+              <div class="send-menu hidden" data-el="sendMenu">
+                <button data-send-option="silent">Отправить без звука</button>
+                <button data-send-option="schedule">Отправить позже</button>
+                <div class="send-schedule hidden" data-el="sendSchedule"><input type="datetime-local"><button data-send-option="confirm-schedule">Готово</button></div>
+              </div>
             </div>
             </div>
             <div class="rec-bar hidden" data-el="recBar"></div>
@@ -192,6 +198,7 @@ export function chatRoomPanel(client) {
       const statusEl = q('status');
       const typingEl = q('typing');
       const selectionBar = q('selectionBar');
+      const uploadProgress = q('uploadProgress');
       const input = q('input');
       const formatBar = q('format');
 
@@ -315,6 +322,8 @@ export function chatRoomPanel(client) {
       const recBtn = q('rec');
       const recLock = q('recLock');
       const sendBtn = q('send');
+      const sendMenu = q('sendMenu');
+      const sendSchedule = q('sendSchedule');
       const recBar = q('recBar');
       const circleRec = q('circleRec');
       const pinnedBar = q('pinnedBar');
@@ -351,7 +360,19 @@ export function chatRoomPanel(client) {
       let processing = 0;
       let attachmentPickMode = 'media';
       let awayCount = 0;
-      const drafts = {};
+      const drafts = client.storage.getDrafts?.() || {};
+      let draftSaveTimer = null;
+      const persistDrafts = () => {
+        clearTimeout(draftSaveTimer);
+        draftSaveTimer = setTimeout(() => client.storage.setDrafts?.(drafts), 120);
+      };
+      const saveCurrentDraft = () => {
+        if (!currentChat) return;
+        const text = input.value;
+        if (!text && !replyTo) delete drafts[currentChat.id];
+        else drafts[currentChat.id] = { text, replyTo, scrollTop: feed.scrollTop, updatedAt: Date.now() };
+        persistDrafts();
+      };
       const selected = new Set();
       let suppressSelectionClick = false;
 
@@ -390,16 +411,16 @@ export function chatRoomPanel(client) {
         sel.removeAllRanges(); sel.addRange(r);
         acClose();
         syncActions();
-        if (currentChat) drafts[currentChat.id] = input.value;
+        saveCurrentDraft();
         input.focus();
       };
 
 
       const chatMembers = () => {
-        const set = new Set((client.online || []).map((u) => u.name));
-        for (const m of client.messages[currentChat?.id] || []) if (!m.system && m.name) set.add(m.name);
-        set.delete(client.self.name);
-        return [...set];
+        const map = new Map((client.online || []).filter((u) => u.username).map((u) => [u.username, u.name]));
+        for (const m of client.messages[currentChat?.id] || []) if (!m.system && m.username) map.set(m.username, m.name || m.username);
+        map.delete(client.self.username);
+        return [...map].map(([username, name]) => ({ username, name }));
       };
 
       const acUpdate = () => {
@@ -420,8 +441,8 @@ export function chatRoomPanel(client) {
         } else if ((mt = /(^|\s)@(\w{0,20})$/.exec(before))) {
           const q2 = mt[2].toLowerCase();
           acToken = { node, start: caret - mt[2].length - 1, end: caret };
-          acItems = chatMembers().filter((n) => n.toLowerCase().startsWith(q2)).slice(0, 6).map((n) => ({
-            icon: n[0].toUpperCase(), label: n, hint: '', value: `@${n} `,
+          acItems = chatMembers().filter((u) => u.username.toLowerCase().startsWith(q2) || u.name.toLowerCase().startsWith(q2)).slice(0, 6).map((u) => ({
+            icon: u.name[0].toUpperCase(), label: u.name, hint: `@${u.username}`, value: `@${u.username} `,
           }));
         } else if ((mt = /(^|\s):([a-z0-9_+]{2,30})$/.exec(before))) {
           const q2 = mt[2].toLowerCase();
@@ -768,9 +789,23 @@ export function chatRoomPanel(client) {
 
       const updateRoomSearch = (step = 0) => {
         for (const el of feed.querySelectorAll('.msg.search-hit')) el.classList.remove('search-hit');
-        const query = roomSearchInput.value.trim().toLocaleLowerCase('ru');
-        roomSearchIds = query && currentChat ? (client.messages[currentChat.id] || [])
-          .filter((m) => !m.system && !m.deleted && (m.text || '').toLocaleLowerCase('ru').includes(query))
+        const rawQuery = roomSearchInput.value.trim().toLocaleLowerCase('ru');
+        const filters = {};
+        const query = rawQuery.replace(/(?:^|\s)(from|type|date):([^\s]+)/g, (_, key, value) => { filters[key] = value; return ' '; }).trim();
+        const typeMatches = (m) => {
+          if (!filters.type) return true;
+          if (filters.type === 'photo') return m.attachments?.some((a) => a.kind === 'photo');
+          if (filters.type === 'video') return m.attachments?.some((a) => a.kind === 'video' || a.kind === 'circle');
+          if (filters.type === 'file') return m.attachments?.some((a) => a.kind === 'file');
+          if (filters.type === 'poll') return !!m.poll;
+          return true;
+        };
+        roomSearchIds = rawQuery && currentChat ? (client.messages[currentChat.id] || [])
+          .filter((m) => !m.system && !m.deleted
+            && (!query || (m.text || '').toLocaleLowerCase('ru').includes(query))
+            && (!filters.from || [m.name, m.username].some((v) => (v || '').toLocaleLowerCase('ru').includes(filters.from)))
+            && (!filters.date || new Date(m.ts).toISOString().slice(0, 10) === filters.date)
+            && typeMatches(m))
           .map((m) => m.id) : [];
         if (!roomSearchIds.length) roomSearchIndex = -1;
         else if (step) roomSearchIndex = (roomSearchIndex + step + roomSearchIds.length) % roomSearchIds.length;
@@ -811,6 +846,7 @@ export function chatRoomPanel(client) {
           replyTo = quotes.length > 1 ? { ...quotes[0], quote: true, quotes } : quotes[0];
         }
         renderReplyDraft();
+        saveCurrentDraft();
         input.focus();
       };
 
@@ -870,7 +906,7 @@ export function chatRoomPanel(client) {
               window.Segment?.toast?.('Выбранное скопировано');
             } else if (a === 'forward') {
               window.Segment?.startForward?.({
-                text: current.map((m) => `${m.name}: ${m.text}`).join('\n'),
+                messages: current,
                 fromName: current.length === 1 ? current[0].name : `${current.length} сообщений`,
                 chatName: currentChat?.name || '',
               });
@@ -1177,7 +1213,7 @@ export function chatRoomPanel(client) {
       const renderRoom = (chat, messages) => {
         const chatChanged = chat?.id !== currentChat?.id;
         if (chatChanged) {
-          if (currentChat) drafts[currentChat.id] = input.value;
+          saveCurrentDraft();
           pending = []; selected.clear(); renderAttachDraft();
           closeRoomSearch();
         }
@@ -1217,7 +1253,15 @@ export function chatRoomPanel(client) {
           scrollMode: chatChanged ? 'bottom' : 'anchor',
           firstUnread: chatChanged ? client.firstUnread[chat.id] : null,
         });
-        if (chatChanged) { awayCount = 0; input.value = drafts[chat.id] || ''; syncActions(); }
+        if (chatChanged) {
+          awayCount = 0;
+          const draft = drafts[chat.id];
+          input.value = typeof draft === 'string' ? draft : (draft?.text || '');
+          replyTo = typeof draft === 'object' ? (draft.replyTo || null) : null;
+          renderReplyDraft();
+          if (Number.isFinite(draft?.scrollTop)) feed.scrollTop = draft.scrollTop;
+          syncActions();
+        }
         renderSelectionBar();
         renderPinnedBar();
         if (!roomSearchBar.classList.contains('hidden')) updateRoomSearch();
@@ -1257,7 +1301,18 @@ export function chatRoomPanel(client) {
           clearTimeout(typingTimer);
           typingTimer = setTimeout(() => { typingEl.innerHTML = ''; }, TYPING_HIDE_MS);
         }),
+        client.on('upload', ({ id, progress, complete }) => {
+          uploadProgress.dataset.uploadId = id;
+          uploadProgress.classList.toggle('hidden', complete);
+          uploadProgress.querySelector('i').style.width = `${Math.round(progress * 100)}%`;
+          uploadProgress.querySelector('b').textContent = complete ? 'Загружено' : `Загрузка ${Math.round(progress * 100)}%`;
+        }),
       ];
+      uploadProgress.querySelector('button').onclick = () => {
+        const id = uploadProgress.dataset.uploadId;
+        if (id) client.cancelUpload(id);
+        uploadProgress.classList.add('hidden');
+      };
 
       const submit = () => {
         if (!currentChat) return;
@@ -1269,6 +1324,7 @@ export function chatRoomPanel(client) {
           if (replyTo) { replyTo = null; renderReplyDraft(); }
           input.value = '';
           delete drafts[currentChat.id];
+          persistDrafts();
           syncActions();
           input.focus();
           return;
@@ -1283,14 +1339,35 @@ export function chatRoomPanel(client) {
         } else client.send(input.value);
         input.value = '';
         if (currentChat) delete drafts[currentChat.id];
+        persistDrafts();
         syncActions();
         input.focus();
       };
 
       sendBtn.onclick = submit;
+      sendBtn.oncontextmenu = (e) => { e.preventDefault(); sendMenu.classList.toggle('hidden'); };
+      for (const option of sendMenu.querySelectorAll('[data-send-option]')) option.onclick = (e) => {
+        e.stopPropagation();
+        const action = option.dataset.sendOption;
+        if (action === 'silent' && currentChat && input.value.trim()) {
+          client.sendSilent(currentChat.id, input.value);
+          input.value = ''; delete drafts[currentChat.id]; persistDrafts(); syncActions(); sendMenu.classList.add('hidden');
+        } else if (action === 'schedule') {
+          const date = sendSchedule.querySelector('input');
+          date.min = new Date(Date.now() + 60000).toISOString().slice(0, 16);
+          date.value = new Date(Date.now() + 3600000).toISOString().slice(0, 16);
+          sendSchedule.classList.remove('hidden'); date.focus();
+        } else if (action === 'confirm-schedule' && currentChat && input.value.trim()) {
+          const when = sendSchedule.querySelector('input').value;
+          if (client.scheduleMessage(currentChat.id, input.value, when)) {
+            input.value = ''; delete drafts[currentChat.id]; persistDrafts(); syncActions(); sendMenu.classList.add('hidden');
+            window.Segment?.toast?.('Сообщение запланировано');
+          } else window.Segment?.toast?.('Выберите время в будущем');
+        }
+      };
       input.addEventListener('input', () => {
         syncActions();
-        if (currentChat) drafts[currentChat.id] = input.value;
+        saveCurrentDraft();
         acUpdate();
       });
       input.addEventListener('blur', () => setTimeout(acClose, 120));
@@ -1332,7 +1409,7 @@ export function chatRoomPanel(client) {
         if (document.activeElement === input) syncFormatState();
       };
       document.addEventListener('selectionchange', syncComposerFormat);
-      feed.addEventListener('scroll', updateScrollDown, { passive: true });
+      feed.addEventListener('scroll', () => { updateScrollDown(); if (currentChat && drafts[currentChat.id]) { drafts[currentChat.id].scrollTop = feed.scrollTop; persistDrafts(); } }, { passive: true });
       scrollDown.onclick = () => { awayCount = 0; scrollFeedToBottom(feed); updateScrollDown(); };
       replyCancel.onclick = () => setReply(null);
       head.onclick = openChatSheet;
@@ -1502,11 +1579,15 @@ export function chatRoomPanel(client) {
       roomEl.addEventListener('pointerdown', (e) => {
         if (!msgMenu.contains(e.target) && !sheet.contains(e.target) && !emojiMenu.contains(e.target) && !pinnedManager.contains(e.target) && !head.contains(e.target) && !emojiBtn.contains(e.target)) hideMenus();
         if (!attachWrap.contains(e.target)) attachMenu.classList.add('hidden');
+        if (!sendMenu.contains(e.target) && !sendBtn.contains(e.target)) sendMenu.classList.add('hidden');
       });
 
       renderRoom(client.chatById(client.currentRoom), client.messages[client.currentRoom]);
 
       return () => {
+        saveCurrentDraft();
+        clearTimeout(draftSaveTimer);
+        client.storage.setDrafts?.(drafts);
         offs.forEach((off) => off());
         clearTimeout(typingTimer);
         clearTimeout(holdTimer);

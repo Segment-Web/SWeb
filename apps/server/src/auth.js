@@ -54,12 +54,24 @@ export async function createAuth(config) {
     );
     CREATE TABLE IF NOT EXISTS sessions (
       token_hash TEXT PRIMARY KEY, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      id UUID NOT NULL DEFAULT gen_random_uuid(), user_agent TEXT NOT NULL DEFAULT '',
+      ip TEXT NOT NULL DEFAULT '', last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE sessions ADD COLUMN IF NOT EXISTS id UUID NOT NULL DEFAULT gen_random_uuid();
+    ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_agent TEXT NOT NULL DEFAULT '';
+    ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ip TEXT NOT NULL DEFAULT '';
+    ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    CREATE UNIQUE INDEX IF NOT EXISTS sessions_id_idx ON sessions(id);
     CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at);
     CREATE INDEX IF NOT EXISTS login_codes_expires_at_idx ON login_codes(expires_at);
     CREATE INDEX IF NOT EXISTS registration_tokens_expires_at_idx ON registration_tokens(expires_at);
+    CREATE TABLE IF NOT EXISTS device_links (
+      token_hash TEXT PRIMARY KEY, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      payload TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS device_links_expires_at_idx ON device_links(expires_at);
   `);
 
   const smtpReady = Boolean(config.smtp.test || (config.smtp.host && config.smtp.user && config.smtp.pass));
@@ -77,6 +89,7 @@ export async function createAuth(config) {
       DELETE FROM login_codes WHERE expires_at < NOW();
       DELETE FROM registration_tokens WHERE expires_at < NOW();
       DELETE FROM sessions WHERE expires_at < NOW();
+      DELETE FROM device_links WHERE expires_at < NOW();
     `);
     const cutoff = Date.now() - 10 * 60 * 1000;
     for (const [ip, requests] of codeRequests) {
@@ -90,14 +103,21 @@ export async function createAuth(config) {
   }), 15 * 60 * 1000);
   cleanupTimer.unref();
   const one = async (sql, params = []) => (await pool.query(sql, params)).rows[0] || null;
-  const userFromRequest = async (req) => {
+  const requestIp = (req) => {
+    const forwarded = config.trustProxy ? req.headers['x-forwarded-for'] : '';
+    return ((typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : '') || req.socket.remoteAddress || '').slice(0, 80);
+  };
+  const sessionFromRequest = async (req) => {
     const token = parseCookies(req)[COOKIE]; if (!token) return null;
-    return one(`SELECT users.* FROM sessions JOIN users ON users.id=sessions.user_id
+    return one(`SELECT users.*, sessions.id AS session_id, sessions.created_at AS session_created_at,
+      sessions.last_seen_at AS session_last_seen_at FROM sessions JOIN users ON users.id=sessions.user_id
       WHERE sessions.token_hash=$1 AND sessions.expires_at>NOW()`, [hash(token)]);
   };
-  const createSession = async (userId) => {
+  const userFromRequest = sessionFromRequest;
+  const createSession = async (userId, req) => {
     const token = randomBytes(32).toString('base64url');
-    await pool.query('INSERT INTO sessions(token_hash,user_id,expires_at) VALUES($1,$2,NOW()+($3::text)::interval)', [hash(token), userId, `${config.authSessionTtlMs} milliseconds`]);
+    await pool.query(`INSERT INTO sessions(token_hash,user_id,expires_at,user_agent,ip)
+      VALUES($1,$2,NOW()+($3::text)::interval,$4,$5)`, [hash(token), userId, `${config.authSessionTtlMs} milliseconds`, String(req?.headers?.['user-agent'] || '').slice(0, 320), req ? requestIp(req) : '']);
     return token;
   };
   const validateAvatar = (avatar) => {
@@ -132,6 +152,42 @@ export async function createAuth(config) {
       if (req.method === 'GET' && url.pathname === '/api/auth/me') {
         const user = await userFromRequest(req);
         return json(res, user ? 200 : 401, user ? { user: publicUser(user) } : { error: 'UNAUTHORIZED' });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/auth/sessions') {
+        const current = await sessionFromRequest(req);
+        if (!current) return json(res, 401, { error: 'UNAUTHORIZED' });
+        await pool.query('UPDATE sessions SET last_seen_at=NOW() WHERE id=$1', [current.session_id]);
+        const sessions = (await pool.query(`SELECT id,user_agent,ip,created_at,last_seen_at,expires_at
+          FROM sessions WHERE user_id=$1 AND expires_at>NOW() ORDER BY last_seen_at DESC`, [current.id])).rows;
+        return json(res, 200, { sessions: sessions.map((session) => ({ ...session, current: session.id === current.session_id })) });
+      }
+      if (req.method === 'DELETE' && url.pathname.startsWith('/api/auth/sessions/')) {
+        const current = await sessionFromRequest(req);
+        if (!current) return json(res, 401, { error: 'UNAUTHORIZED' });
+        const sessionId = url.pathname.slice('/api/auth/sessions/'.length);
+        if (!/^[0-9a-f-]{36}$/i.test(sessionId)) return json(res, 404, { error: 'NOT_FOUND' });
+        const removed = await pool.query('DELETE FROM sessions WHERE id=$1 AND user_id=$2 RETURNING id', [sessionId, current.id]);
+        if (!removed.rowCount) return json(res, 404, { error: 'NOT_FOUND' });
+        const headers = sessionId === current.session_id ? { 'Set-Cookie': cookie('', 0) } : {};
+        return json(res, 200, { ok: true, current: sessionId === current.session_id }, headers);
+      }
+      if (req.method === 'POST' && url.pathname === '/api/auth/device-links') {
+        const current = await sessionFromRequest(req);
+        if (!current) return json(res, 401, { error: 'UNAUTHORIZED' });
+        const body = await readJson(req, 1024 * 1024);
+        const payload = String(body.payload || '');
+        if (!payload || payload.length > 900000) return json(res, 400, { error: 'PAYLOAD_INVALID' });
+        const token = randomBytes(24).toString('base64url');
+        await pool.query("INSERT INTO device_links(token_hash,user_id,payload,expires_at) VALUES($1,$2,$3,NOW()+INTERVAL '10 minutes')", [hash(token), current.id, payload]);
+        return json(res, 201, { token, expiresIn: 600 });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/auth/device-links/claim') {
+        const current = await sessionFromRequest(req);
+        if (!current) return json(res, 401, { error: 'UNAUTHORIZED' });
+        const body = await readJson(req, 16384); const tokenHash = hash(String(body.token || ''));
+        const link = await one('DELETE FROM device_links WHERE token_hash=$1 AND user_id=$2 AND expires_at>NOW() RETURNING payload', [tokenHash, current.id]);
+        if (!link) return json(res, 400, { error: 'DEVICE_LINK_INVALID' });
+        return json(res, 200, { payload: link.payload });
       }
       if (req.method === 'POST' && url.pathname === '/api/auth/request-code') {
         const { email: rawEmail } = await readJson(req, 16384); const email = String(rawEmail || '').trim().toLowerCase();
@@ -191,7 +247,7 @@ export async function createAuth(config) {
         await pool.query('DELETE FROM login_codes WHERE email=$1', [email]);
         const user = await one('SELECT * FROM users WHERE email=$1', [email]);
         if (user) {
-          const token = await createSession(user.id);
+          const token = await createSession(user.id, req);
           return json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': cookie(token, Math.floor(config.authSessionTtlMs / 1000)) });
         }
         const registrationToken = randomBytes(32).toString('base64url');
@@ -209,7 +265,7 @@ export async function createAuth(config) {
         const avatar = validateAvatar(body.avatar); const id = randomUUID(); const color = COLORS[randomInt(COLORS.length)];
         const user = await one(`INSERT INTO users(id,email,username,name,avatar,color) VALUES($1,$2,$3,$4,$5,$6) RETURNING *`, [id, ticket.email, username, name, avatar, color]);
         await pool.query('DELETE FROM registration_tokens WHERE token_hash=$1', [tokenHash]);
-        const session = await createSession(id);
+        const session = await createSession(id, req);
         return json(res, 201, { user: publicUser(user) }, { 'Set-Cookie': cookie(session, Math.floor(config.authSessionTtlMs / 1000)) });
       }
       if (req.method === 'PATCH' && url.pathname === '/api/auth/profile') {

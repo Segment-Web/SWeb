@@ -122,6 +122,7 @@ fwd.innerHTML = `
     <div class="fwd-head"><b>Переслать в…</b><button class="fwd-close" aria-label="Закрыть">✕</button></div>
     <input class="fwd-search" placeholder="Поиск чата" aria-label="Поиск чата">
     <div class="fwd-list"></div>
+    <label class="fwd-attribution"><input type="checkbox" data-fwd-attribution checked><span>Показывать автора</span></label>
     <div class="fwd-foot">
       <button class="fwd-cancel">Отмена</button>
       <button class="fwd-send" disabled>Переслать</button>
@@ -162,18 +163,17 @@ fwdSend.onclick = () => {
   const draft = segmentApi.forwardDraft;
   if (!draft || !fwdSelected.size) return;
   const ids = [...fwdSelected];
-  for (const id of ids) client.forwardMessage(id, draft);
+  const attribution = fwd.querySelector('[data-fwd-attribution]')?.checked !== false;
+  for (const id of ids) client.forwardMessage(id, draft, { attribution });
   segmentApi.toast(ids.length === 1 ? 'Переслано' : `Переслано в ${ids.length} чата`);
   fwdClose();
   if (ids.length === 1) client.openRoom(ids[0]);
 };
 
 segmentApi.startForward = (message) => {
-  segmentApi.forwardDraft = {
-    text: message?.text || '',
-    fromName: message?.name || '',
-    fromChat: message?.chatName || '',
-  };
+  segmentApi.forwardDraft = message?.messages
+    ? { messages: message.messages.map((item) => ({ ...item, chatName: item.chatName || message.chatName })) }
+    : { ...message, fromName: message?.name || message?.fromName || '', fromChat: message?.chatName || message?.fromChat || '' };
   fwdSelected.clear();
   fwdSearch.value = '';
   fwdSend.disabled = true;

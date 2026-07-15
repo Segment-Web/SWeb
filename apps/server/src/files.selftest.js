@@ -17,21 +17,21 @@ const files = await createFiles(config, auth);
 let pass = 0, fail = 0;
 const ok = (cond, label) => { if (cond) { pass++; console.log('ok   ' + label); } else { fail++; console.log('FAIL ' + label); } };
 
-const call = async (method, url, { user = null, body, chunks: rawChunks } = {}) => {
+const call = async (method, url, { user = null, body, chunks: rawChunks, headers = {} } = {}) => {
   const chunks = rawChunks
     ? rawChunks.map((c) => (Buffer.isBuffer(c) ? c : Buffer.from(c)))
     : (body === undefined ? [] : [Buffer.isBuffer(body) ? body : Buffer.from(body)]);
   const req = Readable.from(chunks);
-  req.method = method; req.url = url; req.headers = { origin: '' }; req._user = user;
-  let status = 0; const parts = []; let jsonMode = true;
+  req.method = method; req.url = url; req.headers = { origin: '', ...headers }; req._user = user;
+  let status = 0; let responseHeaders = {}; const parts = []; let jsonMode = true;
   const res = {
-    writeHead(code, headers) { status = code; if (headers && headers['Content-Type'] === 'application/octet-stream') jsonMode = false; return res; },
+    writeHead(code, nextHeaders) { status = code; responseHeaders = nextHeaders || {}; if (nextHeaders && nextHeaders['Content-Type'] === 'application/octet-stream') jsonMode = false; return res; },
     write(chunk) { if (chunk) parts.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)); return true; },
     end(chunk) { if (chunk) parts.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)); },
   };
   await files.handle(req, res);
   const buf = Buffer.concat(parts);
-  return { status, data: jsonMode && buf.length ? JSON.parse(buf.toString()) : null, bytes: buf };
+  return { status, headers: responseHeaders, data: jsonMode && buf.length ? JSON.parse(buf.toString()) : null, bytes: buf };
 };
 const user = { id: 'u1' };
 
@@ -77,6 +77,19 @@ ok(big.status === 413, 'oversized streamed upload -> 413');
 // Empty upload -> 400.
 const empty = await call('POST', '/api/files', { user, body: Buffer.alloc(0) });
 ok(empty.status === 400, 'empty upload -> 400');
+
+// Resumable uploads preserve the acknowledged offset and finalize to the same
+// content-addressed blob as a one-shot upload.
+const resumeUser = { id: 'u2' };
+const resume = await call('POST', '/api/files/uploads', { user: resumeUser, headers: { 'upload-length': '12' } });
+const resumeId = resume.data.uploadId;
+const chunkA = await call('PATCH', `/api/files/uploads/${resumeId}`, { user: resumeUser, body: 'hello-', headers: { 'upload-offset': '0' } });
+const head = await call('HEAD', `/api/files/uploads/${resumeId}`, { user: resumeUser });
+const chunkB = await call('PATCH', `/api/files/uploads/${resumeId}`, { user: resumeUser, body: 'resume', headers: { 'upload-offset': '6' } });
+const complete = await call('POST', `/api/files/uploads/${resumeId}/complete`, { user: resumeUser });
+const resumedBack = await call('GET', `/api/files/${complete.data.id}`, { user: resumeUser });
+ok(resume.status === 201 && chunkA.data.offset === 6 && head.headers['Upload-Offset'] === '6', 'resumable upload reports its acknowledged offset');
+ok(chunkB.data.offset === 12 && complete.status === 201 && resumedBack.bytes.toString() === 'hello-resume', 'resumable upload finalizes and round-trips');
 
 // The per-account limiter prevents one authenticated client from filling disk.
 const limited = await call('POST', '/api/files', { user, body: 'one-upload-too-many' });

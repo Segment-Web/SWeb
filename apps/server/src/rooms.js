@@ -6,9 +6,8 @@
 // updated on every mutation) so the WebSocket gateway can scope ciphertext relay
 // to actual room membership without an async query per message.
 //
-// It never reads plaintext. Per-room sender-key rotation is a separate follow-up
-// gated by docs/persistence-and-rooms.md; this module only decides *who* may
-// receive a room's ciphertext, not how it is encrypted.
+// It never reads plaintext. Membership changes are announced to the gateway so
+// the room owner can rotate its client-held history key after joins and leaves.
 
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { ChatType, ROOMS, RETIRED_ROOM_IDS, SLUG_RE } from '@segment/protocol';
@@ -92,6 +91,7 @@ export async function createRooms(config, auth) {
     CREATE UNIQUE INDEX IF NOT EXISTS room_history_event_idx
       ON room_history(room_id, client_event_id) WHERE client_event_id IS NOT NULL;
   `);
+  await pool.query("ALTER TABLE room_history ADD COLUMN IF NOT EXISTS key_id VARCHAR(32) NOT NULL DEFAULT ''");
 
   // Bring the atomic per-room counter forward when upgrading an existing
   // database that already contains history rows.
@@ -129,11 +129,15 @@ export async function createRooms(config, auth) {
   const publicRooms = new Set();          // roomId
   const members = new Map();              // roomId -> Set<userId>
   const existing = new Set();             // roomId
+  const owners = new Map();                // roomId -> userId
+  const membershipListeners = new Set();
+  const emitMembership = (change) => { for (const listener of membershipListeners) { try { listener(change); } catch {} } };
   const hydrate = async () => {
-    publicRooms.clear(); members.clear(); existing.clear();
-    for (const row of (await pool.query('SELECT id, is_public FROM rooms')).rows) {
+    publicRooms.clear(); members.clear(); existing.clear(); owners.clear();
+    for (const row of (await pool.query('SELECT id, is_public, owner_id FROM rooms')).rows) {
       existing.add(row.id);
       if (row.is_public) publicRooms.add(row.id);
+      if (row.owner_id) owners.set(row.id, row.owner_id);
     }
     for (const row of (await pool.query('SELECT room_id, user_id FROM room_members')).rows) {
       if (!members.has(row.room_id)) members.set(row.room_id, new Set());
@@ -142,7 +146,7 @@ export async function createRooms(config, auth) {
   };
   await hydrate();
 
-  const indexRoom = (row) => { existing.add(row.id); if (row.is_public) publicRooms.add(row.id); };
+  const indexRoom = (row) => { existing.add(row.id); if (row.is_public) publicRooms.add(row.id); if (row.owner_id) owners.set(row.id, row.owner_id); };
   const indexMember = (roomId, userId) => {
     if (!members.has(roomId)) members.set(roomId, new Set());
     members.get(roomId).add(userId);
@@ -224,12 +228,13 @@ export async function createRooms(config, auth) {
     );
     await pool.query('UPDATE room_invites SET uses=uses+1 WHERE token_hash=$1', [invite.token_hash]);
     indexMember(invite.room_id, user.id);
+    emitMembership({ roomId: invite.room_id, userId: user.id, action: 'joined' });
     const room = await one('SELECT * FROM rooms WHERE id=$1', [invite.room_id]);
     return room ? publicRoom(room) : null;
   };
 
   // Append one encrypted history envelope; returns its assigned sequence.
-  const appendHistory = async (user, roomId, eventId, iv, ct) => {
+  const appendHistory = async (user, roomId, eventId, iv, ct, keyId = '') => {
     if (!canAccess(user.id, roomId)) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
     if (typeof iv !== 'string' || iv.length > 256 || typeof ct !== 'string' || !ct.length || ct.length > 2 * 1024 * 1024) {
       throw Object.assign(new Error('ENVELOPE_INVALID'), { status: 400 });
@@ -243,9 +248,9 @@ export async function createRooms(config, auth) {
     if (!assigned) throw Object.assign(new Error('NOT_FOUND'), { status: 404 });
     try {
       const row = await one(
-        `INSERT INTO room_history(room_id,seq,sender_id,client_event_id,iv,ct)
-         VALUES($1,$2,$3,$4,$5,$6) RETURNING seq`,
-        [roomId, assigned.history_seq, user.id, stableId, iv, ct],
+        `INSERT INTO room_history(room_id,seq,sender_id,client_event_id,iv,ct,key_id)
+         VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING seq`,
+        [roomId, assigned.history_seq, user.id, stableId, iv, ct, String(keyId || '').slice(0, 32)],
       );
       return { seq: Number(row.seq), duplicate: false };
     } catch (error) {
@@ -270,10 +275,10 @@ export async function createRooms(config, auth) {
     const lower = Math.max(Number(after) || 0, floor);
     const cap = Math.min(Math.max(Number(limit) || 100, 1), 200);
     const rows = (await pool.query(
-      'SELECT seq, sender_id, iv, ct FROM room_history WHERE room_id=$1 AND seq>$2 ORDER BY seq LIMIT $3',
+      'SELECT seq, sender_id, iv, ct, key_id FROM room_history WHERE room_id=$1 AND seq>$2 ORDER BY seq LIMIT $3',
       [roomId, lower, cap],
     )).rows;
-    return rows.map((r) => ({ seq: Number(r.seq), senderId: r.sender_id, iv: r.iv, ct: r.ct }));
+    return rows.map((r) => ({ seq: Number(r.seq), senderId: r.sender_id, keyId: r.key_id || '', iv: r.iv, ct: r.ct }));
   };
 
   // Removing a room means two different things, so say which one happened:
@@ -292,11 +297,12 @@ export async function createRooms(config, auth) {
 
     if (room.owner_id === user.id) {
       await pool.query('DELETE FROM rooms WHERE id=$1', [roomId]);
-      existing.delete(roomId); publicRooms.delete(roomId); members.delete(roomId);
+      existing.delete(roomId); publicRooms.delete(roomId); members.delete(roomId); owners.delete(roomId);
       return { deleted: true };
     }
     await pool.query('DELETE FROM room_members WHERE room_id=$1 AND user_id=$2', [roomId, user.id]);
     members.get(roomId)?.delete(user.id);
+    emitMembership({ roomId, userId: user.id, action: 'left' });
     return { deleted: false, left: true };
   };
 
@@ -396,7 +402,7 @@ export async function createRooms(config, auth) {
       if (req.method === 'POST' && url.pathname === '/api/rooms/history') {
         const body = await readJson(req, 4 * 1024 * 1024);
         if (!exists(String(body.roomId))) return json(res, 404, { error: 'NOT_FOUND' });
-        return json(res, 201, await appendHistory(user, String(body.roomId), body.eventId, body.iv, body.ct));
+        return json(res, 201, await appendHistory(user, String(body.roomId), body.eventId, body.iv, body.ct, body.keyId));
       }
       if (req.method === 'POST' && url.pathname === '/api/rooms/history/public-key') {
         const body = await readJson(req);
@@ -435,5 +441,5 @@ export async function createRooms(config, auth) {
     }
   };
 
-  return { handle, exists, canAccess, listForUser, rehydrate: hydrate };
+  return { handle, exists, canAccess, ownerId: (roomId) => owners.get(roomId) || '', listForUser, rehydrate: hydrate, onMembershipChange(listener) { membershipListeners.add(listener); return () => membershipListeners.delete(listener); } };
 }

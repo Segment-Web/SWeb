@@ -47,6 +47,7 @@ export const MessageType = {
   KeyShare: 'keyshare',
   HistoryKeyRequest: 'history-key-request',
   HistoryKeyShare: 'history-key-share',
+  RoomMembersChanged: 'room-members-changed',
   Cipher: 'cipher',
   Ack: 'ack',
   Typing: 'typing',

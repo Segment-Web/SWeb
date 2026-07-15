@@ -25,6 +25,7 @@ export function formatText(raw) {
   s = s.replace(/__([^_\n]+?)__/g, '<i>$1</i>');
   s = s.replace(/\+\+([^+\n]+?)\+\+/g, '<u>$1</u>');
   s = s.replace(/~~([^~\n]+?)~~/g, '<s>$1</s>');
+  s = s.replace(/(^|\s)@([a-z0-9_]{3,24})\b/gi, '$1<a class="mention" href="/@$2">@$2</a>');
 
   s = s.replace(/(\d+)/g, (_, i) => codes[+i]);
   return s;
@@ -521,10 +522,12 @@ const PIN_GLYPH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" s
 const CLOCK_GLYPH = '<svg viewBox="0 0 24 24" width="14" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
 const SINGLE_CHECK_GLYPH = '<svg viewBox="0 0 18 16" width="14" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.5l4 4 9-9"/></svg>';
 const statusGlyph = (m) => {
+  const readers = Object.entries(m.receipts || {}).filter(([, state]) => state === 'read').map(([name]) => name);
+  const title = readers.length ? ` title="Прочитали: ${esc(readers.join(', '))}"` : '';
   if (m.status === 'failed') return '<span class="msg-status failed">!</span>';
   if (m.status === 'sending') return `<span class="msg-status sending">${CLOCK_GLYPH}</span>`;
   if (m.status === 'sent') return `<span class="msg-status sent">${SINGLE_CHECK_GLYPH}</span>`;
-  if (m.status === 'read') return `<span class="msg-status read">${CHECK_GLYPH}</span>`;
+  if (m.status === 'read') return `<span class="msg-status read"${title}>${CHECK_GLYPH}</span>`;
   return `<span class="msg-status delivered">${CHECK_GLYPH}</span>`;
 };
 

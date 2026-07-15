@@ -21,7 +21,7 @@ globalThis.fetch = async (url, options = {}) => {
       return { ok: false, status: 400, json: async () => ({ error: 'ENVELOPE_INVALID' }) };
     }
     const list = store.get(body.roomId) || [];
-    list.push({ seq: list.length + 1, iv: body.iv, ct: body.ct });
+    list.push({ seq: list.length + 1, keyId: body.keyId || '', iv: body.iv, ct: body.ct });
     store.set(body.roomId, list);
     return { ok: true, status: 201, json: async () => ({ seq: list.length }) };
   }
@@ -92,6 +92,18 @@ const persistentA = new SegmentClient({ storage: persistentStorage });
 persistentA._seedHistoryKey('persisted-room');
 const persistentReload = new SegmentClient({ storage: persistentStorage });
 ok(JSON.stringify(persistentReload._historyKey('persisted-room')) === JSON.stringify(persistentA._historyKey('persisted-room')), 'history key survives a same-device reload');
+
+// Key rotation keeps new members/leavers on a fresh key while retaining the
+// bounded old-key archive needed to decrypt pre-rotation envelopes.
+const rotateRoom = 'chat-rotate';
+for (const cl of [A, B]) cl._addServerRoom({ id: rotateRoom, title: 'Rotate', type: 'chat', icon: 'R' });
+A._seedHistoryKey(rotateRoom); B._adoptHistoryKeys(A.historyKeysExport());
+await A._storeToHistory(rotateRoom, { kind: 'message', message: { id: 'before-rotate', name: 'A', text: 'before rotation' } });
+const rotatedKey = Array(32).fill(17); A._installRotatedHistoryKey(rotateRoom, rotatedKey); B._installRotatedHistoryKey(rotateRoom, rotatedKey);
+await A._storeToHistory(rotateRoom, { kind: 'message', message: { id: 'after-rotate', name: 'A', text: 'after rotation' } });
+await B._backfillRoom(rotateRoom);
+ok(B._messageById(rotateRoom, 'before-rotate')?.text === 'before rotation', 'pre-rotation history remains decryptable');
+ok(B._messageById(rotateRoom, 'after-rotate')?.text === 'after rotation', 'post-rotation history uses the new key');
 
 // Mutations are history events too, so another device reconstructs current
 // state rather than only the original message.

@@ -90,6 +90,11 @@ export function attachGateway(server, config, auth, rooms) {
     color: client.color,
     bundle: publicBundle(client.bundle),
   });
+  const offMembership = rooms.onMembershipChange?.((change) => {
+    const ownerId = rooms.ownerId?.(change.roomId);
+    const ownerSockets = [...clients.entries()].filter(([, client]) => client.joined && client.userId === ownerId).sort((a, b) => a[1].id.localeCompare(b[1].id));
+    if (ownerSockets[0]) send(ownerSockets[0][0], { type: MessageType.RoomMembersChanged, room: change.roomId, action: change.action });
+  });
 
   wss.on('connection', (ws, request) => {
     const ip = clientIp(request);
@@ -200,6 +205,7 @@ export function attachGateway(server, config, auth, rooms) {
   return {
     stats: () => ({ connections: clients.size, joined: [...clients.values()].filter((client) => client.joined).length }),
     stop: () => {
+      offMembership?.();
       clearInterval(heartbeat);
       if (presenceTimer) clearTimeout(presenceTimer);
       for (const ws of wss.clients) ws.close(1001, 'Server restarting');

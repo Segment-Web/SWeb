@@ -68,11 +68,16 @@ export class SegmentClient {
 
 
     this.historyKeys = new Map(Object.entries(storage.getHistoryKeys?.() || {}));
+    this.historyKeyArchive = new Map(Object.entries(storage.getHistoryKeyArchive?.() || {}));
     this._backfilled = new Set();   // rooms already backfilled this session
     this._appliedEvents = new Set();
     this.outbox = Array.isArray(storage.getOutbox?.()) ? storage.getOutbox() : [];
+    this.scheduled = Array.isArray(storage.getScheduled?.()) ? storage.getScheduled() : [];
+    this._scheduledTimer = setInterval(() => this._flushScheduled(), 10000);
+    this._scheduledTimer.unref?.();
     this._flushingOutbox = false;
     this._relayAcks = new Map();
+    this._activeUploads = new Map();
     this.kit = null;
     this.senderKey = null;
     this.myId = null;
@@ -446,6 +451,34 @@ export class SegmentClient {
     return this.sendEvent(roomId, { kind: 'message', message });
   }
 
+  sendSilent(roomId, text) {
+    const clean = (text || '').trim();
+    if (!clean || !roomId || !this.chatById(roomId)) return false;
+    return this.sendEvent(roomId, { kind: 'message', message: this._makeMessage(clean, null, { silent: true }) });
+  }
+
+  scheduleMessage(roomId, text, sendAt, options = {}) {
+    const clean = (text || '').trim();
+    const when = Number(new Date(sendAt));
+    if (!clean || !roomId || !this.chatById(roomId) || !Number.isFinite(when) || when <= Date.now()) return false;
+    this.scheduled.push({ id: mid(), roomId, text: clean, sendAt: when, silent: Boolean(options.silent) });
+    this.scheduled.sort((a, b) => a.sendAt - b.sendAt);
+    this.storage.setScheduled?.(this.scheduled);
+    this._emit('scheduled', { roomId, count: this.scheduled.filter((item) => item.roomId === roomId).length });
+    return true;
+  }
+
+  async _flushScheduled() {
+    const due = this.scheduled.filter((item) => item.sendAt <= Date.now());
+    if (!due.length) return;
+    this.scheduled = this.scheduled.filter((item) => item.sendAt > Date.now());
+    this.storage.setScheduled?.(this.scheduled);
+    for (const item of due) {
+      if (!this.chatById(item.roomId)) continue;
+      await this.sendEvent(item.roomId, { kind: 'message', message: this._makeMessage(item.text, null, { silent: item.silent, scheduled: true }) });
+    }
+  }
+
 
 
 
@@ -478,18 +511,20 @@ export class SegmentClient {
     return this.sendEvent(roomId, { kind: 'message', message: this._makeMessage(text, this._replySnapshot(roomId, ref)) });
   }
 
-  forwardMessage(roomId, source = {}) {
-    const clean = (source.text || '').trim();
-    if (!clean) return false;
-    return this.sendEvent(roomId, {
-      kind: 'message',
-      message: this._makeMessage(clean, null, {
-        forwardFrom: {
-          name: source.name || source.fromName || '',
-          chatName: source.chatName || source.fromChat || '',
-        },
-      }),
-    });
+  forwardMessage(roomId, source = {}, options = {}) {
+    const sources = Array.isArray(source.messages) ? source.messages : [source];
+    const valid = sources.filter((item) => item && ((item.text || '').trim() || item.attachments?.length || item.poll));
+    if (!valid.length) return false;
+    return Promise.all(valid.map((item) => {
+      const extra = {};
+      if (item.attachments?.length) extra.attachments = item.attachments.map((file) => ({ ...file }));
+      if (item.poll) extra.poll = structuredClone(item.poll);
+      if (options.attribution !== false) extra.forwardFrom = {
+        name: item.name || item.fromName || source.fromName || '',
+        chatName: item.chatName || item.fromChat || source.fromChat || '',
+      };
+      return this.sendEvent(roomId, { kind: 'message', message: this._makeMessage((item.text || '').trim(), null, extra) });
+    }));
   }
 
   async sendEvent(roomId, event, local = true) {
@@ -687,13 +722,55 @@ export class SegmentClient {
   }
 
   async _uploadBlob(bytes) {
-    const response = await fetch('/api/files', {
-      method: 'POST', credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/octet-stream' }, body: bytes,
+    const created = await fetch('/api/files/uploads', {
+      method: 'POST', credentials: 'same-origin', headers: { 'Upload-Length': String(bytes.length) },
     });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.id) throw new Error(data.error || 'UPLOAD_FAILED');
-    return data.id;
+    const session = await created.json().catch(() => ({}));
+    if (!created.ok || !session.uploadId) {
+      const legacy = await fetch('/api/files', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/octet-stream' }, body: bytes });
+      const result = await legacy.json().catch(() => ({}));
+      if (!legacy.ok || !result.id) throw new Error(result.error || session.error || 'UPLOAD_FAILED');
+      return result.id;
+    }
+    const controller = new AbortController();
+    this._activeUploads.set(session.uploadId, controller);
+    const chunkSize = 1024 * 1024;
+    let offset = Number(session.offset) || 0;
+    try {
+      while (offset < bytes.length) {
+        const end = Math.min(bytes.length, offset + chunkSize);
+        let response; let attempts = 0;
+        while (attempts++ < 3) {
+          try {
+            response = await fetch(`/api/files/uploads/${session.uploadId}`, {
+              method: 'PATCH', credentials: 'same-origin', signal: controller.signal,
+              headers: { 'Content-Type': 'application/octet-stream', 'Upload-Offset': String(offset) }, body: bytes.slice(offset, end),
+            });
+            if (response.ok) break;
+            const failure = await response.json().catch(() => ({}));
+            if (response.status === 409 && Number.isFinite(failure.offset)) {
+              offset = failure.offset;
+              response = { ok: true, json: async () => ({ offset }) };
+              break;
+            }
+          } catch (error) { if (error.name === 'AbortError') throw error; }
+          if (attempts < 3) await new Promise((resolve) => setTimeout(resolve, attempts * 350));
+        }
+        if (!response?.ok) throw new Error('UPLOAD_FAILED');
+        const progress = await response.json(); offset = progress.offset;
+        this._emit('upload', { id: session.uploadId, loaded: offset, total: bytes.length, progress: offset / bytes.length });
+      }
+      const completed = await fetch(`/api/files/uploads/${session.uploadId}/complete`, { method: 'POST', credentials: 'same-origin', signal: controller.signal });
+      const result = await completed.json().catch(() => ({}));
+      if (!completed.ok || !result.id) throw new Error(result.error || 'UPLOAD_FAILED');
+      this._emit('upload', { id: session.uploadId, loaded: bytes.length, total: bytes.length, progress: 1, complete: true });
+      return result.id;
+    } finally { this._activeUploads.delete(session.uploadId); }
+  }
+
+  cancelUpload(id) {
+    this._activeUploads.get(id)?.abort();
+    fetch(`/api/files/uploads/${id}`, { method: 'DELETE', credentials: 'same-origin' }).catch(() => {});
   }
 
   async _downloadBlob(fileId) {
@@ -723,12 +800,12 @@ export class SegmentClient {
   // inline data url for the same blob: url the receiver will use.
   async _attachmentToWire(att) {
     const wire = { ...att };
-    if (att.data) {
+    if (att.data && !att.blob) {
       const { ref, url } = await this._sealDataUrl(att.data);
       wire.blob = ref; delete wire.data;
       att.blob = ref; att.data = url;
     }
-    if (att.poster) {
+    if (att.poster && !att.posterBlob) {
       const { ref, url } = await this._sealDataUrl(att.poster);
       wire.posterBlob = ref; delete wire.poster;
       att.posterBlob = ref; att.poster = url;
@@ -781,6 +858,23 @@ export class SegmentClient {
   }
 
   _historyKey(roomId) { return this.historyKeys.get(roomId) || null; }
+  _historyKeyId(key) { return Array.from(key || []).slice(0, 8).map((value) => value.toString(16).padStart(2, '0')).join(''); }
+  _historyKeyFor(roomId, keyId = '') {
+    const current = this._historyKey(roomId);
+    if (!keyId || this._historyKeyId(current) === keyId) return current;
+    return (this.historyKeyArchive.get(roomId) || []).find((key) => this._historyKeyId(key) === keyId) || null;
+  }
+  _installRotatedHistoryKey(roomId, key) {
+    if (!Array.isArray(key) || key.length !== 32) return false;
+    const current = this._historyKey(roomId);
+    if (current && this._historyKeyId(current) !== this._historyKeyId(key)) {
+      const archive = this.historyKeyArchive.get(roomId) || [];
+      if (!archive.some((old) => this._historyKeyId(old) === this._historyKeyId(current))) archive.push(current);
+      this.historyKeyArchive.set(roomId, archive.slice(-12));
+      this.storage.setHistoryKeyArchive?.(Object.fromEntries(this.historyKeyArchive));
+    }
+    this.historyKeys.set(roomId, key); this._persistHistoryKeys(); return true;
+  }
 
   _seedHistoryKey(roomId) {
     if (!this.historyKeys.has(roomId)) {
@@ -810,6 +904,7 @@ export class SegmentClient {
   historyKeysExport() {
     return Object.fromEntries(this.historyKeys);
   }
+  historyKeyArchiveExport() { return Object.fromEntries(this.historyKeyArchive); }
 
   // Persist one event to server history, encrypted to the room's history key.
   async _storeToHistory(roomId, event) {
@@ -820,7 +915,7 @@ export class SegmentClient {
     if (clean.message) delete clean.message.status;
     try {
       const { iv, ct } = await sealBytes(key, new TextEncoder().encode(JSON.stringify(clean)));
-      const { seq } = await this._roomsApi('POST', '/api/rooms/history', { roomId, eventId: event.eventId, iv: this._b64(iv), ct: this._b64(ct) });
+      const { seq } = await this._roomsApi('POST', '/api/rooms/history', { roomId, eventId: event.eventId, keyId: this._historyKeyId(key), iv: this._b64(iv), ct: this._b64(ct) });
       // Remember where this message lives so deleting it can erase it for good.
       const local = event.message?.id ? this._messageById(roomId, event.message.id) : null;
       if (local && seq) local.seq = seq;
@@ -868,10 +963,15 @@ export class SegmentClient {
         for (const env of page) {
           after = Math.max(after, Number(env.seq) || 0);
           let event;
-          try {
-            const plain = await openBytes(key, this._unb64(env.iv), this._unb64(env.ct));
-            event = JSON.parse(new TextDecoder().decode(plain));
-          } catch { continue; }
+          const preferred = this._historyKeyFor(roomId, env.keyId);
+          const candidates = env.keyId ? [preferred] : [preferred, ...(this.historyKeyArchive.get(roomId) || [])];
+          for (const envelopeKey of candidates.filter(Boolean)) {
+            try {
+              const plain = await openBytes(envelopeKey, this._unb64(env.iv), this._unb64(env.ct));
+              event = JSON.parse(new TextDecoder().decode(plain)); break;
+            } catch {}
+          }
+          if (!event) continue;
           const id = event?.message?.id;
           if (id) {
             const local = this._messageById(roomId, id);
@@ -977,6 +1077,14 @@ export class SegmentClient {
     } catch {}
   }
 
+  async _rotateRoomHistoryKey(roomId) {
+    const chat = this.chatById(roomId);
+    if (!chat || chat.ownerId !== this.self.id || !this._historyKey(roomId) || this.ws?.readyState !== 1) return;
+    const key = Array.from(randomFileKey());
+    const delivered = await this.sendEvent(roomId, { kind: 'history-key-rotate', key }, false);
+    if (delivered) this._installRotatedHistoryKey(roomId, key);
+  }
+
   async _onCipher(msg) {
     const p = this.peers.get(msg.from);
     if (!p) return;
@@ -1043,6 +1151,10 @@ export class SegmentClient {
 
       case MessageType.HistoryKeyShare:
         await this._onHistoryKeyShare(msg.from, msg.room, msg.box);
+        break;
+
+      case MessageType.RoomMembersChanged:
+        await this._rotateRoomHistoryKey(msg.room);
         break;
 
       case MessageType.Ack: {
@@ -1178,9 +1290,22 @@ export class SegmentClient {
       for (const id of event.ids || []) {
         const receiptMessage = this._messageById(roomId, id);
         if (!receiptMessage || receiptMessage.name !== this.self.name) continue;
+        const by = author.username || author.name || '';
+        if (by) {
+          receiptMessage.receipts ||= {};
+          receiptMessage.receipts[by] = event.state;
+        }
         if ((rank[event.state] || 0) > (rank[receiptMessage.status] || 0)) { receiptMessage.status = event.state; changed = true; }
+        else if (by) changed = true;
       }
       if (changed) this._refreshRoom(roomId);
+      return;
+    }
+    if (event.kind === 'history-key-rotate') {
+      if (this._installRotatedHistoryKey(roomId, event.key)) {
+        this._backfilled.delete(roomId);
+        this._backfillRoom(roomId);
+      }
       return;
     }
 
