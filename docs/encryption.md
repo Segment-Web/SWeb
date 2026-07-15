@@ -2,15 +2,15 @@
 
 Segment Secure Layer is an experimental end-to-end encryption protocol built with standard WebCrypto primitives.
 
-> This is a working prototype and has not received an independent security audit. Do not treat it as production-grade cryptography.
+> This implementation has not received an independent security audit. Do not treat it as production-grade cryptography.
 
 ## Goals
 
-- Keep plaintext messages away from the relay server.
-- Provide a reusable browser and Node implementation.
-- Provide forward secrecy for message chains.
+- Keep plaintext private messages and attachments away from the server.
+- Provide forward secrecy for live message chains.
 - Provide post-compromise recovery through a Double Ratchet design.
 - Support asynchronous session setup with signed and one-time prekeys.
+- Preserve encrypted room history across reloads and authorized devices.
 
 ## Primitives
 
@@ -21,33 +21,37 @@ Segment Secure Layer is an experimental end-to-end encryption protocol built wit
 
 No custom cryptographic primitive is implemented.
 
-## Session setup
+## Direct sessions
 
-Each account publishes an identity key, a signed prekey and a set of one-time prekeys. The initiator verifies the signed prekey, consumes one one-time prekey and derives an X3DH-style shared secret. The first encrypted message carries the public handshake header required by the recipient.
+Each account publishes an identity key, a signed prekey and one-time prekeys. The initiator verifies the signed prekey, consumes a one-time prekey and derives an X3DH-style shared secret. Direct peer sessions then use root and chain keys. Every message advances its sending chain, direction changes mix in a new ECDH result, and skipped keys support limited out-of-order delivery.
 
-## Double Ratchet
+## Live room messages
 
-Direct peer channels use root and chain keys. Every message advances its sending chain. Direction changes mix in a new ECDH result. Skipped message keys allow limited out-of-order delivery.
+Each sender owns a sender-key chain for group traffic. Sender-key state is delivered only through encrypted direct sessions. Membership-scoped relay checks prevent non-members from receiving private-room frames.
 
-## Group messages
+## Durable history
 
-Each sender owns a sender-key chain. Sender-key state is shared only through encrypted direct sessions. Membership changes rotate room key material so a removed participant cannot decrypt future messages.
+Each room has a separate AES-256-GCM history key. Clients encrypt durable events before storing opaque `{ roomId, seq, eventId, iv, ct }` envelopes on the server. Stable event identifiers make retries idempotent.
 
-## Post-quantum extension point
+Private-room history keys are stored on the device and shared with another authorized device through an encrypted direct session. Private invitation links place the key in the URL fragment, which is not sent in HTTP requests. A newly signed-in device still needs an online authorized member or an invitation containing the key; there is no server-held recovery key.
 
-The code defines an optional KEM interface for a future hybrid handshake. No real ML-KEM implementation is currently bundled because WebCrypto does not expose one. The mock KEM used by the self-test validates integration plumbing only and provides no security.
+Public channels intentionally expose a durable public history key so any visitor can decrypt public posts. This does not weaken private-room key handling, but public channel history must not be considered confidential.
+
+## Attachments
+
+Clients encrypt files before upload and store only opaque ciphertext in the server file store. The message envelope contains the encrypted file reference and key material needed by authorized clients. The server can observe blob sizes and access timing but not plaintext file contents.
 
 ## Server visibility
 
-The relay receives encrypted envelopes rather than plaintext message bodies. It still observes account, room, membership, IP, timing and typing metadata. Authentication and public prekey records are also server-side.
+The server observes accounts, public prekeys, room identifiers, membership, IP addresses, timing, typing events, encrypted-history sizes and encrypted-attachment sizes. TLS/HTTPS remains required in addition to end-to-end encryption.
 
 ## Current limitations
 
-- No independent audit.
-- No persisted server-side message history.
-- No multi-device key model.
-- No recovery or key-verification interface.
-- No real post-quantum KEM.
+- No independent security audit.
+- No user-facing key verification or safety-number interface.
+- No offline encrypted key backup or recovery flow.
+- No complete multi-device account key-management model.
+- No real post-quantum KEM; the test KEM validates integration plumbing only.
 
 ## Testing
 
@@ -57,4 +61,4 @@ Run:
 npm run check
 ```
 
-The self-test covers direct sessions, sender keys, X3DH-style setup, Double Ratchet direction changes, out-of-order messages, signed-prekey rejection and hybrid KEM plumbing.
+The suite covers direct sessions, sender keys, signed-prekey validation, Double Ratchet direction changes, out-of-order delivery, room-scoped relay, encrypted history replay, attachment encryption and reliable retry behavior.

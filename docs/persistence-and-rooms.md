@@ -1,103 +1,41 @@
-# Persistence, rooms and key management design
+# Persistence and rooms
 
-Status: draft / decision record. No production behaviour depends on this document
-yet. It exists because both "save message history" and "real channels/chats with
-membership" require a deliberate key-management design before any ciphertext is
-stored or any relay is scoped per room. The current invariant is explicit:
+Status: implemented in `v0.0.1`.
 
-> Do not add naive offline ciphertext replay. Current sender-key and session
-> regeneration requires a deliberate replay/key design first.
+## Room model
 
-## 1. Why the two features share one problem
+PostgreSQL stores first-class rooms and their access rules:
 
-Segment is end-to-end encrypted. The server never sees plaintext. Group rooms use
-**per-sender sender keys**; direct sessions use X3DH + a Double Ratchet. Today a
-single global sender key is regenerated whenever any participant leaves
-(`SegmentClient._onPeerLeft`). Two consequences:
+- `channel` rooms can be public and resolved through `/c/<slug>`.
+- `chat` and `dm` rooms are private and membership-scoped.
+- Owners can create invitation links; `/j/<token>` redeems server-side membership.
+- `/@<username>` resolves a public account profile.
+- Public seeded rooms are available to every authenticated account.
 
-1. **History cannot be replayed naively.** A returning or new device has fresh
-   keys and cannot decrypt ciphertext produced under a previous sender key. Storing
-   envelopes on the server does not make them readable again.
-2. **Per-room membership changes the key model.** Once a room is a real entity with
-   its own member set, the sender key must rotate per room on that room's
-   membership changes, not globally. Otherwise a member of room A rotating on leave
-   silently breaks room B.
+The WebSocket relay checks room membership before forwarding encrypted messages, typing events or key-sharing requests. An owner deleting a private room removes its stored history; a non-owner leaving removes only their membership.
 
-So the storage question ("where do bytes live") is secondary. The primary question
-is **which key decrypts a given envelope, and how does an authorised device obtain
-that key**.
+## Encrypted history
 
-## 2. Key model options for history
+The server assigns a monotonically increasing sequence to opaque encrypted envelopes. Each client event has a stable identifier, so retrying the same event returns the original sequence instead of creating a duplicate.
 
-### Option B1 — per-room history key, escrowed to members
-- Each room has a symmetric `historyKey` (AES-256-GCM) known only to current
-  members, distinct from the live sender/ratchet keys.
-- On send, the client additionally encrypts the message body to `historyKey` and
-  uploads that envelope to the server for storage.
-- On join / new device, the client obtains `historyKey` from another online member
-  over the existing authenticated pairwise ratchet (the same channel already used
-  for `KeyShare`).
-- Rotation: on member removal, rotate `historyKey`; older history stays readable to
-  members who held the previous key, new members see only history from their join
-  point forward (forward-secrecy-friendly default).
-- Server stores opaque `{roomId, seq, iv, ct}` and never holds `historyKey`.
+History is paginated and replayed by the client after reload or reconnect. Messages, edits, reactions, poll votes, pins, receipts and deletions use the same durable event stream.
 
-Trade-off: requires at least one online member (or an offline escrow, see B3) for a
-brand-new device to bootstrap history.
+Private rooms default to history from the member's join point. The owner can irreversibly enable full history for all members. Clearing history records a per-member cutoff and does not delete other members' history.
 
-### Option B2 — device-local only (no server history)
-- No server storage. Each device keeps its own decrypted history in IndexedDB.
-- Zero key work, zero server cost, server stays fully blind.
-- No multi-device sync; cache clear loses history.
-- Recommended as the immediate UX win while B1 is built.
+## History keys
 
-### Option B3 — key backup ("recovery key")
-- User holds a high-entropy recovery secret (shown once, à la Signal PIN / Element
-  key backup). `historyKey`s are wrapped under a key derived from it and stored
-  server-side as opaque blobs.
-- Lets a new device with no online peers restore history.
-- Adds a real recovery UX and the risk surface of a server-side (encrypted) backup.
-- Defer until after B1.
+Private-room history uses a symmetric key held by authorized clients, never by the server. The key survives same-device reloads in local client storage. Other authorized devices can receive it through an encrypted direct session. Private invitation URLs carry it in the fragment (`#k=...`), which browsers do not send to the web server.
 
-## 3. Recommended sequence
+Public channels use a durable public history key. The channel owner publishes the key, while seeded public rooms receive one during server initialization. Public channel content is therefore persistent and readable without server-side plaintext storage.
 
-1. **B2 now** — device-local history. Independent of everything below.
-2. **Rooms as entities** — membership, invites, links (does not require reading
-   plaintext; see §4). Ships without touching the sender-key crypto by keeping the
-   relay membership-scoped but otherwise unchanged.
-3. **Per-room sender-key rotation** — move rotation from global to per-room on that
-   room's membership events. Gated by this document.
-4. **B1** — per-room `historyKey` + server envelope store.
-5. **B3** — optional recovery backup.
+There is currently no offline recovery-key service. A fresh device needs an online room member or a private invitation containing the history key.
 
-## 4. Rooms as entities — what does NOT need the key design
+## File storage
 
-Making channels/chats first-class does not require the server to read plaintext:
+The browser encrypts attachment bytes before upload. The server stores opaque, content-addressed blobs on the persistent application volume and returns a reference used by encrypted message history. Identical ciphertext uploads are deduplicated by digest; plaintext equality is not exposed because encryption uses fresh nonces.
 
-- `rooms(id, type, slug, title, owner_id, created_at)` — a `channel` is public and
-  discoverable by slug; a `chat` / `dm` is private and reached by invite.
-- `room_members(room_id, user_id, role, joined_at)` — authoritative membership.
-- `room_invites(token_hash, room_id, expires_at, max_uses, uses)` — invite links.
-- The relay filters `Cipher` / `Typing` delivery to sockets whose user is a member
-  of `message.room`, instead of broadcasting to everyone joined.
+`FILE_TTL_MS=0` keeps blobs indefinitely. Operators may set a retention period, but must understand that expired blobs make old attachment references unavailable. Database and file-volume backups must be restored together.
 
-This is safe to ship first and is the prerequisite for links. The only crypto-
-sensitive follow-up is step 3 (per-room rotation), which this document gates.
+## Trust boundary
 
-## 5. Link scheme
-
-- `/@<username>` — user profile. `username` is already unique.
-- `/c/<slug>` — public channel.
-- `/j/<token>` — one invite redemption into a private chat/dm/channel.
-
-Resolution is a server endpoint returning the target entity (or 404). Links never
-carry secrets in query strings; the invite token is a path segment redeemed via
-POST, then discarded client-side.
-
-## 6. File storage
-
-Chosen interim: **VPS disk** behind an authenticated endpoint, storing opaque
-client-encrypted blobs. Constraints and future migration (Cloudflare R2, presigned
-uploads, content-hash dedup, TTL expiry) are tracked in `PROJECT_CONTEXT.local.md`.
-Because bodies are client-encrypted, the store is a blind blob bucket regardless of
-backend, so moving disk → R2 later is a backend swap, not a protocol change.
+The server can authorize accounts, route rooms, order ciphertext and store encrypted data. It cannot decrypt private message bodies or attachment contents, but it still observes metadata including membership, timing, IP addresses and payload sizes.

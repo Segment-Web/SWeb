@@ -1,44 +1,51 @@
 # Architecture
 
-Segment is a small npm-workspaces monorepo organized into four layers.
+Segment is an npm-workspaces monorepo split into a browser UI, reusable client core, shared protocol and cryptography packages, and a Node.js server.
 
 ```text
-apps/web
-   ↓ commands / ↑ updates
-packages/core
-   ↓ shared types
-packages/protocol
-
-apps/server ← WebSocket → packages/core
-packages/crypto is used by the client core
+apps/web -> packages/core -> packages/protocol
+                  |
+                  +-> packages/crypto
+                  |
+                  +-> HTTP and WebSocket -> apps/server -> PostgreSQL
+                                                     |
+                                                     +-> encrypted blob storage
 ```
 
 ## Packages
 
 | Path | Responsibility |
 | --- | --- |
-| `packages/protocol` | Platform-independent message types, rooms, limits and protocol version. |
-| `packages/core` | Connection lifecycle, client state, update events and encryption handshake. No DOM dependency. |
-| `packages/crypto` | Segment Secure Layer: the experimental E2EE implementation. |
-| `apps/server` | Static file delivery, account API and blind WebSocket ciphertext relay. |
-| `apps/web` | Thin browser UI built from independent panels. |
+| `packages/protocol` | Platform-independent message types, rooms, limits and protocol validation. |
+| `packages/core` | Connection lifecycle, client state, reliable delivery, history synchronization and encryption orchestration. |
+| `packages/crypto` | Segment Secure Layer direct sessions, sender keys and history/file encryption helpers. |
+| `apps/server` | Static delivery, authentication, room membership, encrypted history, encrypted files and WebSocket relay. |
+| `apps/web` | Desktop browser UI built from independent panels. |
 
-Node resolves shared packages through npm workspaces. The browser resolves the same source files through the import map in `apps/web/public/index.html`; the server exposes them under `/shared/`.
+Node resolves shared packages through npm workspaces. The browser resolves the same sources through the import map in `apps/web/public/index.html`; the server exposes them under `/shared/`.
 
-## Core API
+## Client core
 
-`@segment/core` exposes an event-based client. Important events include `connection`, `identity`, `status`, `chats`, `room`, `append` and `typing`. The UI issues commands such as `connect`, `openRoom`, `send` and `notifyTyping`.
+`@segment/core` exposes an event-based client used by the browser UI. It owns connection state, the reliable outbox, room state, encrypted history backfill, attachment transport and update application. Platform storage is supplied through an adapter so future clients can reuse the core without browser dependencies.
 
-Platform storage is injected through an adapter, allowing future clients to reuse the core without depending on browser APIs.
+Every durable client event has a stable identifier. The server acknowledges stored events, and the client retries unacknowledged work without creating duplicate history entries.
+
+## Rooms and history
+
+PostgreSQL is authoritative for accounts, sessions, rooms, memberships, invitations and ordered encrypted history envelopes. The WebSocket relay delivers room traffic only to authorized members. HTTP history pagination provides reload and reconnect recovery.
+
+Clients encrypt durable room updates with a per-room history key before upload. Private-room keys are shared between authorized clients through encrypted direct sessions or carried in the URL fragment of a private invitation. Public channels publish a durable public history key because their content is intentionally readable by any visitor.
+
+## Attachments
+
+Clients encrypt attachment bytes before upload. The server stores opaque blobs in the persistent `segment_data` volume and returns content-addressed references. Message history contains only encrypted metadata and blob references; clients fetch and decrypt bytes when rendering media or documents.
 
 ## Panel workspace
 
-A panel implements `{ id, title, mount(body), weight? }` and registers with the panel registry. The workspace stores a split tree rather than a fixed grid. Dropping a panel on an edge creates a split; dropping it in the center swaps panels. Dividers resize adjacent panels in both directions.
-
-This registry is the foundation for future user-installed modifications. Extensions that change shared chat behavior will also require protocol-level capability negotiation.
+A panel implements `{ id, title, mount(body), weight? }` and registers with the panel registry. The workspace stores a split tree rather than a fixed grid. Dropping a panel on an edge creates a split, dropping it in the center swaps panels, and dividers resize adjacent panels.
 
 ## Server trust boundary
 
-The server authenticates accounts, serves public prekeys and relays encrypted envelopes. It does not receive plaintext chat messages. It still sees transport metadata and must not be described as metadata-private.
+The server never needs plaintext private message bodies or plaintext attachment bytes. It does authenticate users and observe transport metadata, room identifiers, membership, IP addresses, timing and typing events. Segment must not be described as metadata-private.
 
-The current server does not persist message history. A future storage layer must store encrypted envelopes only and must define safe replay and key-rotation behavior before being enabled.
+The encryption protocol is unaudited. See [docs/encryption.md](docs/encryption.md) for the implemented key model and current limitations.
