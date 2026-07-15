@@ -183,6 +183,7 @@ export function chatRoomPanel(client) {
 
       const q = (name) => body.querySelector(`[data-el="${name}"]`);
       const roomEl = body.querySelector('.room');
+      const composerEl = body.querySelector('.composer');
       const feed = q('feed');
       const avatarEl = q('avatar');
       const titleEl = q('title');
@@ -1206,6 +1207,14 @@ export function chatRoomPanel(client) {
         acUpdate();
       });
       input.addEventListener('blur', () => setTimeout(acClose, 120));
+      input.addEventListener('focus', () => composerEl.classList.add('format-open'));
+      input.addEventListener('blur', () => {
+        setTimeout(() => {
+          if (document.activeElement !== input && !formatBar.contains(document.activeElement)) {
+            composerEl.classList.remove('format-open');
+          }
+        }, 90);
+      });
       for (const btn of formatBar.querySelectorAll('.fmt-btn')) {
         btn.addEventListener('mousedown', (e) => {
           e.preventDefault();
