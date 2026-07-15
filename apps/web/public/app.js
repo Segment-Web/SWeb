@@ -221,7 +221,7 @@ lightbox.innerHTML = `
     </div>
   </div>
   <button class="lightbox-nav next" title="Вперёд">${ICON_NEXT}</button>
-  <footer class="lightbox-bottom"><div class="lightbox-caption"></div><div class="lightbox-thumbs"></div><div class="lightbox-help">Колесо — масштаб · двойной клик — приблизить · стрелки — навигация</div></footer>`;
+  <footer class="lightbox-bottom"><div class="lightbox-caption"></div><div class="lightbox-thumbs"></div><div class="lightbox-help">Ctrl + колесо — масштаб · двойной клик — приблизить · стрелки — навигация</div></footer>`;
 document.body.appendChild(lightbox);
 const lightboxImg = lightbox.querySelector('.lightbox-img');
 const lightboxStage = lightbox.querySelector('.lightbox-stage');
@@ -342,6 +342,7 @@ const setZoom = (value) => { zoom = Math.max(.25, Math.min(8, value)); if (Math.
 lightboxImg.ondblclick = (e) => { e.stopPropagation(); setZoom(zoom > 1 ? 1 : 2.5); };
 lightboxStage.addEventListener('wheel', (e) => {
   e.preventDefault();
+  if (!e.ctrlKey && !e.metaKey) return;
   const prev = zoom;
   zoom = Math.max(.25, Math.min(8, zoom * Math.exp(-e.deltaY * .0018)));
   if (Math.abs(zoom - 1) < .015) zoom = 1;
