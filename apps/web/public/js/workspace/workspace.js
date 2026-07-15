@@ -230,7 +230,14 @@ export class Workspace {
 
     let dispose = mount(element.querySelector('.workspace-surface-body'), () => this.closeSurface(id));
     if (typeof dispose !== 'function') dispose = () => {};
-    this._surface = { id, sourceId, element, dispose, place };
+    const syncFromSource = () => {
+      if (!source.isConnected || this._surface?.element !== element) return;
+      width = clamp(source.getBoundingClientRect().width, minWidth, limit);
+      place();
+    };
+    const sourceResizeObserver = new ResizeObserver(syncFromSource);
+    sourceResizeObserver.observe(source);
+    this._surface = { id, sourceId, element, dispose, place, syncFromSource, sourceResizeObserver };
 
     element.querySelector('.workspace-surface-close').addEventListener('click', () => this.closeSurface(id));
     element.querySelector('.workspace-surface-resizer').addEventListener('pointerdown', (event) => {
@@ -267,10 +274,11 @@ export class Workspace {
     this._surface = null;
     this._surfaceResizeController?.abort();
     this._surfaceResizeController = null;
+    surface.sourceResizeObserver?.disconnect();
     surface.dispose?.();
     surface.element.classList.remove('is-open');
     surface.element.classList.add('is-closing');
-    setTimeout(() => surface.element.remove(), 180);
+    setTimeout(() => surface.element.remove(), 300);
     return true;
   }
 
@@ -584,6 +592,7 @@ export class Workspace {
       node.children[i + 1].weight = pairWeight * (1 - ratio);
       aEl.style.flex = `${node.children[i].weight / total} 1 0`;
       bEl.style.flex = `${node.children[i + 1].weight / total} 1 0`;
+      this._surface?.syncFromSource?.();
     };
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);

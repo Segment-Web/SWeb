@@ -185,7 +185,7 @@ export function profilePanel(client) {
           id: 'settings',
           sourceId: 'profile',
           minWidth: 320,
-          maxWidth: 620,
+          maxWidth: Number.POSITIVE_INFINITY,
           className: 'settings-surface',
           mount(settings, close) { renderSettings(settings, close); },
         });
