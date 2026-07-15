@@ -316,6 +316,7 @@ export function chatRoomPanel(client) {
       const acEl = q('autocomplete');
       const attachWrap = q('attachWrap');
       const attachMenu = q('attachMenu');
+      const pollAttachBtn = attachMenu.querySelector('[data-att="poll"]');
       const pollCompose = q('pollCompose');
       const pinnedManager = q('pinnedManager');
       const selectionQuote = q('selectionQuote');
@@ -529,7 +530,7 @@ export function chatRoomPanel(client) {
       const syncActions = () => {
         const hasContent = input.value.trim().length > 0 || pending.length > 0;
         sendBtn.classList.toggle('hidden', !hasContent);
-        recBtn.classList.toggle('hidden', hasContent || !!recSession);
+        recBtn.classList.toggle('hidden', hasContent || !!recSession || !!currentChat?.local);
       };
 
       const renderAttachDraft = () => {
@@ -1124,7 +1125,8 @@ export function chatRoomPanel(client) {
         statusEl.textContent = status.text;
         statusEl.classList.toggle('online', status.online);
         statusEl.classList.toggle('muted', !status.online);
-        input.placeholder = chat.local ? 'Заметка для себя...' : (chat.type === 'channel' ? 'Публикация в канал...' : 'Сообщение...');
+        input.placeholder = 'Сообщение...';
+        pollAttachBtn.classList.toggle('hidden', !!chat.local);
 
         renderFeed(feed, chat, messages, client.self.name, {
           ...feedOptions(),

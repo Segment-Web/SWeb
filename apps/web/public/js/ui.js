@@ -3,6 +3,8 @@
 
 import { esc, initials, previewOf, fmtSize } from './util.js';
 
+const revealedSpoilers = new Set();
+
 
 
 
@@ -401,8 +403,15 @@ export function renderMessage(feed, m, myName, options = {}) {
     });
   }
 
-  for (const sp of el.querySelectorAll('.spoiler')) {
-    sp.onclick = (e) => { e.stopPropagation(); sp.classList.add('revealed'); };
+  for (const [index, sp] of [...el.querySelectorAll('.spoiler')].entries()) {
+    const spoilerKey = `${m.id}:${index}`;
+    sp.classList.toggle('revealed', revealedSpoilers.has(spoilerKey));
+    sp.onclick = (e) => {
+      e.stopPropagation();
+      const revealed = sp.classList.toggle('revealed');
+      if (revealed) revealedSpoilers.add(spoilerKey);
+      else revealedSpoilers.delete(spoilerKey);
+    };
   }
 
 

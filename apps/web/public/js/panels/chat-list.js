@@ -353,7 +353,11 @@ export function chatListPanel(client) {
           selected,
           selectionMode,
           folderId,
-          onToggleSelect: (id) => { selected.has(id) ? selected.delete(id) : selected.add(id); render(); },
+          onToggleSelect: (id) => {
+            selected.has(id) ? selected.delete(id) : selected.add(id);
+            if (!selected.size) selectionMode = false;
+            render();
+          },
           onOpenMessage: openMessage,
           onSwipeArchive: (id) => {
             client.toggleArchive(id);
