@@ -6,7 +6,7 @@
 <title>Segment</title>
 <link rel="icon" type="image/png" href="/logo.png">
 <link rel="apple-touch-icon" href="/logo.png">
-<link rel="stylesheet" href="./styles.css?v=0.0.1-auth6">
+<link rel="stylesheet" href="./styles.css?v=0.0.2">
 
 <script type="importmap">
 {
@@ -67,7 +67,7 @@
   document.body.classList.toggle('desktop-required', !desktop);
   if (desktop) {
     document.getElementById('desktopOnlyGate')?.remove();
-    import('./app.js?v=0.0.1-auth5');
+    import('./app.js?v=0.0.2');
   } else {
     document.getElementById('gate')?.remove();
   }

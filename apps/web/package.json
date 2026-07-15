@@ -1,6 +1,6 @@
 {
   "name": "@segment/web",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Segment web client built with native ES modules.",
   "type": "module",
   "private": true,

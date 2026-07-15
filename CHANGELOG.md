@@ -2,6 +2,16 @@
 
 User-visible and technical changes are listed by release, newest first.
 
+## 0.0.2 — July 16, 2026
+
+- Added active session management and secure one-time device linking.
+- Improved message delivery recovery and encrypted history synchronization across devices.
+- Added resumable attachment uploads for interrupted transfers.
+- Improved settings with smooth full-height overlay panels that follow workspace resizing.
+- Refined interface controls and removed intrusive icon hover labels.
+- Fixed edge cases in rooms, shared history, attachments and message deletion.
+- Added structured forms for bug reports, feature requests and questions on GitHub.
+
 ## 0.0.1 — July 15, 2026
 
 - Added persistent chats, channels, message history and attachments.
