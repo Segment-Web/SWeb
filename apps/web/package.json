@@ -4,5 +4,9 @@
   "description": "Segment web client built with native ES modules.",
   "type": "module",
   "private": true,
-  "license": "AGPL-3.0-only"
+  "license": "AGPL-3.0-only",
+  "dependencies": {
+    "@segment/core": "workspace:*",
+    "@segment/protocol": "workspace:*"
+  }
 }

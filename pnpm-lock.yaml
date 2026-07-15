@@ -29,8 +29,22 @@ importers:
       ws:
         specifier: ^8.18.0
         version: 8.21.1
+    devDependencies:
+      '@segment/crypto':
+        specifier: workspace:*
+        version: link:../../packages/crypto
+      pg-mem:
+        specifier: ^3.0.14
+        version: 3.0.14
 
-  apps/web: {}
+  apps/web:
+    dependencies:
+      '@segment/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@segment/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
 
   packages/core:
     dependencies:
@@ -43,7 +57,11 @@ importers:
 
   packages/crypto: {}
 
-  packages/protocol: {}
+  packages/protocol:
+    devDependencies:
+      '@segment/crypto':
+        specifier: workspace:*
+        version: link:../crypto
 
 packages:
 
