@@ -115,6 +115,16 @@ export function chatRoomPanel(client) {
             <div class="attach-draft hidden" data-el="attachDraft"></div>
             <div class="autocomplete hidden" data-el="autocomplete"></div>
             <div class="composer-format" data-el="format">
+              <div class="fmt-group fmt-history" aria-label="История изменений">
+                <button type="button" class="fmt-btn" data-command="undo" title="Отменить · Ctrl+Z" aria-label="Отменить">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 7-5 5 5 5"/><path d="M20 17a7 7 0 0 0-7-7H4"/></svg>
+                </button>
+                <button type="button" class="fmt-btn" data-command="redo" title="Повторить · Ctrl+Y" aria-label="Повторить">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 7 5 5-5 5"/><path d="M4 17a7 7 0 0 1 7-7h9"/></svg>
+                </button>
+              </div>
+              <span class="fmt-divider" aria-hidden="true"></span>
+              <div class="fmt-group" aria-label="Форматирование текста">
               <button type="button" class="fmt-btn" data-fmt="B" title="Жирный · Ctrl+B"><b>B</b></button>
               <button type="button" class="fmt-btn" data-fmt="I" title="Курсив · Ctrl+I"><i>i</i></button>
               <button type="button" class="fmt-btn" data-fmt="S" title="Зачёркнутый · Ctrl+S"><s>S</s></button>
@@ -122,7 +132,13 @@ export function chatRoomPanel(client) {
               <button type="button" class="fmt-btn" data-fmt="SPOILER" title="Спойлер">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="2.5"/></svg>
               </button>
+              </div>
+              <span class="fmt-divider" aria-hidden="true"></span>
+              <div class="fmt-group">
+                <button type="button" class="fmt-btn fmt-clear" data-command="clear" title="Убрать форматирование" aria-label="Убрать форматирование">Aa</button>
+              </div>
             </div>
+            <div class="composer-main">
             <div class="composer-field">
               <div class="attach-wrap" data-el="attachWrap">
                 <button class="composer-tool" data-el="attach" title="Прикрепить" aria-label="Прикрепить">
@@ -152,6 +168,7 @@ export function chatRoomPanel(client) {
               <button class="composer-round primary hidden" data-el="send" title="Отправить" aria-label="Отправить">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2.5 11 13"/><path d="M21.5 2.5 15 21.5l-4-8.5-8.5-4z"/></svg>
               </button>
+            </div>
             </div>
             <div class="rec-bar hidden" data-el="recBar"></div>
             <div class="circle-rec hidden" data-el="circleRec"></div>
@@ -222,7 +239,7 @@ export function chatRoomPanel(client) {
       const syncFormatState = () => {
         const sel = window.getSelection();
         const node = sel && sel.rangeCount && input.contains(sel.anchorNode) ? sel.anchorNode : null;
-        for (const btn of formatBar.querySelectorAll('.fmt-btn')) {
+        for (const btn of formatBar.querySelectorAll('[data-fmt]')) {
           btn.classList.toggle('active', !!(node && fmtAncestor(node, btn.dataset.fmt)));
         }
       };
@@ -1190,11 +1207,26 @@ export function chatRoomPanel(client) {
       });
       input.addEventListener('blur', () => setTimeout(acClose, 120));
       for (const btn of formatBar.querySelectorAll('.fmt-btn')) {
-        btn.addEventListener('mousedown', (e) => { e.preventDefault(); applyFormat(btn.dataset.fmt); });
+        btn.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          if (btn.dataset.fmt) applyFormat(btn.dataset.fmt);
+          else if (btn.dataset.command === 'clear') {
+            input.focus();
+            document.execCommand('removeFormat');
+            input.dispatchEvent(new Event('input'));
+            syncFormatState();
+          } else if (btn.dataset.command) {
+            input.focus();
+            document.execCommand(btn.dataset.command);
+            input.dispatchEvent(new Event('input'));
+            syncFormatState();
+          }
+        });
       }
-      document.addEventListener('selectionchange', () => {
+      const syncComposerFormat = () => {
         if (document.activeElement === input) syncFormatState();
-      });
+      };
+      document.addEventListener('selectionchange', syncComposerFormat);
       feed.addEventListener('scroll', updateScrollDown, { passive: true });
       scrollDown.onclick = () => { awayCount = 0; scrollFeedToBottom(feed); updateScrollDown(); };
       replyCancel.onclick = () => setReply(null);
@@ -1369,6 +1401,7 @@ export function chatRoomPanel(client) {
         clearTimeout(holdTimer);
         document.removeEventListener('keydown', roomSearchShortcut);
         document.removeEventListener('selectionchange', syncSelectionQuote);
+        document.removeEventListener('selectionchange', syncComposerFormat);
         if (recSession) finishRecord(false);
       };
     },

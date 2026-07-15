@@ -1024,10 +1024,14 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
 
 .composer {
   position: relative;
-  display: flex; align-items: flex-end; gap: 6px;
-  padding: 7px 10px calc(8px + env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; align-items: stretch; gap: 5px;
+  padding: 6px 10px calc(8px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--stroke);
   background: var(--surface);
+}
+.composer-main {
+  display: flex; align-items: flex-end; gap: 6px;
+  min-width: 0;
 }
 .reply-draft {
   position: absolute; left: 14px; right: 14px; bottom: calc(100% + 6px);
@@ -1077,18 +1081,31 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
   border-radius: 4px; padding: 0 2px; color: var(--text);
 }
 .composer-format {
-  display: flex; align-items: center; gap: 2px;
-  padding: 2px 6px 4px; margin-bottom: 2px;
+  display: flex; align-items: center; gap: 5px;
+  min-height: 38px; padding: 3px 7px;
+  overflow-x: auto; overflow-y: hidden;
+  border: 1px solid var(--stroke); border-radius: 11px;
+  background: color-mix(in srgb, var(--surface2) 78%, transparent);
+  scrollbar-width: none;
 }
+.composer-format::-webkit-scrollbar { display: none; }
+.composer-format .fmt-group { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.composer-format .fmt-divider { width: 1px; height: 22px; flex: 0 0 auto; background: var(--stroke); }
 .composer-format .fmt-btn {
-  width: 30px; height: 28px; border: none; border-radius: 7px; cursor: pointer;
+  width: 32px; height: 30px; border: none; border-radius: 8px; cursor: pointer;
   background: transparent; color: var(--muted);
   font-size: 14px; line-height: 1; display: grid; place-items: center;
-  transition: background .12s, color .12s;
+  transition: background .12s, color .12s, transform .12s;
 }
 .composer-format .fmt-btn.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+.composer-format .fmt-btn.fmt-clear { width: 36px; font-size: 14px; font-weight: 600; letter-spacing: -.4px; }
 .composer-format .fmt-btn:hover { background: var(--surface3); color: var(--text); }
-.composer-format .fmt-btn.active { background: color-mix(in srgb, var(--accent) 24%, transparent); color: var(--accent); }
+.composer-format .fmt-btn:active { transform: scale(.94); }
+.composer-format .fmt-btn.active {
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface2));
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 42%, transparent);
+}
 .room.is-empty .composer-format { display: none; }
 .composer-tool {
   width: 34px; height: 34px; border-radius: 50%; border: none; cursor: pointer;
@@ -1362,6 +1379,7 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
 
 @container panel (max-width: 260px) {
   .composer { gap: 4px; padding: 6px 6px calc(7px + env(safe-area-inset-bottom)); }
+  .composer-main { gap: 4px; }
   .composer-round { width: 38px; height: 38px; }
   .composer-tool[data-el="attach"] { display: none; }
 }
