@@ -58,11 +58,19 @@ document.addEventListener('keydown', (e) => {
     if (!typing) client.closeRoom();
     return;
   }
-  if (typing || !['ArrowUp', 'ArrowDown'].includes(e.key)) return;
+  // Switch chats: Ctrl+Tab / Ctrl+PageDown / Alt+↓ (next), Ctrl+Shift+Tab / Ctrl+PageUp / Alt+↑ (previous).
+  const ctrl = e.ctrlKey || e.metaKey;
+  let dir = 0;
+  if (!typing && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) dir = e.key === 'ArrowDown' ? 1 : -1;
+  else if (e.altKey && e.key === 'ArrowDown') dir = 1;
+  else if (e.altKey && e.key === 'ArrowUp') dir = -1;
+  else if (ctrl && (e.key === 'Tab' || e.key === 'PageDown')) dir = e.shiftKey ? -1 : 1;
+  else if (ctrl && (e.key === 'PageUp')) dir = -1;
+  if (!dir) return;
   const visible = [...document.querySelectorAll('.panel[data-id="chat-list"] .chat-item[data-room]')];
   if (!visible.length) return;
   const current = visible.findIndex((el) => el.dataset.room === client.currentRoom);
-  const next = e.key === 'ArrowDown' ? Math.min(visible.length - 1, current + 1) : Math.max(0, current < 0 ? 0 : current - 1);
+  const next = dir === 1 ? Math.min(visible.length - 1, current + 1) : Math.max(0, current < 0 ? 0 : current - 1);
   e.preventDefault(); client.openRoom(visible[next].dataset.room); visible[next].scrollIntoView({ block: 'nearest' });
 });
 

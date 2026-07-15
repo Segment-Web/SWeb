@@ -1084,6 +1084,12 @@ export function chatRoomPanel(client) {
       roomSearchInput.onkeydown = (e) => { if (e.key === 'Enter') updateRoomSearch(e.shiftKey ? -1 : 1); else if (e.key === 'Escape') closeRoomSearch(); };
       const roomSearchShortcut = (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && currentChat) { e.preventDefault(); openRoomSearch(); } };
       document.addEventListener('keydown', roomSearchShortcut);
+      const attachShortcut = (e) => {
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'o' && currentChat) {
+          e.preventDefault(); fileInput.accept = ''; fileInput.click();
+        }
+      };
+      document.addEventListener('keydown', attachShortcut);
 
 
       let attachHideTimer = null;
@@ -1222,6 +1228,8 @@ export function chatRoomPanel(client) {
           input.value = '';
           delete input.dataset.editing;
           syncActions();
+        } else if (e.key === 'Escape' && replyTo) {
+          e.stopPropagation(); setReply(null);
         } else client.notifyTyping();
       };
       roomEl.addEventListener('pointerdown', (e) => {
