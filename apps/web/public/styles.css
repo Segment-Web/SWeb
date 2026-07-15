@@ -1936,7 +1936,7 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
   width: 68px; height: 68px; border-radius: 50%; border: none; cursor: pointer;
   display: grid; place-items: center;
   background: rgba(0, 0, 0, .5); color: #fff;
-  opacity: 0; transition: opacity .2s; pointer-events: none;
+  z-index: 4; opacity: 0; transition: opacity .2s; pointer-events: none;
 }
 .vplayer-center svg { width: 30px; height: 30px; margin-left: 3px; }
 .vplayer.paused .vplayer-center { opacity: 1; pointer-events: auto; }
@@ -1945,7 +1945,7 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
   display: flex; align-items: center; gap: 10px;
   padding: 18px 14px 10px;
   background: linear-gradient(transparent, rgba(0, 0, 0, .7));
-  opacity: 0; transition: opacity .2s;
+  z-index: 5; opacity: 0; transition: opacity .2s;
 }
 .vplayer:hover .vplayer-bar, .vplayer.paused .vplayer-bar { opacity: 1; }
 .vplayer-bar button {
@@ -1955,9 +1955,13 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
 .vplayer-bar button:hover { color: var(--accent); }
 .vplayer-volume { width: 72px; height: 4px; accent-color: var(--accent); cursor: pointer; }
 .vplayer-speed {
-  height: 28px; padding: 0 5px; border: 0; border-radius: 7px;
-  background: rgba(255,255,255,.1); color: #fff; font: inherit; font-size: 12px; cursor: pointer;
+  appearance: none; width: 54px; height: 28px; padding: 0 8px;
+  border: 1px solid rgba(255,255,255,.1); border-radius: 999px;
+  background: rgba(255,255,255,.08); color: #fff;
+  font: inherit; font-size: 12px; font-weight: 600; text-align: center; cursor: pointer;
+  transition: background .14s, border-color .14s;
 }
+.vplayer-speed:hover, .vplayer-speed:focus { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.18); outline:none; }
 .vplayer-speed option { background: #141b24; color: #fff; }
 .vplayer-cur, .vplayer-dur { color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; min-width: 34px; }
 .vplayer-dur { text-align: right; }
@@ -2119,7 +2123,7 @@ body.media-open { overflow: hidden; }
 .lightbox-tools { padding:3px; border-radius:12px; background:rgba(17,23,30,.58); backdrop-filter:blur(10px); }
 .lightbox-title { max-width:36vw; text-shadow:0 1px 4px rgba(0,0,0,.7); }
 .lightbox-stage {
-  position:relative; width:calc(100vw - 160px); height:calc(100vh - 130px);
+  position:fixed; inset:0; width:100vw; height:100vh;
   max-width:none; max-height:none; display:flex; align-items:center; justify-content:center;
   overflow:hidden; border-radius:0;
 }
@@ -2128,7 +2132,7 @@ body.media-open { overflow: hidden; }
   max-width:100%; max-height:100%; object-fit:contain;
   border-radius:3px; background:transparent; box-shadow:0 10px 46px rgba(0,0,0,.34);
 }
-.lightbox .vplayer { display:flex; align-items:center; justify-content:center; max-width:100%; max-height:100%; }
+.lightbox .vplayer { display:flex; align-items:center; justify-content:center; max-width:100%; max-height:100%; overflow:visible; }
 .lightbox .vplayer.hidden { display:none; }
 .lightbox .vplayer-video { display:block; width:auto; height:auto; max-width:100%; max-height:calc(100vh - 130px); }
 .lightbox-nav { position:fixed; top:50%; transform:translateY(-50%); width:44px; height:58px; border-radius:12px; background:rgba(17,23,30,.46); backdrop-filter:blur(8px); }
@@ -2148,7 +2152,7 @@ body.media-open { overflow: hidden; }
   .lightbox { display:flex; }
   .lightbox-top { height:54px; padding:7px 8px 7px 12px; }
   .lightbox-title { max-width:42vw; }
-  .lightbox-stage { width:calc(100vw - 76px); height:calc(100vh - 106px); }
+  .lightbox-stage { width:100vw; height:100vh; }
   .lightbox-nav { width:34px; height:48px; }
   .lightbox-nav.prev { left:4px; } .lightbox-nav.next { right:4px; }
   .lightbox-bottom { display:flex; min-height:52px; padding:7px 9px; }

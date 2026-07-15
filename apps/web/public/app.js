@@ -245,6 +245,7 @@ const vMuteBtn = lightbox.querySelector('.vplayer-mute');
 const vVolume = lightbox.querySelector('.vplayer-volume');
 const vSpeed = lightbox.querySelector('.vplayer-speed');
 const vPipBtn = lightbox.querySelector('.vplayer-pip');
+let restoreAfterPip = false;
 const vFullBtn = lightbox.querySelector('.vplayer-full');
 const vFmt = (s) => {
   if (!Number.isFinite(s)) return '0:00';
@@ -301,6 +302,13 @@ vPipBtn.onclick = async (e) => {
     else await lightboxVideo.requestPictureInPicture();
   } catch {}
 };
+lightboxVideo.addEventListener('leavepictureinpicture', () => {
+  if (!restoreAfterPip) return;
+  restoreAfterPip = false;
+  lightbox.classList.remove('hidden');
+  document.body.classList.add('media-open');
+  vplayer.classList.remove('hidden');
+});
 const toggleFullscreen = () => {
   const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
   if (fsEl) {
@@ -442,6 +450,11 @@ const lbClose = () => {
   document.body.classList.remove('media-open');
   resetZoom();
   lightboxImg.src = '';
+  if (document.pictureInPictureElement === lightboxVideo) {
+    restoreAfterPip = true;
+    return;
+  }
+  restoreAfterPip = false;
   lightboxVideo.pause?.();
   lightboxVideo.removeAttribute('src');
 };
