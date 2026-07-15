@@ -2,6 +2,20 @@
 
 Contributions to Segment are welcome.
 
+## Reporting issues
+
+Use the repository issue forms instead of opening a blank issue:
+
+- **Bug report** for reproducible errors or unexpected behavior.
+- **Feature request** for one focused improvement or new capability.
+- **Question or support** when the behavior is unclear and may not be a bug.
+
+Search open and closed issues before submitting. Keep one problem or request per issue and include screenshots or a short recording when they clarify the report. Never post passwords, one-time codes, access tokens, private messages, or personal data.
+
+Report suspected vulnerabilities privately through [GitHub Security Advisories](https://github.com/Segment-Web/SWeb/security/advisories/new).
+
+Maintainers use labels to show the issue type, affected area, current state, and priority. Labels such as `confirmed`, `priority: high`, and `area: messaging` are assigned during triage; reporters do not need to choose them.
+
 ## Setup
 
 1. Fork and clone the repository.

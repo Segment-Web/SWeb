@@ -1,0 +1,106 @@
+name: Bug report
+description: Report an error or unexpected behavior in Segment Web.
+title: "[Bug] "
+labels:
+  - bug
+  - needs triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Segment Web.
+
+        Before submitting, search existing issues and make sure the problem still occurs in the latest version.
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide the shortest reliable sequence that triggers the problem.
+      placeholder: |
+        1. Open ...
+        2. Click ...
+        3. See ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: Describe what should happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: Describe what happens instead.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Segment Web version
+      description: Enter the exact version shown in the application. Do not write "latest".
+      placeholder: 0.0.1-beta
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser
+      description: Include the browser name and exact version.
+      placeholder: Chrome 138.0.7204.101
+    validations:
+      required: true
+
+  - type: input
+    id: operating-system
+    attributes:
+      label: Operating system
+      description: Include the operating system name and version.
+      placeholder: Windows 11 24H2
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: Reproduction frequency
+      options:
+        - Always
+        - Often
+        - Sometimes
+        - Once
+    validations:
+      required: true
+
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Screenshots or recordings
+      description: Drag screenshots or short recordings here. Remove private messages and personal data first.
+      placeholder: Add visual evidence if it helps explain the problem.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add any other details that may help reproduce or diagnose the problem.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+        - label: I reproduced the problem in the latest available Segment Web version.
+          required: true
+        - label: I removed passwords, access tokens, private messages, and other sensitive data.
+          required: true
+

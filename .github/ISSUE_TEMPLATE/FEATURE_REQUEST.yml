@@ -1,0 +1,56 @@
+name: Feature request
+description: Suggest an improvement or a new capability for Segment Web.
+title: "[Feature] "
+labels:
+  - enhancement
+  - needs triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement.
+
+        Describe the user problem first. A clear use case is more useful than implementation details.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is difficult, slow, confusing, or currently impossible?
+      placeholder: A clear description of the user problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe how you would like Segment Web to behave.
+      placeholder: A clear description of the desired result.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe workarounds or other approaches you considered.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add mockups, screenshots, examples, or links that clarify the request.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and did not find the same request.
+          required: true
+        - label: This request describes one focused feature or improvement.
+          required: true
+
