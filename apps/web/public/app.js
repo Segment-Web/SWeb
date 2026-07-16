@@ -42,7 +42,7 @@ window.Segment = segmentApi;
 // so right-click behaves consistently across messages, media and empty areas.
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
-const scrollSurfaceSelector = '.feed,.chat-list,.info-body,.fwd-list,.autocomplete,.attach-draft,.ctx-menu,.workspace-surface-body';
+const scrollSurfaceSelector = '.feed,.chat-list,.info-body,.fwd-list,.autocomplete,.attach-draft,.ctx-menu,.workspace-surface-body,.pinned-manager-list,.composer-input,.emoji-menu,.react-picker';
 let edgeScrollSurface = null;
 const scrollSurfaceTimers = new WeakMap();
 const clearEdgeScrollSurface = () => {
