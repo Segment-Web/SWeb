@@ -75,6 +75,7 @@ ok(stored && !atob(stored.ct).includes('secret-hello'), 'stored envelope is encr
 // B backfills and decrypts A's message.
 await B._backfillRoom(roomId);
 ok(B._messageById(roomId, 'm1')?.text === 'secret-hello', 'peer backfills and decrypts stored history');
+ok(!B.unread[roomId], 'history preload does not mark old messages as unread');
 
 // C, lacking the key, backfills nothing readable.
 await C._backfillRoom(roomId);
@@ -83,6 +84,16 @@ ok(!C._messageById(roomId, 'm1'), 'client without the key cannot read history');
 // Backfill is idempotent: running again adds no duplicate.
 await B._backfillRoom(roomId);
 ok(B.messages[roomId].filter((m) => m.id === 'm1').length === 1, 'backfill does not duplicate messages');
+
+// Startup preloading hydrates unopened rooms so the chat list can show the
+// latest message without counting historical messages as new activity.
+const preloadRoom = 'chat-preload';
+for (const cl of [A, B]) cl._addServerRoom({ id: preloadRoom, title: 'Preload', type: 'chat', icon: 'P' });
+A._seedHistoryKey(preloadRoom); B._adoptHistoryKeys(A.historyKeysExport());
+await A._storeToHistory(preloadRoom, { kind: 'message', message: { id: 'preloaded-message', name: 'A', text: 'visible before open' } });
+await B.preloadRoomHistories();
+ok(B._messageById(preloadRoom, 'preloaded-message')?.text === 'visible before open', 'startup preload hydrates unopened rooms');
+ok(B.lastText[preloadRoom]?.includes('visible before open') && !B.unread[preloadRoom], 'startup preload updates the preview without unread noise');
 
 // History keys survive a client restart on the same device.
 let persistedKeys = {};

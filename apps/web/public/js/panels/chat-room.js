@@ -104,9 +104,12 @@ export function chatRoomPanel(client) {
             <button class="room-head-action" data-el="roomSearchOpen" aria-label="Поиск в чате">${ICONS.search}</button>
           </header>
           <div class="room-searchbar hidden" data-el="roomSearchBar">
-            ${ICONS.search}<input data-el="roomSearchInput" placeholder="Поиск в этом чате" autocomplete="off">
+            <label class="room-search-field">${ICONS.search}<input data-el="roomSearchInput" placeholder="Поиск в этом чате" autocomplete="off"></label>
             <span data-el="roomSearchCount">0 из 0</span>
-            <button data-el="roomSearchPrev" aria-label="Предыдущее">‹</button><button data-el="roomSearchNext" aria-label="Следующее">›</button>
+            <div class="room-search-nav">
+              <button data-el="roomSearchPrev" aria-label="Предыдущее"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg></button>
+              <button data-el="roomSearchNext" aria-label="Следующее"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+            </div>
             <button data-el="roomSearchClose" aria-label="Закрыть">${ICONS.close}</button>
           </div>
           <button class="pinned-bar hidden" data-el="pinnedBar"></button>

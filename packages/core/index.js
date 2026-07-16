@@ -122,7 +122,8 @@ export class SegmentClient {
       if (this.self.name) {
         await this._join();
         this._flushOutbox();
-        if (this.currentRoom) this._backfillRoom(this.currentRoom);
+        this._requestMissingHistoryKeys();
+        this.preloadRoomHistories();
       }
     };
     this.ws.onclose = () => {
@@ -210,7 +211,22 @@ export class SegmentClient {
         this._addServerRoom(room);
         await this._ensureOwnedRoomHistoryKey(room);
       }
+      await this.preloadRoomHistories();
     } catch { /* offline or unauthenticated: keep local defaults */ }
+  }
+
+  async preloadRoomHistories(concurrency = 3) {
+    const roomIds = this.chats
+      .filter((chat) => !chat.local && this._historyKey(chat.id) && !this._backfilled.has(chat.id))
+      .map((chat) => chat.id);
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < roomIds.length) {
+        const roomId = roomIds[cursor++];
+        await this._backfillRoom(roomId);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(Math.max(1, concurrency), roomIds.length) }, worker));
   }
 
   async _ensureOwnedRoomHistoryKey(room) {
@@ -987,7 +1003,7 @@ export class SegmentClient {
             if (local) local.seq ||= env.seq;
             else event.message.seq = env.seq;
           }
-          this._applyEvent(roomId, event, { id: env.senderId || '' });
+          this._applyEvent(roomId, event, { id: env.senderId || '', history: true });
         }
         if (page.length < 200) break;
       }
@@ -1069,6 +1085,12 @@ export class SegmentClient {
     this._send({ type: MessageType.HistoryKeyRequest, room: roomId });
   }
 
+  _requestMissingHistoryKeys() {
+    for (const chat of this.chats) {
+      if (!chat.local && !this._historyKey(chat.id)) this._requestHistoryKey(chat.id);
+    }
+  }
+
   async _onHistoryKeyRequest(from, roomId) {
     const key = this._historyKey(roomId);
     const peer = this.peers.get(from);
@@ -1082,7 +1104,10 @@ export class SegmentClient {
     if (!peer?.ratchet || !box) return;
     try {
       const payload = JSON.parse(await peer.ratchet.decrypt(box));
-      if (payload.roomId === roomId) this._adoptHistoryKeys({ [roomId]: payload.key });
+      if (payload.roomId === roomId) {
+        this._adoptHistoryKeys({ [roomId]: payload.key });
+        this.preloadRoomHistories();
+      }
     } catch {}
   }
 
@@ -1151,7 +1176,7 @@ export class SegmentClient {
 
       case MessageType.KeyShare:
         await this._onKeyShare(msg.from, msg.x3dh, msg.box);
-        if (this.currentRoom && !this._historyKey(this.currentRoom)) this._requestHistoryKey(this.currentRoom);
+        this._requestMissingHistoryKeys();
         break;
 
       case MessageType.HistoryKeyRequest:
@@ -1189,7 +1214,7 @@ export class SegmentClient {
     }
   }
 
-  _addMessage(roomId, m) {
+  _addMessage(roomId, m, { historical = false } = {}) {
     const list = this.messages[roomId];
     if (!list || !m) return;
     const wasEmpty = !list.length;
@@ -1200,7 +1225,7 @@ export class SegmentClient {
     this.lastText[roomId] = m.system ? m.text : preview(m);
     if (!m.system) { delete this.typing[roomId]; clearTimeout(this._typingTimers[roomId]); }
     const current = roomId === this.currentRoom;
-    if (!current && !m.system) {
+    if (!historical && !current && !m.system) {
       if (!this.unread[roomId]) this.firstUnread[roomId] = m.id;
       this.unread[roomId] = (this.unread[roomId] || 0) + 1;
     }
@@ -1290,7 +1315,7 @@ export class SegmentClient {
         message.channelName = chat.name;
         message.channelIcon = chat.icon || message.channelIcon || '';
       }
-      this._addMessage(roomId, message);
+      this._addMessage(roomId, message, { historical: author.history === true });
       this._hydrateMessage(roomId, message);
       return;
     }

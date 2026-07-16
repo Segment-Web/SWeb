@@ -31,6 +31,24 @@ export function formatText(raw) {
   return s;
 }
 
+function highlightedFormattedText(raw, query) {
+  const text = String(raw || '');
+  const needle = String(query || '').toLocaleLowerCase('ru');
+  if (!needle) return formatText(text);
+  const startToken = '\uE110';
+  const endToken = '\uE111';
+  const lower = text.toLocaleLowerCase('ru');
+  let tagged = '';
+  let cursor = 0;
+  while (cursor < text.length) {
+    const at = lower.indexOf(needle, cursor);
+    if (at < 0) { tagged += text.slice(cursor); break; }
+    tagged += text.slice(cursor, at) + startToken + text.slice(at, at + needle.length) + endToken;
+    cursor = at + needle.length;
+  }
+  return formatText(tagged).replaceAll(startToken, '<mark>').replaceAll(endToken, '</mark>');
+}
+
 
 function emojiOnly(text) {
   try {
@@ -328,10 +346,10 @@ export function renderMessage(feed, m, myName, options = {}) {
     feed.appendChild(d);
   }
 
-  const grouped = !m.system && !needDivider && lastMsg && lastMsg.dataset.name === displayName;
+  const grouped = !m.channelName && !m.system && !needDivider && lastMsg && lastMsg.dataset.name === displayName;
   const el = document.createElement('div');
   const anim = options.animate === false ? '' : ' appear';
-  el.className = `msg${mine ? ' mine' : ''}${grouped ? ' grouped' : ''}${m.deleted ? ' deleted' : ''}${options.isSelected?.(m.id) ? ' selected' : ''}${anim}`;
+  el.className = `msg${mine ? ' mine' : ''}${m.channelName ? ' channel-message' : ''}${grouped ? ' grouped' : ''}${m.deleted ? ' deleted' : ''}${options.isSelected?.(m.id) ? ' selected' : ''}${anim}`;
   el.dataset.name = displayName;
   el.dataset.date = dateKey;
   if (m.id) el.dataset.id = m.id;
@@ -645,15 +663,7 @@ function matchesFilter(c, filter, state) {
 
 function searchResultHtml(c, m, q) {
   const text = m.text || mediaWord(m) || '';
-  const i = text.toLowerCase().indexOf(q);
-  let snippet;
-  if (i === -1) snippet = esc(text.slice(0, 60));
-  else {
-    const from = Math.max(0, i - 20);
-    snippet = (from > 0 ? '…' : '') + esc(text.slice(from, i))
-      + `<mark>${esc(text.slice(i, i + q.length))}</mark>`
-      + esc(text.slice(i + q.length, i + q.length + 40));
-  }
+  const snippet = m.text ? highlightedFormattedText(text, q) : esc(text);
   return `
     <div class="chat-item search-hit" data-room="${c.id}" data-msg="${esc(m.id)}">
       <div class="chat-icon" style="background:${avatarColor(c.id)}">${c.icon || esc(initials(c.name))}</div>

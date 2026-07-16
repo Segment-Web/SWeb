@@ -28,6 +28,7 @@ const applyUiPrefs = (prefs = uiPrefs) => {
   document.documentElement.dataset.density = prefs.density || 'comfortable';
   document.documentElement.style.setProperty('--ui-scale', String(prefs.scale || 1));
   document.documentElement.classList.toggle('reduce-motion', !!prefs.reduceMotion);
+  document.documentElement.classList.toggle('show-channel-avatars', prefs.showChannelAvatars === true);
 };
 applyUiPrefs();
 
@@ -37,6 +38,37 @@ window.Segment = segmentApi;
 // Segment provides its own contextual actions. Suppress browser/vendor menus
 // so right-click behaves consistently across messages, media and empty areas.
 document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+const scrollSurfaceSelector = '.feed,.chat-list,.info-body,.fwd-list,.autocomplete,.attach-draft,.ctx-menu,.workspace-surface-body';
+let edgeScrollSurface = null;
+const scrollSurfaceTimers = new WeakMap();
+const clearEdgeScrollSurface = () => {
+  edgeScrollSurface?.classList.remove('scrollbar-near');
+  edgeScrollSurface = null;
+};
+document.addEventListener('pointermove', (event) => {
+  if (event.pointerType && event.pointerType !== 'mouse') return;
+  const surface = event.target.closest?.(scrollSurfaceSelector) || null;
+  let next = null;
+  if (surface) {
+    const rect = surface.getBoundingClientRect();
+    const nearVertical = surface.scrollHeight > surface.clientHeight && rect.right - event.clientX <= 18;
+    const nearHorizontal = surface.scrollWidth > surface.clientWidth && rect.bottom - event.clientY <= 14;
+    if (nearVertical || nearHorizontal) next = surface;
+  }
+  if (edgeScrollSurface === next) return;
+  clearEdgeScrollSurface();
+  edgeScrollSurface = next;
+  edgeScrollSurface?.classList.add('scrollbar-near');
+});
+document.addEventListener('pointerleave', clearEdgeScrollSurface);
+document.addEventListener('scroll', (event) => {
+  const surface = event.target?.matches?.(scrollSurfaceSelector) ? event.target : null;
+  if (!surface) return;
+  surface.classList.add('is-scrolling');
+  clearTimeout(scrollSurfaceTimers.get(surface));
+  scrollSurfaceTimers.set(surface, setTimeout(() => surface.classList.remove('is-scrolling'), 720));
+}, true);
 
 const mountWorkspace = () => {
   if (workspace) return;
@@ -817,8 +849,10 @@ $('registerBtn').onclick = async () => {
   finally { $('registerBtn').disabled = false; }
 };
 
-showAuthStep('email');
-authApi('me').then(({ user }) => enterApp(user)).catch(() => showAuthStep('email'));
+authApi('me').then(({ user }) => enterApp(user)).catch(() => {
+  showAuthStep('email');
+  document.body.classList.remove('auth-pending');
+});
 
 
 document.addEventListener('keydown', (e) => {
