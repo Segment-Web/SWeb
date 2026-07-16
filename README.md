@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="apps/web/public/logo.png" width="180" alt="Segment logo">
+</p>
+
 # Segment
 
 Segment is an extensible open-source messenger with a panel-based desktop web interface and end-to-end encryption.

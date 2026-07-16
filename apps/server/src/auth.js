@@ -206,7 +206,7 @@ export async function createAuth(config) {
           code_hash=EXCLUDED.code_hash,expires_at=EXCLUDED.expires_at,attempts=0,requested_at=NOW()`, [email, sign(`${email}:${code}`), `${config.authCodeTtlMs} milliseconds`]);
         try {
           const minutes = Math.max(1, Math.round(config.authCodeTtlMs / 60000));
-          const logoUrl = `${(config.publicUrl || 'https://web.segmnt.org').replace(/\/+$/, '')}/logo.png`;
+          const logoUrl = `${(config.publicUrl || 'https://web.segmnt.org').replace(/\/+$/, '')}/logo.png?rev=20260716`;
           const spaced = code.split('').join(' ');
           await mailer.sendMail({ from: config.smtp.from, to: email, subject: `${code} — код входа в Segment`,
             text: `Ваш код входа в Segment:\n\n${code}\n\nКод действует ${minutes} минут и может быть использован только один раз.\nНикому не сообщайте этот код: мы никогда не спросим его по телефону или в письме.\n\nВы получили это письмо, потому что для вашего аккаунта Segment запросили код входа. Если это были не вы, просто проигнорируйте письмо.`,
