@@ -378,7 +378,7 @@ export async function createRooms(config, auth) {
   const resolvePath = async (path, viewerId) => {
     let match;
     if ((match = String(path).match(/^\/@([a-z0-9_]{3,24})$/i))) {
-      const user = await one('SELECT id, username, name, color, avatar, bio, status, profile_links, privacy FROM users WHERE username=$1', [match[1].toLowerCase()]);
+      const user = await one('SELECT id, username, name, color, avatar, bio, status, profile_links, profile_meta, privacy FROM users WHERE username=$1', [match[1].toLowerCase()]);
       if (!user) return null;
       const self = user.id === viewerId;
       const shared = self || Boolean(await one(
@@ -392,6 +392,7 @@ export async function createRooms(config, auth) {
         id: user.id, username: user.username, name: user.name, color: user.color,
         avatar: visible('avatar') ? user.avatar : '', bio: visible('bio') ? user.bio : '',
         status: visible('status') ? user.status : '', links: visible('links') && Array.isArray(user.profile_links) ? user.profile_links : [],
+        profile: user.profile_meta && typeof user.profile_meta === 'object' ? user.profile_meta : {},
       } };
     }
     if ((match = String(path).match(/^\/c\/([a-z0-9-]{3,32})$/i))) {

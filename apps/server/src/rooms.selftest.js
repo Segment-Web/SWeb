@@ -19,6 +19,7 @@ await pool.query(`CREATE TABLE users (
   name VARCHAR(40) NOT NULL, avatar TEXT NOT NULL DEFAULT '', color VARCHAR(16) NOT NULL,
   bio VARCHAR(160) NOT NULL DEFAULT '', status VARCHAR(80) NOT NULL DEFAULT '',
   profile_links JSONB NOT NULL DEFAULT '[]'::jsonb,
+  profile_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
   privacy JSONB NOT NULL DEFAULT '{"avatar":"everyone","bio":"everyone","status":"everyone","links":"everyone"}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );`);

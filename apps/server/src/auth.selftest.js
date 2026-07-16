@@ -42,9 +42,10 @@ if (me.status !== 200 || me.data.user.id !== registered.data.user.id) throw new 
 const profile = await call('profile', {
   bio: 'Open-source messenger', status: 'Building Segment',
   links: [{ label: 'Website', url: 'https://segmnt.org' }],
+  profile: { pinnedBadges: ['early', 'mods', 'invalid'] },
   privacy: { avatar: 'members', bio: 'everyone', status: 'nobody', links: 'members' },
 }, 'PATCH');
-if (profile.status !== 200 || profile.data.user.bio !== 'Open-source messenger' || profile.data.user.links.length !== 1) throw new Error('profile update failed');
+if (profile.status !== 200 || profile.data.user.bio !== 'Open-source messenger' || profile.data.user.links.length !== 1 || profile.data.user.profile.pinnedBadges.includes('invalid')) throw new Error('profile update failed');
 const settings = await call('settings', {
   settings: { themeId: 'graphite', density: 'compact', sendByEnter: false, installedMods: [{ id: 'compact', name: 'Compact', version: '1.0.0', enabled: true, features: ['compact-bubbles', 'run-script'] }] },
 }, 'PATCH');

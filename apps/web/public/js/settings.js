@@ -2,6 +2,12 @@ import { THEME_PRESETS, THEME_SCHEMA, normalizeThemePack } from './appearance.js
 
 const PALETTE = ['#7c5cff', '#00d4ff', '#ff5c8a', '#3ddc84', '#ffb347', '#ff6b6b', '#4facfe', '#a166ff'];
 const FEATURES = { 'compact-bubbles': 'Компактные сообщения', 'square-media': 'Меньше скругления медиа', 'hide-reactions': 'Скрыть реакции' };
+const PROFILE_BADGES = {
+  early: { icon: '⚡', title: 'Ранний участник', text: 'С аккаунтом с раннего этапа Segment' },
+  creator: { icon: '◆', title: 'Создатель', text: 'Создаёт собственные сообщества' },
+  mods: { icon: '🧩', title: 'Модификатор', text: 'Использует модификации интерфейса' },
+  supporter: { icon: '♥', title: 'Поддержка', text: 'Поддерживает развитие проекта' },
+};
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const api = async (path, options = {}) => {
   const response = await fetch(path, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
@@ -43,6 +49,22 @@ const resizeAvatar = (file) => new Promise((resolve, reject) => {
   reader.readAsDataURL(file);
 });
 
+const resizeCover = (file) => new Promise((resolve, reject) => {
+  if (!file?.type.startsWith('image/')) return reject(new Error('INVALID'));
+  const reader = new FileReader(); reader.onerror = reject;
+  reader.onload = () => {
+    const image = new Image(); image.onerror = reject;
+    image.onload = () => {
+      const width = 1200; const height = 400; const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d'); const scale = Math.max(width / image.width, height / image.height);
+      ctx.drawImage(image, (width - image.width * scale) / 2, (height - image.height * scale) / 2, image.width * scale, image.height * scale);
+      resolve(canvas.toDataURL('image/jpeg', .82));
+    };
+    image.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+});
+
 const normalizeMod = (raw) => {
   if (!raw || raw.schema !== 1 || raw.type !== 'declarative') throw new Error('INVALID');
   const id = String(raw.id || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40);
@@ -66,8 +88,8 @@ const openDevicePayload = async (payload, secretText) => {
   return JSON.parse(new TextDecoder().decode(plain));
 };
 
-export function mountSettings(root, close, client, renderIdentity) {
-  let page = 'home';
+export function mountSettings(root, close, client, renderIdentity, initialPage = 'home') {
+  let page = initialPage;
   const prefs = () => window.Segment?.uiPrefs || {};
   const home = () => {
     const self = client.self;
@@ -85,18 +107,26 @@ export function mountSettings(root, close, client, renderIdentity) {
     root.querySelector('[data-back]').onclick = () => show('home');
   };
   const profile = () => {
-    const self = client.self; const links = [...(self.links || []), {}, {}, {}].slice(0, 3);
+    const self = client.self; const links = [...(self.links || []), {}, {}, {}].slice(0, 3); const meta = self.profile || {};
+    const rooms = client.chats.filter((chat) => chat.type !== 'saved' && !chat.local);
     shell('Профиль', 'Эти данные будут видны другим пользователям', `<form class="settings-stack" data-profile>
+      <div class="settings-cover-editor" style="${meta.cover ? `background-image:url('${meta.cover}')` : ''}"><span>Обложка профиля</span><label class="settings-file">Выбрать обложку<input data-cover-file type="file" accept="image/*"></label>${meta.cover ? '<button type="button" data-cover-remove>Убрать</button>' : ''}</div>
       <div class="settings-avatar-editor"><div class="settings-avatar-preview">${self.avatar ? `<img src="${self.avatar}" alt="">` : escapeHtml(self.name?.[0] || 'S')}</div><label class="settings-file">Изменить фото<input type="file" accept="image/*"></label></div>
       ${field('Имя','name',self.name,'maxlength="40"')}${field('Username','username',self.username,'maxlength="24"')}${field('О себе','bio',self.bio,'maxlength="160"')}${field('Статус','status',self.status,'maxlength="80"')}
+      <div class="settings-card"><b>Закреплённое сообщество</b><p>В профиле будет показано одно сообщество, участником которого вы являетесь.</p><select name="pinnedCommunity"><option value="">Не показывать</option>${rooms.map((chat) => `<option value="${escapeHtml(chat.id)}" ${meta.pinnedCommunity?.id === chat.id ? 'selected' : ''}>${escapeHtml(chat.icon || '💬')} ${escapeHtml(chat.name)}</option>`).join('')}</select></div>
+      <div class="settings-card"><b>Достижения</b><p>Можно закрепить до трёх полученных значков.</p><div class="settings-badge-grid">${Object.entries(PROFILE_BADGES).map(([id,badge]) => `<label><input type="checkbox" name="badge" value="${id}" ${(meta.pinnedBadges || []).includes(id) ? 'checked' : ''}><span><i>${badge.icon}</i><b>${badge.title}</b><small>${badge.text}</small></span></label>`).join('')}</div></div>
       <div class="settings-card"><b>Ссылки</b>${links.map((link, index) => `<div class="settings-link-row"><input name="linkLabel${index}" placeholder="Название" value="${escapeHtml(link.label)}"><input name="linkUrl${index}" placeholder="https://" value="${escapeHtml(link.url)}"></div>`).join('')}</div>
+      <div class="settings-card settings-integrations"><b>Интеграции активности</b><div><span>Spotify</span><small>Подключение появится после настройки OAuth</small><button type="button" disabled>Скоро</button></div><div><span>Steam</span><small>Игровая активность будет показываться здесь</small><button type="button" disabled>Скоро</button></div></div>
       <div class="settings-card"><b>Цвет профиля</b><div class="settings-colors">${PALETTE.map((color) => `<button type="button" class="settings-color${color === self.color ? ' active' : ''}" data-color="${color}" style="background:${color}"></button>`).join('')}</div></div>
       <button class="settings-primary" type="submit">Сохранить</button></form>`);
-    const form = root.querySelector('[data-profile]'); let avatar = self.avatar || ''; let color = self.color;
-    form.querySelector('input[type=file]').onchange = async (event) => { try { avatar = await resizeAvatar(event.target.files[0]); form.querySelector('.settings-avatar-preview').innerHTML = `<img src="${avatar}" alt="">`; } catch { toast('Не удалось обработать фото'); } };
+    const form = root.querySelector('[data-profile]'); let avatar = self.avatar || ''; let cover = meta.cover || ''; let color = self.color;
+    form.querySelector('.settings-avatar-editor input[type=file]').onchange = async (event) => { try { avatar = await resizeAvatar(event.target.files[0]); form.querySelector('.settings-avatar-preview').innerHTML = `<img src="${avatar}" alt="">`; } catch { toast('Не удалось обработать фото'); } };
+    form.querySelector('[data-cover-file]').onchange = async (event) => { try { cover = await resizeCover(event.target.files[0]); const editor=form.querySelector('.settings-cover-editor'); editor.style.backgroundImage=`url('${cover}')`; } catch { toast('Не удалось обработать обложку'); } };
+    form.querySelector('[data-cover-remove]')?.addEventListener('click',()=>{cover='';form.querySelector('.settings-cover-editor').style.backgroundImage='';});
+    form.querySelectorAll('[name=badge]').forEach((input) => { input.onchange = () => { const checked=[...form.querySelectorAll('[name=badge]:checked')]; if(checked.length>3){input.checked=false;toast('Можно закрепить не больше трёх');} }; });
     form.querySelectorAll('[data-color]').forEach((button) => { button.onclick = () => { color = button.dataset.color; form.querySelectorAll('[data-color]').forEach((item) => item.classList.toggle('active', item === button)); }; });
     form.onsubmit = async (event) => { event.preventDefault(); const data = new FormData(form); const links = [0,1,2].map((i) => ({ label: data.get(`linkLabel${i}`), url: data.get(`linkUrl${i}`) })).filter((item) => item.url.trim());
-      try { const result = await api('/api/auth/profile', { method:'PATCH', body:JSON.stringify({ name:data.get('name'), username:data.get('username'), bio:data.get('bio'), status:data.get('status'), avatar, color, links }) }); client.self = { ...client.self, ...result.user }; client.storage.setName(result.user.name); client.storage.setUsername?.(result.user.username); client.storage.setAvatar?.(result.user.avatar); client.storage.setColor(result.user.color); client._emit('identity', { name: result.user.name, user: result.user }); renderIdentity(); toast('Профиль сохранён'); show('home'); } catch (error) { toast(error.message === 'USERNAME_TAKEN' ? 'Username уже занят' : 'Не удалось сохранить профиль'); }
+      try { const result = await api('/api/auth/profile', { method:'PATCH', body:JSON.stringify({ name:data.get('name'), username:data.get('username'), bio:data.get('bio'), status:data.get('status'), avatar, color, links, profile:{cover,pinnedBadges:data.getAll('badge'),pinnedCommunityId:data.get('pinnedCommunity')} }) }); client.self = { ...client.self, ...result.user }; client.storage.setName(result.user.name); client.storage.setUsername?.(result.user.username); client.storage.setAvatar?.(result.user.avatar); client.storage.setColor(result.user.color); client._emit('identity', { name: result.user.name, user: result.user }); renderIdentity(); toast('Профиль сохранён'); show('home'); } catch (error) { toast(error.message === 'USERNAME_TAKEN' ? 'Username уже занят' : 'Не удалось сохранить профиль'); }
     };
   };
   const privacy = () => {

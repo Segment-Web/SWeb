@@ -8,7 +8,7 @@ import { SegmentClient } from '@segment/core';
 import { webStorage } from './js/storage.js';
 import { $ } from './js/util.js';
 import { createRegistry } from './js/panels/registry.js';
-import { profilePanel } from './js/panels/profile.js';
+import { profilePanel, openProfileSurface } from './js/panels/profile.js';
 import { chatListPanel } from './js/panels/chat-list.js';
 import { chatRoomPanel } from './js/panels/chat-room.js';
 import { Workspace } from './js/workspace/workspace.js';
@@ -791,7 +791,7 @@ const enterApp = (user) => {
   applyUiPrefs();
   client.self = {
     id: user.id, name: user.name, username: user.username, avatar: user.avatar || '', color: user.color,
-    bio: user.bio || '', status: user.status || '', links: user.links || [], privacy: user.privacy || {}, settings: user.settings || {},
+    bio: user.bio || '', status: user.status || '', links: user.links || [], profile: user.profile || {}, privacy: user.privacy || {}, settings: user.settings || {},
   };
   document.body.classList.remove('auth-pending');
   document.body.classList.add('authenticated');
@@ -819,7 +819,8 @@ const bootRooms = async () => {
     history.replaceState(null, '', '/');
   } else if ((match = path.match(/^\/@([a-z0-9_]{3,24})$/i))) {
     const target = await client.resolveLink(path);
-    segmentApi.toast(target?.user ? `Профиль @${target.user.username}` : 'Профиль не найден');
+    if (target?.user) openProfileSurface(client, target.user, { sourceId: 'profile' });
+    else segmentApi.toast('Профиль не найден');
     history.replaceState(null, '', '/');
   }
 };

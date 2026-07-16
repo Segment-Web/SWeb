@@ -12,6 +12,7 @@ const DENSITIES = new Set(['compact', 'comfortable', 'spacious']);
 const LANGUAGES = new Set(['ru']);
 const THEME_IDS = new Set(['night', 'midnight', 'graphite', 'custom']);
 const MOD_FEATURES = new Set(['compact-bubbles', 'square-media', 'hide-reactions']);
+const PROFILE_BADGES = new Set(['early', 'creator', 'mods', 'supporter']);
 const THEME_TOKEN_KEYS = new Set(['bg', 'surface', 'surface2', 'surface3', 'border', 'stroke', 'text', 'muted', 'accent', 'mineBg', 'incomingBg', 'feedBg', 'danger', 'ok', 'radius']);
 
 const json = (res, status, value, headers = {}) => {
@@ -37,6 +38,7 @@ const publicUser = (user) => user ? ({
   id: user.id, email: user.email, username: user.username, name: user.name,
   avatar: user.avatar || '', color: user.color, bio: user.bio || '', status: user.status || '',
   links: Array.isArray(user.profile_links) ? user.profile_links : [],
+  profile: user.profile_meta && typeof user.profile_meta === 'object' ? user.profile_meta : {},
   privacy: user.privacy && typeof user.privacy === 'object' ? user.privacy : {},
   settings: user.settings && typeof user.settings === 'object' ? user.settings : {},
 }) : null;
@@ -112,6 +114,7 @@ export async function createAuth(config) {
       name VARCHAR(40) NOT NULL, avatar TEXT NOT NULL DEFAULT '', color VARCHAR(16) NOT NULL,
       bio VARCHAR(160) NOT NULL DEFAULT '', status VARCHAR(80) NOT NULL DEFAULT '',
       profile_links JSONB NOT NULL DEFAULT '[]'::jsonb,
+      profile_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
       privacy JSONB NOT NULL DEFAULT '{"avatar":"everyone","bio":"everyone","status":"everyone","links":"everyone"}'::jsonb,
       settings JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -119,6 +122,7 @@ export async function createAuth(config) {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS bio VARCHAR(160) NOT NULL DEFAULT '';
     ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(80) NOT NULL DEFAULT '';
     ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_links JSONB NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_meta JSONB NOT NULL DEFAULT '{}'::jsonb;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS privacy JSONB NOT NULL DEFAULT '{"avatar":"everyone","bio":"everyone","status":"everyone","links":"everyone"}'::jsonb;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::jsonb;
     CREATE TABLE IF NOT EXISTS login_codes (
@@ -347,7 +351,8 @@ export async function createAuth(config) {
       if (req.method === 'PATCH' && url.pathname === '/api/auth/profile') {
         const current = await userFromRequest(req);
         if (!current) return json(res, 401, { error: 'UNAUTHORIZED' });
-        const body = await readJson(req, config.authMaxAvatarBytes * 2);
+        // A profile update may carry both an avatar and a cover as base64 data.
+        const body = await readJson(req, config.authMaxAvatarBytes * 4);
         const username = String(body.username ?? current.username).trim().toLowerCase();
         const name = String(body.name ?? current.name).trim().slice(0, 40);
         const avatar = body.avatar === undefined ? current.avatar : validateAvatar(body.avatar);
@@ -356,10 +361,32 @@ export async function createAuth(config) {
         const status = String(body.status ?? current.status ?? '').trim().slice(0, 80);
         const links = normalizeLinks(body.links, current.profile_links || []);
         const privacy = body.privacy === undefined ? normalizePrivacy(current.privacy) : normalizePrivacy(body.privacy, current.privacy);
+        const previousProfile = current.profile_meta && typeof current.profile_meta === 'object' ? current.profile_meta : {};
+        let profileMeta = previousProfile;
+        if (body.profile !== undefined) {
+          if (!body.profile || typeof body.profile !== 'object' || Array.isArray(body.profile)) return json(res, 400, { error: 'PROFILE_INVALID' });
+          const cover = body.profile.cover === undefined ? (previousProfile.cover || '') : validateAvatar(body.profile.cover);
+          const pinnedBadges = body.profile.pinnedBadges === undefined
+            ? (Array.isArray(previousProfile.pinnedBadges) ? previousProfile.pinnedBadges : [])
+            : [...new Set(Array.isArray(body.profile.pinnedBadges) ? body.profile.pinnedBadges.filter((badge) => PROFILE_BADGES.has(badge)) : [])].slice(0, 3);
+          let pinnedCommunity = previousProfile.pinnedCommunity || null;
+          if (body.profile.pinnedCommunityId !== undefined) {
+            const roomId = String(body.profile.pinnedCommunityId || '').slice(0, 80);
+            pinnedCommunity = null;
+            if (roomId) {
+              const room = await one(`SELECT r.id,r.title,r.icon,r.type FROM rooms r
+                LEFT JOIN room_members m ON m.room_id=r.id AND m.user_id=$2
+                WHERE r.id=$1 AND (r.is_public=TRUE OR m.user_id=$2)`, [roomId, current.id]);
+              if (!room) return json(res, 400, { error: 'COMMUNITY_INVALID' });
+              pinnedCommunity = { id: room.id, name: room.title, icon: room.icon || '💬', type: room.type };
+            }
+          }
+          profileMeta = { cover, pinnedBadges, pinnedCommunity, music: previousProfile.music || null, game: previousProfile.game || null };
+        }
         if (!USERNAME_RE.test(username)) return json(res, 400, { error: 'USERNAME_INVALID' });
         if (!name) return json(res, 400, { error: 'NAME_INVALID' });
-        const user = await one(`UPDATE users SET username=$1,name=$2,avatar=$3,color=$4,bio=$5,status=$6,profile_links=$7::jsonb,privacy=$8::jsonb,updated_at=NOW()
-          WHERE id=$9 RETURNING *`, [username, name, avatar, color, bio, status, JSON.stringify(links), JSON.stringify(privacy), current.id]);
+        const user = await one(`UPDATE users SET username=$1,name=$2,avatar=$3,color=$4,bio=$5,status=$6,profile_links=$7::jsonb,privacy=$8::jsonb,profile_meta=$9::jsonb,updated_at=NOW()
+          WHERE id=$10 RETURNING *`, [username, name, avatar, color, bio, status, JSON.stringify(links), JSON.stringify(privacy), JSON.stringify(profileMeta), current.id]);
         return json(res, 200, { user: publicUser(user) });
       }
       if (req.method === 'PATCH' && url.pathname === '/api/auth/settings') {
