@@ -362,11 +362,24 @@ export async function createRooms(config, auth) {
     return publicRoom(row);
   };
 
-  const resolvePath = async (path) => {
+  const resolvePath = async (path, viewerId) => {
     let match;
     if ((match = String(path).match(/^\/@([a-z0-9_]{3,24})$/i))) {
-      const user = await one('SELECT id, username, name, color FROM users WHERE username=$1', [match[1].toLowerCase()]);
-      return user ? { type: 'profile', user: { id: user.id, username: user.username, name: user.name, color: user.color } } : null;
+      const user = await one('SELECT id, username, name, color, avatar, bio, status, profile_links, privacy FROM users WHERE username=$1', [match[1].toLowerCase()]);
+      if (!user) return null;
+      const self = user.id === viewerId;
+      const shared = self || Boolean(await one(
+        `SELECT 1 FROM room_members mine JOIN room_members other ON other.room_id=mine.room_id
+         WHERE mine.user_id=$1 AND other.user_id=$2 LIMIT 1`,
+        [viewerId, user.id],
+      ));
+      const privacy = user.privacy && typeof user.privacy === 'object' ? user.privacy : {};
+      const visible = (field) => { const scope = privacy[field] || 'everyone'; return self || scope === 'everyone' || (scope === 'members' && shared); };
+      return { type: 'profile', user: {
+        id: user.id, username: user.username, name: user.name, color: user.color,
+        avatar: visible('avatar') ? user.avatar : '', bio: visible('bio') ? user.bio : '',
+        status: visible('status') ? user.status : '', links: visible('links') && Array.isArray(user.profile_links) ? user.profile_links : [],
+      } };
     }
     if ((match = String(path).match(/^\/c\/([a-z0-9-]{3,32})$/i))) {
       const room = await one('SELECT * FROM rooms WHERE slug=$1 AND is_public=TRUE', [match[1].toLowerCase()]);
@@ -392,7 +405,7 @@ export async function createRooms(config, auth) {
         return json(res, 200, { rooms: await listForUser(user.id) });
       }
       if (req.method === 'GET' && url.pathname === '/api/rooms/resolve') {
-        const target = await resolvePath(url.searchParams.get('path') || '');
+        const target = await resolvePath(url.searchParams.get('path') || '', user.id);
         return json(res, target ? 200 : 404, target || { error: 'NOT_FOUND' });
       }
       if (req.method === 'POST' && url.pathname === '/api/rooms') {

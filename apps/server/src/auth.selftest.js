@@ -39,8 +39,20 @@ const registered = await call('register', { registrationToken: verified.data.reg
 if (registered.status !== 201 || !registered.data.user?.id || !cookie) throw new Error('register failed');
 const me = await call('me', undefined, 'GET');
 if (me.status !== 200 || me.data.user.id !== registered.data.user.id) throw new Error('session failed');
+const profile = await call('profile', {
+  bio: 'Open-source messenger', status: 'Building Segment',
+  links: [{ label: 'Website', url: 'https://segmnt.org' }],
+  privacy: { avatar: 'members', bio: 'everyone', status: 'nobody', links: 'members' },
+}, 'PATCH');
+if (profile.status !== 200 || profile.data.user.bio !== 'Open-source messenger' || profile.data.user.links.length !== 1) throw new Error('profile update failed');
+const settings = await call('settings', {
+  settings: { themeId: 'graphite', density: 'compact', sendByEnter: false, installedMods: [{ id: 'compact', name: 'Compact', version: '1.0.0', enabled: true, features: ['compact-bubbles', 'run-script'] }] },
+}, 'PATCH');
+if (settings.status !== 200 || settings.data.settings.themeId !== 'graphite' || settings.data.settings.installedMods[0].features.includes('run-script')) throw new Error('settings update failed');
+const updatedMe = await call('me', undefined, 'GET');
+if (updatedMe.data.user.settings.themeId !== 'graphite' || updatedMe.data.user.privacy.status !== 'nobody') throw new Error('profile persistence failed');
 const logout = await call('logout', {});
 if (logout.status !== 200) throw new Error('logout failed');
-console.log('auth ok: request, verify, register, session, logout');
+console.log('auth ok: request, verify, register, profile, settings, session, logout');
 await auth.close();
 await new Promise((resolve) => server.close(resolve));

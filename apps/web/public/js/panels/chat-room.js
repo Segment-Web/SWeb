@@ -1570,7 +1570,8 @@ export function chatRoomPanel(client) {
 
       input.onkeydown = (e) => {
         if (acKeydown(e)) return;
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+        const sendByEnter = window.Segment?.uiPrefs?.sendByEnter !== false;
+        if (e.key === 'Enter' && !e.shiftKey && (sendByEnter ? !e.ctrlKey && !e.metaKey : e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(); }
         else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && 'biuse'.includes(e.key.toLowerCase())) {
           const kind = { b: 'B', i: 'I', u: 'U', s: 'S', e: 'CODE' }[e.key.toLowerCase()];
           if (kind) { e.preventDefault(); applyFormat(kind); }

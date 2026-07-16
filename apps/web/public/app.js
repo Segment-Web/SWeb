@@ -12,6 +12,7 @@ import { profilePanel } from './js/panels/profile.js';
 import { chatListPanel } from './js/panels/chat-list.js';
 import { chatRoomPanel } from './js/panels/chat-room.js';
 import { Workspace } from './js/workspace/workspace.js';
+import { applyAppearancePrefs } from './js/appearance.js';
 
 const client = new SegmentClient({ storage: webStorage });
 
@@ -29,6 +30,8 @@ const applyUiPrefs = (prefs = uiPrefs) => {
   document.documentElement.style.setProperty('--ui-scale', String(prefs.scale || 1));
   document.documentElement.classList.toggle('reduce-motion', !!prefs.reduceMotion);
   document.documentElement.classList.toggle('show-channel-avatars', prefs.showChannelAvatars === true);
+  document.documentElement.classList.toggle('no-media-preview', prefs.mediaPreview === false);
+  applyAppearancePrefs(prefs);
 };
 applyUiPrefs();
 
@@ -80,8 +83,19 @@ const mountWorkspace = () => {
   segmentApi.workspace = workspace;
 };
 
+let prefsSaveTimer = 0;
+let prefsSaveRevision = 0;
 segmentApi.saveUiPrefs = (patch = {}) => {
   Object.assign(uiPrefs, patch); localStorage.setItem('segment_ui_prefs', JSON.stringify(uiPrefs)); applyUiPrefs();
+  const revision = ++prefsSaveRevision;
+  clearTimeout(prefsSaveTimer);
+  prefsSaveTimer = setTimeout(async () => {
+    try {
+      const response = await fetch('/api/auth/settings', { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: uiPrefs }) });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.settings && revision === prefsSaveRevision) { Object.assign(uiPrefs, data.settings); localStorage.setItem('segment_ui_prefs', JSON.stringify(uiPrefs)); applyUiPrefs(); }
+    } catch { /* Local preferences remain active while the server is unavailable. */ }
+  }, 350);
 };
 
 document.addEventListener('keydown', (e) => {
@@ -745,7 +759,13 @@ const enterApp = (user) => {
   webStorage.setUsername?.(user.username);
   webStorage.setAvatar?.(user.avatar || '');
   webStorage.setColor(user.color);
-  client.self = { id: user.id, name: user.name, username: user.username, avatar: user.avatar || '', color: user.color };
+  Object.assign(uiPrefs, user.settings || {});
+  localStorage.setItem('segment_ui_prefs', JSON.stringify(uiPrefs));
+  applyUiPrefs();
+  client.self = {
+    id: user.id, name: user.name, username: user.username, avatar: user.avatar || '', color: user.color,
+    bio: user.bio || '', status: user.status || '', links: user.links || [], privacy: user.privacy || {}, settings: user.settings || {},
+  };
   document.body.classList.remove('auth-pending');
   document.body.classList.add('authenticated');
   mountWorkspace();

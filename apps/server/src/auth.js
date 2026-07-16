@@ -7,6 +7,12 @@ const COOKIE = 'segment_session';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const USERNAME_RE = /^[a-z0-9_]{3,24}$/;
 const COLORS = ['#7c5cff', '#00a9d4', '#e25c82', '#36a96b', '#e19a3b', '#db5b5b', '#478fd8', '#8b62dc'];
+const PRIVACY_SCOPES = new Set(['everyone', 'members', 'nobody']);
+const DENSITIES = new Set(['compact', 'comfortable', 'spacious']);
+const LANGUAGES = new Set(['ru']);
+const THEME_IDS = new Set(['night', 'midnight', 'graphite', 'custom']);
+const MOD_FEATURES = new Set(['compact-bubbles', 'square-media', 'hide-reactions']);
+const THEME_TOKEN_KEYS = new Set(['bg', 'surface', 'surface2', 'surface3', 'border', 'stroke', 'text', 'muted', 'accent', 'mineBg', 'incomingBg', 'feedBg', 'danger', 'ok', 'radius']);
 
 const json = (res, status, value, headers = {}) => {
   const body = JSON.stringify(value);
@@ -27,7 +33,68 @@ const readJson = (req, limit = 1024 * 1024) => new Promise((resolve, reject) => 
 const parseCookies = (req) => Object.fromEntries((req.headers.cookie || '').split(';').map((part) => {
   const at = part.indexOf('='); return at < 0 ? ['', ''] : [part.slice(0, at).trim(), decodeURIComponent(part.slice(at + 1))];
 }).filter(([key]) => key));
-const publicUser = (user) => user ? ({ id: user.id, email: user.email, username: user.username, name: user.name, avatar: user.avatar || '', color: user.color }) : null;
+const publicUser = (user) => user ? ({
+  id: user.id, email: user.email, username: user.username, name: user.name,
+  avatar: user.avatar || '', color: user.color, bio: user.bio || '', status: user.status || '',
+  links: Array.isArray(user.profile_links) ? user.profile_links : [],
+  privacy: user.privacy && typeof user.privacy === 'object' ? user.privacy : {},
+  settings: user.settings && typeof user.settings === 'object' ? user.settings : {},
+}) : null;
+
+const normalizeLinks = (value, fallback = []) => {
+  if (value === undefined) return fallback;
+  if (!Array.isArray(value) || value.length > 3) throw Object.assign(new Error('LINKS_INVALID'), { status: 400 });
+  return value.map((item) => {
+    const label = String(item?.label || '').trim().slice(0, 30);
+    const url = String(item?.url || '').trim();
+    let parsed;
+    try { parsed = new URL(url); } catch { throw Object.assign(new Error('LINKS_INVALID'), { status: 400 }); }
+    if (parsed.protocol !== 'https:' || url.length > 240) throw Object.assign(new Error('LINKS_INVALID'), { status: 400 });
+    return { label: label || parsed.hostname.replace(/^www\./, ''), url };
+  });
+};
+const normalizePrivacy = (value, fallback = {}) => {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : fallback;
+  return Object.fromEntries(['avatar', 'bio', 'status', 'links'].map((key) => [key, PRIVACY_SCOPES.has(source[key]) ? source[key] : (fallback[key] || 'everyone')]));
+};
+const normalizeTheme = (value) => {
+  if (!value || typeof value !== 'object' || value.schema !== 1 || !value.tokens || typeof value.tokens !== 'object') throw Object.assign(new Error('THEME_INVALID'), { status: 400 });
+  const tokens = {};
+  for (const [key, raw] of Object.entries(value.tokens)) {
+    if (!THEME_TOKEN_KEYS.has(key)) continue;
+    const token = String(raw || '').trim();
+    if ((key === 'radius' ? /^\d{1,2}px$/.test(token) : /^#[0-9a-f]{6}$/i.test(token))) tokens[key] = token;
+  }
+  if (!tokens.bg || !tokens.surface || !tokens.text || !tokens.accent) throw Object.assign(new Error('THEME_INVALID'), { status: 400 });
+  return { schema: 1, id: String(value.id || 'custom').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40) || 'custom', name: String(value.name || 'Custom theme').trim().slice(0, 60) || 'Custom theme', author: String(value.author || '').trim().slice(0, 60), tokens };
+};
+const normalizeSettings = (value, fallback = {}) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw Object.assign(new Error('SETTINGS_INVALID'), { status: 400 });
+  const source = { ...fallback, ...value };
+  const next = {};
+  if (source.density !== undefined && DENSITIES.has(source.density)) next.density = source.density;
+  if (source.scale !== undefined) next.scale = Math.min(1.2, Math.max(0.85, Number(source.scale) || 1));
+  for (const key of ['reduceMotion', 'showChannelAvatars', 'mediaPreview', 'sendByEnter', 'highContrast']) {
+    if (source[key] !== undefined) next[key] = source[key] === true;
+  }
+  if (source.language !== undefined && LANGUAGES.has(source.language)) next.language = source.language;
+  if (source.themeId !== undefined && THEME_IDS.has(source.themeId)) next.themeId = source.themeId;
+  if (source.customTheme !== undefined) {
+    if (!source.customTheme || typeof source.customTheme !== 'object' || JSON.stringify(source.customTheme).length > 4096) throw Object.assign(new Error('THEME_INVALID'), { status: 400 });
+    next.customTheme = normalizeTheme(source.customTheme);
+  }
+  if (source.installedMods !== undefined) {
+    if (!Array.isArray(source.installedMods) || source.installedMods.length > 20) throw Object.assign(new Error('MODS_INVALID'), { status: 400 });
+    next.installedMods = source.installedMods.map((mod) => ({
+      id: String(mod?.id || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40),
+      name: String(mod?.name || '').trim().slice(0, 60), version: String(mod?.version || '1.0.0').slice(0, 20),
+      enabled: mod?.enabled === true,
+      features: [...new Set(Array.isArray(mod?.features) ? mod.features.filter((feature) => MOD_FEATURES.has(feature)) : [])],
+    })).filter((mod) => mod.id && mod.name && mod.features.length);
+  }
+  if (JSON.stringify(next).length > 16384) throw Object.assign(new Error('SETTINGS_INVALID'), { status: 400 });
+  return next;
+};
 
 export async function createAuth(config) {
   if (config.production && (!config.authSecret || config.authSecret.includes('replace-with'))) throw new Error('AUTH_SECRET must be set in production');
@@ -43,8 +110,17 @@ export async function createAuth(config) {
     CREATE TABLE IF NOT EXISTS users (
       id UUID PRIMARY KEY, email TEXT NOT NULL UNIQUE, username VARCHAR(24) NOT NULL UNIQUE,
       name VARCHAR(40) NOT NULL, avatar TEXT NOT NULL DEFAULT '', color VARCHAR(16) NOT NULL,
+      bio VARCHAR(160) NOT NULL DEFAULT '', status VARCHAR(80) NOT NULL DEFAULT '',
+      profile_links JSONB NOT NULL DEFAULT '[]'::jsonb,
+      privacy JSONB NOT NULL DEFAULT '{"avatar":"everyone","bio":"everyone","status":"everyone","links":"everyone"}'::jsonb,
+      settings JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS bio VARCHAR(160) NOT NULL DEFAULT '';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(80) NOT NULL DEFAULT '';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_links JSONB NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS privacy JSONB NOT NULL DEFAULT '{"avatar":"everyone","bio":"everyone","status":"everyone","links":"everyone"}'::jsonb;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::jsonb;
     CREATE TABLE IF NOT EXISTS login_codes (
       email TEXT PRIMARY KEY, code_hash TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL,
       attempts SMALLINT NOT NULL DEFAULT 0, requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -276,11 +352,23 @@ export async function createAuth(config) {
         const name = String(body.name ?? current.name).trim().slice(0, 40);
         const avatar = body.avatar === undefined ? current.avatar : validateAvatar(body.avatar);
         const color = COLORS.includes(body.color) ? body.color : current.color;
+        const bio = String(body.bio ?? current.bio ?? '').trim().slice(0, 160);
+        const status = String(body.status ?? current.status ?? '').trim().slice(0, 80);
+        const links = normalizeLinks(body.links, current.profile_links || []);
+        const privacy = body.privacy === undefined ? normalizePrivacy(current.privacy) : normalizePrivacy(body.privacy, current.privacy);
         if (!USERNAME_RE.test(username)) return json(res, 400, { error: 'USERNAME_INVALID' });
         if (!name) return json(res, 400, { error: 'NAME_INVALID' });
-        const user = await one(`UPDATE users SET username=$1,name=$2,avatar=$3,color=$4,updated_at=NOW()
-          WHERE id=$5 RETURNING *`, [username, name, avatar, color, current.id]);
+        const user = await one(`UPDATE users SET username=$1,name=$2,avatar=$3,color=$4,bio=$5,status=$6,profile_links=$7::jsonb,privacy=$8::jsonb,updated_at=NOW()
+          WHERE id=$9 RETURNING *`, [username, name, avatar, color, bio, status, JSON.stringify(links), JSON.stringify(privacy), current.id]);
         return json(res, 200, { user: publicUser(user) });
+      }
+      if (req.method === 'PATCH' && url.pathname === '/api/auth/settings') {
+        const current = await userFromRequest(req);
+        if (!current) return json(res, 401, { error: 'UNAUTHORIZED' });
+        const body = await readJson(req, 32768);
+        const settings = normalizeSettings(body.settings, current.settings || {});
+        const user = await one('UPDATE users SET settings=$1::jsonb,updated_at=NOW() WHERE id=$2 RETURNING *', [JSON.stringify(settings), current.id]);
+        return json(res, 200, { settings: publicUser(user).settings });
       }
       if (req.method === 'POST' && url.pathname === '/api/auth/logout') {
         const token = parseCookies(req)[COOKIE]; if (token) await pool.query('DELETE FROM sessions WHERE token_hash=$1', [hash(token)]);
