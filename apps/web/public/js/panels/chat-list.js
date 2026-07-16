@@ -7,6 +7,7 @@ import { renderChatList } from '../ui.js';
 import { ICONS } from '../icons.js';
 import { chatViewPanel } from './chat-view.js';
 import { esc } from '../util.js';
+import { openRoomCreator, openRoomSettings } from '../room-surfaces.js';
 
 export function chatListPanel(client) {
   return {
@@ -52,18 +53,6 @@ export function chatListPanel(client) {
 
         <button class="fab" aria-label="Создать">+</button>
 
-        <div class="new-chat hidden">
-          <div class="new-chat-title">Новый чат</div>
-          <div class="new-chat-row">
-            <input class="new-chat-emoji" maxlength="2" value="💬" aria-label="Значок">
-            <input class="new-chat-name" placeholder="Название" maxlength="24">
-          </div>
-          <div class="new-chat-actions">
-            <button class="nc-cancel">Отмена</button>
-            <button class="nc-create">Создать</button>
-          </div>
-        </div>
-
         <div class="ctx-menu hidden"></div>`;
 
       const listEl = body.querySelector('.chat-list');
@@ -75,11 +64,6 @@ export function chatListPanel(client) {
       let filter = 'all';
       let showArchived = false;
       const menu = body.querySelector('.fab-menu');
-      const dialog = body.querySelector('.new-chat');
-      const titleEl = body.querySelector('.new-chat-title');
-      const emojiIn = body.querySelector('.new-chat-emoji');
-      const nameIn = body.querySelector('.new-chat-name');
-      const createBtn = body.querySelector('.nc-create');
       const ctx = body.querySelector('.ctx-menu');
       document.body.appendChild(ctx);
       const selectionBar = body.querySelector('.selection-bar');
@@ -90,19 +74,8 @@ export function chatListPanel(client) {
       preview.className = 'chat-preview hidden';
       document.body.appendChild(preview);
 
-
-      const PRESETS = {
-        channel: { title: 'Новый канал', icon: '📢', placeholder: 'Название канала' },
-        chat: { title: 'Новая группа', icon: '💬', placeholder: 'Название группы' },
-        dm: { title: 'Личное сообщение', icon: '👤', placeholder: 'Имя собеседника' },
-      };
-
-      let type = 'chat';
-      let editing = null;
-
       const hideAll = () => {
         menu.classList.add('hidden');
-        dialog.classList.add('hidden');
         ctx.classList.add('hidden');
         preview.classList.add('hidden');
       };
@@ -112,39 +85,8 @@ export function chatListPanel(client) {
         if (!open) menu.classList.remove('hidden');
       };
       const openForm = (t) => {
-        editing = null;
-        type = t;
-        const p = PRESETS[t];
-        titleEl.textContent = p.title;
-        emojiIn.value = p.icon;
-        emojiIn.disabled = false;
-        nameIn.placeholder = p.placeholder;
-        nameIn.value = '';
-        createBtn.textContent = 'Создать';
         hideAll();
-        dialog.classList.remove('hidden');
-        nameIn.focus();
-      };
-      const openRename = (id) => {
-        const chat = client.chatById(id);
-        if (!chat) return;
-        editing = id;
-        titleEl.textContent = 'Переименовать';
-        emojiIn.value = chat.icon;
-        emojiIn.disabled = true;
-        nameIn.value = chat.name;
-        createBtn.textContent = 'Сохранить';
-        hideAll();
-        dialog.classList.remove('hidden');
-        nameIn.focus();
-        nameIn.select();
-      };
-      const submit = () => {
-        const ok = editing
-          ? client.renameChat(editing, nameIn.value)
-          : client.createChat({ name: nameIn.value, icon: emojiIn.value.trim(), type });
-        if (ok) hideAll();
-        else nameIn.focus();
+        openRoomCreator(client, 'chat-list', t);
       };
 
 
@@ -211,10 +153,7 @@ export function chatListPanel(client) {
               const fid = act.slice(7); const f = client.folders.find((x) => x.id === fid);
               if (f) client.updateFolder(fid, f.chats.includes(id) ? f.chats.filter((x) => x !== id) : [...f.chats, id]);
             }
-            else if (act === 'info') {
-              client.openRoom(id);
-              setTimeout(() => document.querySelector('.panel[data-id="chat-room"] [data-el="head"]')?.click(), 0);
-            }
+            else if (act === 'info') openRoomSettings(client, id, 'chat-list');
             else if (act === 'pin') client.togglePin(id);
             else if (act === 'mute') {
               client.toggleMute(id);
@@ -226,7 +165,7 @@ export function chatListPanel(client) {
             else if (act === 'clear') {
               if (confirm(`Очистить историю чата «${chat.name}»?`)) client.clearHistory(id);
             }
-            else if (act === 'rename') { openRename(id); return; }
+            else if (act === 'rename') { hideAll(); openRoomSettings(client, id, 'chat-list'); return; }
             else if (act === 'invite') {
               client.createInvite(id)
                 .then(async (link) => {
@@ -268,16 +207,9 @@ export function chatListPanel(client) {
       for (const item of menu.querySelectorAll('.fab-item')) {
         item.onclick = () => openForm(item.dataset.type);
       }
-      body.querySelector('.nc-cancel').onclick = hideAll;
-      createBtn.onclick = submit;
-      nameIn.onkeydown = (e) => {
-        if (e.key === 'Enter') submit();
-        else if (e.key === 'Escape') hideAll();
-      };
-
       const onOutside = (e) => {
         if (!fab.contains(e.target) && !menu.contains(e.target)
-          && !dialog.contains(e.target) && !ctx.contains(e.target)) hideAll();
+          && !ctx.contains(e.target)) hideAll();
       };
       document.addEventListener('pointerdown', onOutside);
 

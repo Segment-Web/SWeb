@@ -169,7 +169,9 @@ export async function createRooms(config, auth) {
     return rows.map(publicRoom);
   };
 
-  const createRoom = async (owner, { type, title, slug }) => {
+  const cleanRoomIcon = (value, fallback = '') => String(value || '').trim().slice(0, 16) || fallback;
+
+  const createRoom = async (owner, { type, title, slug, icon: requestedIcon }) => {
     const kind = ROOM_TYPES.has(type) ? type : ChatType.Chat;
     const cleanTitle = String(title || '').trim().slice(0, 64);
     if (!cleanTitle) throw Object.assign(new Error('TITLE_REQUIRED'), { status: 400 });
@@ -181,7 +183,7 @@ export async function createRooms(config, auth) {
       if (await one('SELECT 1 FROM rooms WHERE slug=$1', [cleanSlug])) throw Object.assign(new Error('SLUG_TAKEN'), { status: 409 });
     }
     const id = `${kind}-${randomUUID().slice(0, 8)}`;
-    const icon = { [ChatType.DM]: '👤', [ChatType.Chat]: '💬', [ChatType.Channel]: '📢' }[kind];
+    const icon = cleanRoomIcon(requestedIcon, { [ChatType.DM]: '👤', [ChatType.Chat]: '💬', [ChatType.Channel]: '📢' }[kind]);
     const row = await one(
       `INSERT INTO rooms(id,type,slug,title,icon,is_public,owner_id) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
       [id, kind, cleanSlug, cleanTitle, icon, isPublic, owner.id],
@@ -189,6 +191,17 @@ export async function createRooms(config, auth) {
     await pool.query('INSERT INTO room_members(room_id,user_id,role) VALUES($1,$2,$3)', [id, owner.id, 'owner']);
     indexRoom(row); indexMember(id, owner.id);
     return publicRoom(row);
+  };
+
+  const updateRoom = async (user, { roomId, title, icon }) => {
+    const room = await one('SELECT * FROM rooms WHERE id=$1', [roomId]);
+    if (!room) throw Object.assign(new Error('NOT_FOUND'), { status: 404 });
+    if (room.owner_id !== user.id) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
+    const cleanTitle = title == null ? room.title : String(title).trim().slice(0, 64);
+    if (!cleanTitle) throw Object.assign(new Error('TITLE_REQUIRED'), { status: 400 });
+    const cleanIcon = icon == null ? room.icon : cleanRoomIcon(icon, room.icon);
+    const updated = await one('UPDATE rooms SET title=$2, icon=$3 WHERE id=$1 RETURNING *', [roomId, cleanTitle, cleanIcon]);
+    return publicRoom(updated);
   };
 
   const createInvite = async (user, roomId) => {
@@ -411,6 +424,10 @@ export async function createRooms(config, auth) {
       if (req.method === 'POST' && url.pathname === '/api/rooms') {
         const body = await readJson(req);
         return json(res, 201, { room: await createRoom(user, body) });
+      }
+      if (req.method === 'PATCH' && url.pathname === '/api/rooms') {
+        const body = await readJson(req);
+        return json(res, 200, { room: await updateRoom(user, { ...body, roomId: String(body.roomId || '') }) });
       }
       if (req.method === 'POST' && url.pathname === '/api/rooms/invite') {
         const body = await readJson(req);

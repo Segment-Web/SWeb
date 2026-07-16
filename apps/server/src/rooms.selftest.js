@@ -64,8 +64,9 @@ const anon = await call('GET', '/api/rooms/mine');
 ok(anon.status === 401, 'unauthenticated /mine -> 401');
 
 // Create a private chat.
-const created = await call('POST', '/api/rooms', { user: owner, body: { type: 'chat', title: 'Team' } });
+const created = await call('POST', '/api/rooms', { user: owner, body: { type: 'chat', title: 'Team', icon: '🧩' } });
 ok(created.status === 201 && created.data.room?.id, 'create chat -> 201 with id');
+ok(created.data.room.icon === '🧩', 'create chat keeps its chosen icon');
 const roomId = created.data.room.id;
 ok(rooms.canAccess(owner.id, roomId), 'owner can access own private room');
 ok(!rooms.canAccess(other.id, roomId), 'non-member cannot access private room');
@@ -73,6 +74,11 @@ ok(!rooms.canAccess(other.id, roomId), 'non-member cannot access private room');
 // Create a public channel with a slug and resolve it by link.
 const channel = await call('POST', '/api/rooms', { user: owner, body: { type: 'channel', title: 'Dev', slug: 'dev-talk' } });
 ok(channel.status === 201 && channel.data.room.slug === 'dev-talk', 'create channel with slug');
+ok(channel.data.room.icon === '📢', 'channel receives its default icon');
+const renamedChannel = await call('PATCH', '/api/rooms', { user: owner, body: { roomId: channel.data.room.id, title: 'Development', icon: '🧪' } });
+ok(renamedChannel.status === 200 && renamedChannel.data.room.title === 'Development' && renamedChannel.data.room.icon === '🧪', 'owner updates room identity');
+const forbiddenRename = await call('PATCH', '/api/rooms', { user: other, body: { roomId: channel.data.room.id, title: 'Hijacked' } });
+ok(forbiddenRename.status === 403, 'non-owner cannot update room identity');
 const publicKey = Buffer.alloc(32, 7).toString('base64');
 const claimedKey = await call('POST', '/api/rooms/history/public-key', { user: owner, body: { roomId: channel.data.room.id, key: publicKey } });
 ok(claimedKey.status === 200 && claimedKey.data.room.historyKey === publicKey, 'channel owner publishes its public history key');

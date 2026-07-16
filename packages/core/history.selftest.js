@@ -49,6 +49,7 @@ const roomId = 'chat-abc';
 const A = new SegmentClient({ storage: mkStorage() });
 const B = new SegmentClient({ storage: mkStorage() });
 const C = new SegmentClient({ storage: mkStorage() });
+ok(/^[a-z0-9-]{3,32}$/.test(A._slugify('Новости')), 'channel slug remains valid for a non-Latin title');
 Object.assign(A.self, { id: 'user-a', name: 'A', username: 'alice' });
 Object.assign(B.self, { id: 'user-b', name: 'B', username: 'bob' });
 Object.assign(C.self, { id: 'user-c', name: 'C', username: 'carol' });

@@ -42,6 +42,33 @@ window.Segment = segmentApi;
 // so right-click behaves consistently across messages, media and empty areas.
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
+// Mouse Back/Forward buttons mirror Ctrl+Z / Ctrl+Y inside the last active
+// editor. Capturing pointerdown keeps Chromium from turning them into browser
+// navigation before the composer can consume the action.
+let lastEditable = null;
+const isEditable = (element) => Boolean(element && (element.isContentEditable || /^(INPUT|TEXTAREA)$/.test(element.tagName)) && !element.disabled && !element.readOnly);
+document.addEventListener('focusin', (event) => { if (isEditable(event.target)) lastEditable = event.target; }, true);
+const runMouseHistory = (event) => {
+  if (event.button !== 3 && event.button !== 4) return false;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  const editor = isEditable(document.activeElement) ? document.activeElement : (lastEditable?.isConnected ? lastEditable : null);
+  if (!editor) return true;
+  editor.focus({ preventScroll: true });
+  const command = event.button === 3 ? 'undo' : 'redo';
+  document.execCommand(command);
+  editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: `history${command[0].toUpperCase()}${command.slice(1)}` }));
+  return true;
+};
+window.addEventListener('pointerdown', runMouseHistory, true);
+for (const eventName of ['pointerup', 'mousedown', 'mouseup', 'auxclick']) {
+  window.addEventListener(eventName, (event) => {
+    if (event.button !== 3 && event.button !== 4) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
+}
+
 const scrollSurfaceSelector = '.feed,.chat-list,.info-body,.fwd-list,.autocomplete,.attach-draft,.ctx-menu,.workspace-surface-body,.pinned-manager-list,.composer-input,.emoji-menu,.react-picker';
 let edgeScrollSurface = null;
 const scrollSurfaceTimers = new WeakMap();

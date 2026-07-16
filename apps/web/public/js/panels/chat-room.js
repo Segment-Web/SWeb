@@ -2,6 +2,7 @@ import { renderFeed, renderMessage, renderSystem, showTyping, scrollFeedToBottom
 import { esc, attachLabel, fmtSize } from '../util.js';
 import { ICONS } from '../icons.js';
 import { chatViewPanel } from './chat-view.js';
+import { openRoomSettings } from '../room-surfaces.js';
 import { LIMITS } from '@segment/protocol';
 
 const TYPING_HIDE_MS = 2000;
@@ -1150,8 +1151,11 @@ export function chatRoomPanel(client) {
         const muted = client.isMuted(chat.id);
         const chatPinned = client.pinned.has(chat.id);
         const editable = client.canEditChat(chat.id);
+        const owner = Boolean(chat.ownerId && chat.ownerId === client.self.id);
         const showMembers = chat.type === 'chat' || chat.type === 'channel';
-        const leaveLabel = { channel: 'Выйти из канала', chat: 'Выйти из группы', dm: 'Удалить чат' }[chat.type] || 'Удалить чат';
+        const leaveLabel = owner
+          ? ({ channel: 'Удалить канал', chat: 'Удалить группу', dm: 'Удалить чат' }[chat.type] || 'Удалить чат')
+          : ({ channel: 'Выйти из канала', chat: 'Выйти из группы', dm: 'Удалить чат' }[chat.type] || 'Удалить чат');
 
         const tab = (id, label, n) => `<button class="info-tab ${infoTab === id ? 'active' : ''}" data-tab="${id}">${label}${n ? ` <span>${n}</span>` : ''}</button>`;
         let content = '';
@@ -1187,6 +1191,7 @@ export function chatRoomPanel(client) {
               <button class="info-act" data-act="pin-chat">${chatPinned ? ICONS.unpin : ICONS.pin}<span>${chatPinned ? 'Открепить' : 'Закрепить'}</span></button>
               <button class="info-act" data-act="open-block">${ICONS.newBlock}<span>В блок</span></button>
               ${editable ? `<button class="info-act" data-act="rename">${ICONS.rename}<span>Название</span></button>` : ''}
+              <button class="info-act" data-act="settings">${ICONS.info}<span>Настройки</span></button>
             </div>
           </div>
           <div class="info-tabs">
@@ -1213,8 +1218,9 @@ export function chatRoomPanel(client) {
             else if (act === 'open-block') { window.Segment?.workspace?.addPanel(chatViewPanel(client, chat)); hideMenus(); }
             else if (act === 'pin-chat') { client.togglePin(chat.id); renderInfo(); }
             else if (act === 'mute') { client.toggleMute(chat.id); renderInfo(); }
+            else if (act === 'settings') { hideMenus(); openRoomSettings(client, chat.id, 'chat-room'); }
             else if (act === 'clear') { if (confirm(`Очистить историю чата «${chat.name}»?`)) { client.clearHistory(chat.id); renderInfo(); } }
-            else if (act === 'rename') { const name = prompt('Новое название', chat.name); if (name) { client.renameChat(chat.id, name); renderInfo(); } }
+            else if (act === 'rename') { hideMenus(); openRoomSettings(client, chat.id, 'chat-room'); }
             else if (act === 'leave') { client.removeChat(chat.id); hideMenus(); }
           };
         }

@@ -165,7 +165,7 @@ export class SegmentClient {
 
   _slugify(name) {
     const base = String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30);
-    const padded = base.length >= 3 ? base : `${base}-${Math.random().toString(36).slice(2, 6)}`;
+    const padded = base.length >= 3 ? base : `${base ? `${base}-` : 'ch-'}${Math.random().toString(36).slice(2, 8)}`;
     return padded.slice(0, 32).replace(/-+$/g, '') || `ch-${Math.random().toString(36).slice(2, 8)}`;
   }
 
@@ -244,12 +244,11 @@ export class SegmentClient {
     const clean = (name || '').trim();
     if (!clean) return null;
     const kind = [ChatType.DM, ChatType.Chat, ChatType.Channel].includes(type) ? type : ChatType.Chat;
-    const payload = { type: kind, title: clean };
+    const payload = { type: kind, title: clean, icon: String(icon || '').trim().slice(0, 16) };
     if (kind === ChatType.Channel) payload.slug = this._slugify(clean);
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const { room } = await this._roomsApi('POST', '/api/rooms', payload);
-        if (icon) room.icon = icon;
         this._seedHistoryKey(room.id); // creator seeds the room's history key
         await this._ensureOwnedRoomHistoryKey(room);
         return this._addServerRoom(room, { open: true });
@@ -394,15 +393,35 @@ export class SegmentClient {
 
   canEditChat(id) {
     const chat = this.chatById(id);
-    return !!chat && chat.type !== ChatType.Saved;
+    return !!chat && chat.type !== ChatType.Saved && (chat.local || chat.ownerId === this.self.id);
   }
 
 
   renameChat(id, name) {
     const chat = this.chatById(id);
     const clean = (name || '').trim();
-    if (!chat || !clean || chat.type === ChatType.Saved) return false;
+    if (!chat || !clean || !this.canEditChat(id)) return false;
     chat.name = clean;
+    if (!chat.local) this._updateServerRoom(id, { title: clean }).catch(() => this._emit('error', { scope: 'updateChat', code: 'UPDATE_FAILED' }));
+    this._emit('chats');
+    if (this.currentRoom === id) this._emit('room', { chat, messages: this.messages[id] });
+    return true;
+  }
+
+  async _updateServerRoom(roomId, patch) {
+    const { room } = await this._roomsApi('PATCH', '/api/rooms', { roomId, ...patch });
+    return this._addServerRoom(room);
+  }
+
+  updateChat(id, { name, icon } = {}) {
+    const chat = this.chatById(id);
+    if (!chat || !this.canEditChat(id)) return false;
+    const cleanName = String(name ?? chat.name).trim();
+    const cleanIcon = String(icon ?? chat.icon).trim().slice(0, 16) || chat.icon;
+    if (!cleanName) return false;
+    chat.name = cleanName;
+    chat.icon = cleanIcon;
+    if (!chat.local) this._updateServerRoom(id, { title: cleanName, icon: cleanIcon }).catch(() => this._emit('error', { scope: 'updateChat', code: 'UPDATE_FAILED' }));
     this._emit('chats');
     if (this.currentRoom === id) this._emit('room', { chat, messages: this.messages[id] });
     return true;
