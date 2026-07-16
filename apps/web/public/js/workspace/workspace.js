@@ -523,8 +523,10 @@ export class Workspace {
     const r = itemEl.getBoundingClientRect();
     const top = clamp(r.top - 10, 8, Math.max(8, window.innerHeight - 430));
     this.previewEl.style.top = `${top}px`;
-    if (side === 'left') { this.previewEl.style.left = `${r.right + 8}px`; this.previewEl.style.right = 'auto'; }
-    else { this.previewEl.style.right = `${window.innerWidth - r.left + 8}px`; this.previewEl.style.left = 'auto'; }
+    this.previewEl.classList.toggle('ws-preview-left', side === 'left');
+    this.previewEl.classList.toggle('ws-preview-right', side === 'right');
+    if (side === 'left') { this.previewEl.style.left = `${r.right + 2}px`; this.previewEl.style.right = 'auto'; }
+    else { this.previewEl.style.right = `${window.innerWidth - r.left + 2}px`; this.previewEl.style.left = 'auto'; }
     this.previewEl.classList.add('show');
     this._showPalette(id);
   }
@@ -536,7 +538,7 @@ export class Workspace {
       this._hidePalette();
 
       if (this.previewEl.firstElementChild) this.previewEl.firstElementChild.remove();
-    }, 120);
+    }, 260);
   }
 
   _hidePreviewNow() {

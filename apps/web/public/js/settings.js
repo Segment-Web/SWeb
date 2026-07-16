@@ -13,7 +13,17 @@ const savePrefs = (patch) => window.Segment?.saveUiPrefs?.(patch);
 const toast = (text) => window.Segment?.toast?.(text);
 const field = (label, name, value = '', attrs = '') => `<label class="settings-field"><span>${label}</span><input name="${name}" value="${escapeHtml(value)}" ${attrs}></label>`;
 const toggle = (name, label, checked, hint = '') => `<label class="settings-toggle-row"><span><b>${label}</b>${hint ? `<small>${hint}</small>` : ''}</span><input type="checkbox" name="${name}" ${checked ? 'checked' : ''}></label>`;
-const icon = (name) => ({ profile: '👤', privacy: '🔒', appearance: '◐', chats: '💬', devices: '▣', storage: '◴', language: '文', mods: '◇' }[name]);
+const iconPaths = {
+  profile: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20c.8-4 3.2-6 7.5-6s6.7 2 7.5 6"/>',
+  privacy: '<rect x="5" y="10" width="14" height="10" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
+  appearance: '<path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-1 1.2-2.1-.8-1.2.1-2.4 1.5-2.4H17a4 4 0 0 0 4-4.1A9 9 0 0 0 12 3Z"/><circle cx="7.5" cy="10" r=".8"/><circle cx="10" cy="6.7" r=".8"/><circle cx="14" cy="6.5" r=".8"/>',
+  chats: '<path d="M20 15a3 3 0 0 1-3 3H9l-5 3v-6a3 3 0 0 1-1-2V7a3 3 0 0 1 3-3h11a3 3 0 0 1 3 3Z"/>',
+  devices: '<rect x="4" y="3" width="16" height="13" rx="2"/><path d="M9 21h6M12 16v5"/>',
+  storage: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',
+  language: '<path d="M4 5h9M8.5 3v2c0 5-2 8-5 10M5 9c1.5 3 4 5 7 6M14 20l4-10 4 10M15.5 16h5"/>',
+  mods: '<path d="M8 3v3M16 3v3M8 18v3M16 18v3M3 8h3M18 8h3M3 16h3M18 16h3"/><rect x="6" y="6" width="12" height="12" rx="3"/><circle cx="12" cy="12" r="2"/>',
+};
+const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPaths[name] || ''}</svg>`;
 
 const resizeAvatar = (file) => new Promise((resolve, reject) => {
   if (!file?.type.startsWith('image/')) return reject(new Error('INVALID'));
