@@ -2,6 +2,18 @@
 
 User-visible and technical changes are listed by release, newest first.
 
+## 0.0.3 — July 17, 2026
+
+- Redesigned user profiles with cover images, badges, community identity and dedicated content sections.
+- Added customizable profile QR codes.
+- Added account switching and management for up to five accounts on one device.
+- Redesigned settings and introduced the foundation for custom themes and interface modifications.
+- Added dedicated creation and management surfaces for chats and channels.
+- Improved chat history preload, synchronization and navigation after sign-in.
+- Updated the Segment logo throughout the application.
+- Refined panel resizing, compact layouts, scrollbars and account dialogs.
+- Fixed message authorization, concurrency issues and multiple profile-interface edge cases.
+
 ## 0.0.2 — July 16, 2026
 
 - Added active session management and secure one-time device linking.

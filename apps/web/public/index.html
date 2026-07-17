@@ -9,7 +9,7 @@
 <meta name="twitter:image" content="https://web.segmnt.org/logo.png?rev=20260716">
 <link rel="icon" type="image/png" href="/logo.png?rev=20260716">
 <link rel="apple-touch-icon" href="/logo.png?rev=20260716">
-<link rel="stylesheet" href="./styles.css?v=0.0.2">
+<link rel="stylesheet" href="./styles.css?v=0.0.3">
 
 <script type="importmap">
 {
@@ -70,7 +70,7 @@
   document.body.classList.toggle('desktop-required', !desktop);
   if (desktop) {
     document.getElementById('desktopOnlyGate')?.remove();
-    import('./app.js?v=0.0.2');
+    import('./app.js?v=0.0.3');
   } else {
     document.getElementById('gate')?.remove();
   }
