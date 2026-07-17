@@ -8,6 +8,7 @@ const BADGES = {
   mods: { icon: '🧩', title: 'Модификатор', text: 'Настраивает Segment под себя' },
   supporter: { icon: '♥', title: 'Поддержка', text: 'Поддерживает развитие проекта' },
 };
+let activeAccountModal = null;
 
 const avatarHtml = (user, className) => `<div class="${className}" style="background:${user.color || 'var(--accent)'}">${user.avatar ? `<img src="${esc(user.avatar)}" alt="">` : esc(user.name?.trim()[0]?.toUpperCase() || 'S')}</div>`;
 const profileApi = async (patch) => {
@@ -250,6 +251,18 @@ export function openProfileSurface(client, user, { sourceId = 'profile', openSet
 }
 
 function mountAccountModal(modal, body) {
+  if (activeAccountModal?.isConnected) {
+    activeAccountModal.classList.add('is-open');
+    activeAccountModal.querySelector('input:not([type="hidden"])')?.focus({ preventScroll:true });
+    modal.remove();
+    return;
+  }
+  if (activeAccountModal) {
+    activeAccountModal._accountCleanup?.();
+    activeAccountModal.remove();
+  }
+  activeAccountModal = modal;
+  modal._accountOwner = body;
   const panel = body.closest('.panel[data-id="profile"]') || body;
   const dialog = modal.querySelector('.account-add-dialog');
   const oldClose = dialog.querySelector('[data-close]');
@@ -280,7 +293,6 @@ function mountAccountModal(modal, body) {
     dialog.style.top = `${centerY}px`;
   };
   document.body.appendChild(modal);
-  body._accountModal?._accountCleanup?.(); body._accountModal?.remove(); body._accountModal = modal;
   const observer = new ResizeObserver(place);
   observer.observe(panel); observer.observe(dialog);
   window.addEventListener('resize', place);
@@ -292,7 +304,7 @@ function mountAccountModal(modal, body) {
     const finish=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',finish);window.removeEventListener('pointercancel',finish);};
     window.addEventListener('pointermove',move);window.addEventListener('pointerup',finish);window.addEventListener('pointercancel',finish);
   });
-  modal._accountCleanup = () => { observer.disconnect(); window.removeEventListener('resize', place); if (body._accountModal === modal) body._accountModal = null; };
+  modal._accountCleanup = () => { observer.disconnect(); window.removeEventListener('resize', place); if (activeAccountModal === modal) activeAccountModal = null; };
   place();
 }
 
@@ -314,7 +326,7 @@ export function profilePanel(client) {
       accountMenu.querySelector('[data-account-settings]').onclick=()=>{closeAccountMenu();openSettings();};accountMenu.querySelector('[data-account-remove]').onclick=async()=>{if(!menuAccount||menuAccount.id===client.self.id)return;await fetch(`/api/auth/device-accounts/${encodeURIComponent(menuAccount.id)}`,{method:'DELETE',credentials:'same-origin'}).catch(()=>{});closeAccountMenu();loadAccounts();};
       const dismissAccountMenu=(event)=>{if(!accountMenu.contains(event.target))closeAccountMenu();};document.addEventListener('pointerdown',dismissAccountMenu,true);
       body.querySelector('.profile-settings').onclick=(event)=>{event.stopPropagation();openSettings();};const summary=body.querySelector('.profile');summary.onclick=openProfile;summary.onkeydown=(event)=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openProfile();}};renderIdentity();loadAccounts();
-      return()=>{body._accountModal?._accountCleanup?.();body._accountModal?.remove();document.removeEventListener('pointerdown',dismissAccountMenu,true);window.Segment?.workspace?.closeSurface();offs.forEach((off)=>off());};
+      return()=>{if(activeAccountModal?.isConnected&&activeAccountModal._accountOwner===body){activeAccountModal._accountCleanup?.();activeAccountModal.remove();}document.removeEventListener('pointerdown',dismissAccountMenu,true);window.Segment?.workspace?.closeSurface();offs.forEach((off)=>off());};
     },
   };
 }
