@@ -63,8 +63,8 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
     const game = meta.game;
     root.innerHTML = `<div class="profile-card-view ${own ? 'is-own' : ''}">
       <div class="profile-card-cover" style="${cover ? `background-image:linear-gradient(180deg,rgba(8,12,18,.08),rgba(8,12,18,.22)),url('${esc(cover)}')` : `--profile-color:${user.color || 'var(--accent)'}`}">
-        <button class="profile-cover-code" type="button" aria-label="Ссылка профиля">${ICONS.newBlock}</button>
-        <button class="profile-cover-menu" type="button" aria-label="Меню">•••</button>
+        <button class="profile-cover-code" type="button" aria-label="Ссылка профиля">${ICONS.qr}</button>
+        <button class="profile-cover-menu" type="button" aria-label="Меню">${ICONS.more}</button>
       </div>
       <div class="profile-card-identity">
         <button class="profile-chip profile-achievements" type="button"><span>${pinnedBadges[0] ? BADGES[pinnedBadges[0]].icon : '🏆'}</span><b>${pinnedBadges.length || 0} ${pinnedBadges.length === 1 ? 'достижение' : 'достижения'}</b></button>
@@ -73,7 +73,7 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
         <div class="profile-card-name"><h2>${esc(user.name)}</h2><p>@${esc(user.username || '')}</p>${own ? '' : `<small>${esc(user.status || 'был(а) недавно')}</small>`}</div>
       </div>
       <div class="profile-card-actions ${own ? 'own-actions' : ''}">
-        ${own ? `<button data-profile-action="photo">${ICONS.image}<span>Фото</span></button><button data-profile-action="edit">${ICONS.edit}<span>Изменить</span></button><button data-profile-action="settings">${ICONS.settings}<span>Настройки</span></button>` : `<button data-profile-action="message">${ICONS.open}<span>Чат</span></button><button data-profile-action="copy">${ICONS.copy}<span>Ссылка</span></button><button data-profile-action="call">${ICONS.bell}<span>Звонок</span></button><button data-profile-action="block">${ICONS.newBlock}<span>+Блок</span></button>`}
+        ${own ? `<button data-profile-action="photo">${ICONS.image}<span>Выбрать фото</span></button><button data-profile-action="edit">${ICONS.edit}<span>Изменить</span></button><button data-profile-action="settings">${ICONS.settings}<span>Настройки</span></button>` : `<button data-profile-action="message">${ICONS.open}<span>Чат</span></button><button data-profile-action="sound">${ICONS.bell}<span>Звук</span></button><button data-profile-action="call">${ICONS.phone}<span>Звонок</span></button><button data-profile-action="block">${ICONS.newBlock}<span>+Блок</span></button>`}
       </div>
       <section class="profile-presence">
         <div class="profile-music ${music?.active ? '' : 'is-empty'}"><span>♫</span><div><small>${music?.active ? 'Сейчас играет' : 'Spotify'}</small><b>${esc(music?.active ? `${music.artist} — ${music.title}` : 'Не подключён')}</b></div><em>›</em></div>
@@ -87,10 +87,18 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
 
     for (const button of root.querySelectorAll('[data-profile-tab]')) button.onclick = () => { tab = button.dataset.profileTab; render(); };
     root.querySelector('.profile-cover-code').onclick = async () => { await navigator.clipboard.writeText(`${location.origin}/@${user.username}`); window.Segment?.toast?.('Ссылка на профиль скопирована'); };
-    root.querySelector('.profile-cover-menu').onclick = () => root.querySelector('.profile-cover-code').click();
+    root.querySelector('.profile-cover-menu').onclick = () => {
+      const popover = root.querySelector('.profile-detail-popover');
+      popover.classList.add('is-menu');
+      popover.innerHTML = `<div class="profile-quick-menu"><button data-copy-profile type="button">${ICONS.copy}<span>Скопировать ссылку</span></button><button data-close-profile type="button">${ICONS.close}<span>Закрыть профиль</span></button></div>`;
+      popover.classList.remove('hidden');
+      popover.querySelector('[data-copy-profile]').onclick = () => root.querySelector('.profile-cover-code').click();
+      popover.querySelector('[data-close-profile]').onclick = close;
+    };
     root.querySelector('.profile-community')?.addEventListener('click', () => { if (community?.id && client.chatById(community.id)) { close(); client.openRoom(community.id); } });
     root.querySelector('.profile-achievements').onclick = () => {
       const popover = root.querySelector('.profile-detail-popover');
+      popover.classList.remove('is-menu');
       popover.innerHTML = `<div class="profile-detail-head"><div><b>Достижения</b><span>${own ? 'Выберите до трёх закреплённых' : `${pinnedBadges.length} закреплено`}</span></div><button type="button">×</button></div><div class="profile-badge-list">${Object.entries(BADGES).map(([id,badge]) => `<label class="${pinnedBadges.includes(id) ? 'active' : ''}">${own ? `<input type="checkbox" value="${id}" ${pinnedBadges.includes(id) ? 'checked' : ''}>` : ''}<i>${badge.icon}</i><span><b>${badge.title}</b><small>${badge.text}</small></span></label>`).join('')}</div>${own ? '<button class="profile-badge-save" type="button">Сохранить</button>' : ''}`;
       popover.classList.remove('hidden');
       popover.querySelector('.profile-detail-head button').onclick = () => popover.classList.add('hidden');
@@ -103,7 +111,7 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
     const action = (name, handler) => root.querySelector(`[data-profile-action="${name}"]`)?.addEventListener('click', handler);
     action('photo',()=>openSettings?.('profile')); action('edit',()=>openSettings?.('profile')); action('settings',()=>openSettings?.('home'));
     action('copy',()=>root.querySelector('.profile-cover-code').click());
-    for (const id of ['message','call','block']) action(id,()=>window.Segment?.toast?.('Функция будет подключена к профилям следующим этапом'));
+    for (const id of ['message','sound','call','block']) action(id,()=>window.Segment?.toast?.('Функция будет подключена к профилям следующим этапом'));
   };
   render();
 }
@@ -115,7 +123,7 @@ export function openProfileSurface(client, user, { sourceId = 'profile', openSet
     mount(root,close){ return mountSettings(root,close,client,()=>client._emit('identity',{name:client.self.name,user:client.self}),page); },
   }) : null);
   return window.Segment?.workspace?.openSurface({
-    id: `profile-view:${user.username || user.id || 'self'}`, sourceId, minWidth:420, maxWidth:720, className:'profile-view-surface',
+    id: `profile-view:${user.username || user.id || 'self'}`, sourceId, minWidth:480, maxWidth:529, className:'profile-view-surface',
     mount(root,close){ mountProfileView(root,close,client,user,{own,openSettings:settings}); },
   });
 }
