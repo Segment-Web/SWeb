@@ -155,7 +155,8 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
   if (own || (!content.media.length && content.posts.length)) tab = 'posts';
   const render = () => {
     const meta = user.profile || {};
-    const pinnedBadges = (meta.pinnedBadges || []).filter((id) => BADGES[id]);
+    const pinnedBadges = (meta.pinnedBadges || []).filter((id) => BADGES[id]).slice(0,1);
+    const pinnedBadge = pinnedBadges[0] ? BADGES[pinnedBadges[0]] : null;
     const community = meta.pinnedCommunity;
     const cover = meta.cover || content.media[0]?.poster || content.media[0]?.data || '';
     const music = meta.music;
@@ -171,7 +172,7 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
         <button class="profile-cover-menu" type="button" aria-label="${own ? 'Изменить обложку' : 'Меню'}">${own ? ICONS.image : ICONS.more}</button>
       </div>
       <div class="profile-card-identity ${user.status && !own ? 'has-status' : ''}">
-        ${pinnedBadges.length ? `<button class="profile-chip profile-achievements" type="button"><span>${BADGES[pinnedBadges[0]].icon}</span><b>${pinnedBadges.length} ${pinnedBadges.length === 1 ? 'достижение' : 'достижения'}</b></button>` : ''}
+        ${pinnedBadge ? `<button class="profile-chip profile-achievements" type="button"><span>${pinnedBadge.icon}</span><b>${esc(pinnedBadge.title)}</b></button>` : ''}
         ${avatarHtml(user,'profile-card-avatar')}
         ${community ? `<button class="profile-chip profile-community" type="button"><span>${esc(community.icon || '◇')}</span><b>${esc(community.name)}</b></button>` : ''}
         <div class="profile-card-name"><h2>${esc(user.name)}</h2>${user.username ? `<button type="button" data-copy-username>@${esc(user.username)}</button>` : ''}${!own && user.status ? `<small>${esc(user.status)}</small>` : ''}</div>
@@ -221,12 +222,13 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
     if (achievements) achievements.onclick = () => {
       const popover = root.querySelector('.profile-detail-popover');
       popover.classList.remove('is-menu');
-      popover.innerHTML = `<div class="profile-detail-head"><button type="button" aria-label="Закрыть"></button><div><b>Достижения</b><span>${own ? 'Выберите до трёх закреплённых' : `${pinnedBadges.length} закреплено`}</span></div></div><div class="profile-badge-list">${Object.entries(BADGES).map(([id,badge]) => `<label class="${pinnedBadges.includes(id) ? 'active' : ''}">${own ? `<input type="checkbox" value="${id}" ${pinnedBadges.includes(id) ? 'checked' : ''}>` : ''}<i>${badge.icon}</i><span><b>${badge.title}</b><small>${badge.text}</small></span></label>`).join('')}</div>${own ? '<button class="profile-badge-save" type="button">Сохранить</button>' : ''}`;
+      const badgeEntries = own ? Object.entries(BADGES) : Object.entries(BADGES).filter(([id]) => pinnedBadges.includes(id));
+      popover.innerHTML = `<div class="profile-detail-head"><button type="button" aria-label="Закрыть"></button><div><b>Достижение</b><span>${own ? 'Выберите одно закреплённое достижение' : pinnedBadge.title}</span></div></div><div class="profile-badge-list">${badgeEntries.map(([id,badge]) => `<label class="${pinnedBadges.includes(id) ? 'active' : ''}">${own ? `<input type="radio" name="pinnedBadge" value="${id}" ${pinnedBadges.includes(id) ? 'checked' : ''}>` : ''}<i>${badge.icon}</i><span><b>${badge.title}</b><small>${badge.text}</small></span></label>`).join('')}</div>${own ? '<button class="profile-badge-save" type="button">Сохранить</button>' : ''}`;
       popover.classList.remove('hidden');
       popover.querySelector('.profile-detail-head button').onclick = () => popover.classList.add('hidden');
       popover.querySelector('.profile-badge-save')?.addEventListener('click', async () => {
-        const selected = [...popover.querySelectorAll('input:checked')].slice(0,3).map((input) => input.value);
-        try { const updated = await profileApi({ profile:{ pinnedBadges:selected } }); Object.assign(client.self,updated); Object.assign(user,updated); client._emit('identity',{name:updated.name,user:updated}); window.Segment?.toast?.('Достижения закреплены'); render(); } catch { window.Segment?.toast?.('Не удалось сохранить'); }
+        const selected = popover.querySelector('input:checked')?.value;
+        try { const updated = await profileApi({ profile:{ pinnedBadges:selected ? [selected] : [] } }); Object.assign(client.self,updated); Object.assign(user,updated); client._emit('identity',{name:updated.name,user:updated}); window.Segment?.toast?.('Достижение закреплено'); render(); } catch { window.Segment?.toast?.('Не удалось сохранить'); }
       });
     };
     for (const item of root.querySelectorAll('[data-profile-media]')) item.onclick = () => window.Segment?.openMedia?.(content.media.map((entry) => ({type:entry.kind === 'photo' ? 'photo' : 'video',src:entry.data,poster:entry.poster,name:entry.name,author:user.name})),Number(item.dataset.profileMedia));

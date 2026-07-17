@@ -427,7 +427,7 @@ export async function createAuth(config) {
           const cover = body.profile.cover === undefined ? (previousProfile.cover || '') : validateAvatar(body.profile.cover);
           const pinnedBadges = body.profile.pinnedBadges === undefined
             ? (Array.isArray(previousProfile.pinnedBadges) ? previousProfile.pinnedBadges : [])
-            : [...new Set(Array.isArray(body.profile.pinnedBadges) ? body.profile.pinnedBadges.filter((badge) => PROFILE_BADGES.has(badge)) : [])].slice(0, 3);
+            : [...new Set(Array.isArray(body.profile.pinnedBadges) ? body.profile.pinnedBadges.filter((badge) => PROFILE_BADGES.has(badge)) : [])].slice(0, 1);
           let pinnedCommunity = previousProfile.pinnedCommunity || null;
           if (body.profile.pinnedCommunityId !== undefined) {
             const roomId = String(body.profile.pinnedCommunityId || '').slice(0, 80);

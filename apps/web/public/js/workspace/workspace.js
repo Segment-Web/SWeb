@@ -236,9 +236,10 @@ export class Workspace {
     const syncFromSource = () => {
       if (!source.isConnected || this._surface?.element !== element) return;
       const sourceWidth = source.getBoundingClientRect().width;
-      width = sourceWidth < effectiveMinWidth()
-        ? clamp(this._resizePanelWidth(sourceId, effectiveMinWidth()), effectiveMinWidth(), widthLimit())
-        : clamp(sourceWidth, effectiveMinWidth(), widthLimit());
+      const constrainedWidth = clamp(sourceWidth, effectiveMinWidth(), widthLimit());
+      width = sourceWidth === constrainedWidth
+        ? constrainedWidth
+        : clamp(this._resizePanelWidth(sourceId, constrainedWidth), effectiveMinWidth(), widthLimit());
       place();
     };
     const sourceResizeObserver = new ResizeObserver(syncFromSource);

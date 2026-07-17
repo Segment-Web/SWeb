@@ -45,7 +45,7 @@ const profile = await call('profile', {
   profile: { pinnedBadges: ['early', 'mods', 'invalid'] },
   privacy: { avatar: 'members', bio: 'everyone', status: 'nobody', links: 'members' },
 }, 'PATCH');
-if (profile.status !== 200 || profile.data.user.bio !== 'Open-source messenger' || profile.data.user.links.length !== 1 || profile.data.user.profile.pinnedBadges.includes('invalid')) throw new Error('profile update failed');
+if (profile.status !== 200 || profile.data.user.bio !== 'Open-source messenger' || profile.data.user.links.length !== 1 || profile.data.user.profile.pinnedBadges.length !== 1 || profile.data.user.profile.pinnedBadges.includes('invalid')) throw new Error('profile update failed');
 const settings = await call('settings', {
   settings: { themeId: 'graphite', density: 'compact', sendByEnter: false, installedMods: [{ id: 'compact', name: 'Compact', version: '1.0.0', enabled: true, features: ['compact-bubbles', 'run-script'] }] },
 }, 'PATCH');

@@ -553,6 +553,12 @@ const MUTE_GLYPH = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" 
 
 const CHECK_GLYPH = '<svg viewBox="0 0 22 16" width="16" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 8.5l4 4 8-8"/><path d="M9 12.5l.5.5 8-8"/></svg>';
 
+const CHAT_TYPE_GLYPHS = {
+  channel: '<svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M3 7.5h3.2l8.6-4.1a1 1 0 0 1 1.4.9v11.4a1 1 0 0 1-1.4.9l-8.6-4.1H3A1.5 1.5 0 0 1 1.5 11V9A1.5 1.5 0 0 1 3 7.5Zm3.8 5.9 2.4 1.1-.9 2.1a1.2 1.2 0 0 1-2.3-.5l.8-2.7Z"/></svg>',
+  chat: '<svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M7.5 9.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm5.7.2a2.8 2.8 0 1 0 0-5.6 2.8 2.8 0 0 0 0 5.6ZM1.5 16.1c0-3 2.6-5.1 6-5.1s6 2.1 6 5.1c0 .8-.6 1.4-1.4 1.4H2.9c-.8 0-1.4-.6-1.4-1.4Zm11.4-4.8c3.2.2 5.6 2.1 5.6 4.8 0 .8-.6 1.4-1.4 1.4h-2.5c.2-.4.4-.9.4-1.4 0-1.9-.8-3.5-2.1-4.8Z"/></svg>',
+};
+const chatTypeMark = (type) => CHAT_TYPE_GLYPHS[type] ? `<span class="chat-type-icon">${CHAT_TYPE_GLYPHS[type]}</span>` : '';
+
 const fmtTime = (ts) => new Date(ts).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
 
 
@@ -640,7 +646,7 @@ function chatItemHtml(c, state, selected = false) {
       <div class="chat-icon" style="background:${avatarColor(c.id)}">${c.icon || esc(initials(c.name))}</div>
       <div class="chat-info">
         <div class="chat-row">
-          <div class="chat-name"><span class="chat-type-icon">${c.type === 'channel' ? '📢' : (c.type === 'chat' ? '💬' : '')}</span><span>${esc(c.name)}</span>${mute}</div>
+          <div class="chat-name">${chatTypeMark(c.type)}<span>${esc(c.name)}</span>${mute}</div>
           <span class="chat-time">${check}<span>${time}</span></span>
         </div>
         <div class="chat-row ${lastHtml ? '' : 'empty-last'}">
@@ -669,7 +675,7 @@ function searchResultHtml(c, m, q) {
       <div class="chat-icon" style="background:${avatarColor(c.id)}">${c.icon || esc(initials(c.name))}</div>
       <div class="chat-info">
         <div class="chat-row">
-          <div class="chat-name"><span class="chat-type-icon">${c.type === 'channel' ? '📢' : (c.type === 'chat' ? '💬' : '')}</span><span>${esc(c.name)}</span></div>
+          <div class="chat-name">${chatTypeMark(c.type)}<span>${esc(c.name)}</span></div>
           <span class="chat-time"><span>${esc(chatDate(m.ts))}</span></span>
         </div>
         <div class="chat-row"><div class="chat-last">${esc(m.channelName || m.name || '')}${m.channelName || m.name ? ': ' : ''}${snippet}</div></div>

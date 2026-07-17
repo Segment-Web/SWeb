@@ -483,7 +483,9 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
   font-size: 15px; font-weight: 500; color: var(--text);
 }
 .chat-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-name > .chat-type-icon { flex: 0 0 auto; overflow: visible; font-size: 12px; line-height: 1; }
+.chat-name > .chat-type-icon { display:grid; place-items:center; width:14px; height:14px; flex:0 0 14px; overflow:visible; color:var(--accent); line-height:1; }
+.chat-name > .chat-type-icon svg { display:block; width:14px; height:14px; }
+.chat-item.active .chat-name > .chat-type-icon { color:#fff; }
 .msg-status.failed { color: #ef6b73; font-weight: 800; }
 .chat-time {
   flex-shrink: 0; font-size: 12px; color: var(--muted);
@@ -2471,6 +2473,7 @@ body.is-resizing-surface { cursor: col-resize; user-select: none; }
 .profile-chip.is-empty { color:var(--muted); cursor:default; }
 .profile-achievements { left:0; }
 .profile-community { right:0; }
+.profile-card-name { transform:translateY(-4px); }
 .profile-card-name h2 { margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:text; user-select:text; font-size:20px; line-height:25px; }
 .profile-card-name button { display:block; margin:3px auto 0; padding:0; border:0; color:var(--muted); background:transparent; cursor:pointer; user-select:text; font-size:13px; line-height:17px; }
 .profile-card-name button:hover { color:var(--accent); }
@@ -2496,7 +2499,7 @@ body.is-resizing-surface { cursor: col-resize; user-select: none; }
 .profile-music em { display:none; }
 .profile-music em,.profile-game em { color:var(--muted); font-style:normal; }
 .profile-music.is-empty,.profile-game.is-empty { opacity:.62; }
-.profile-about { height:72px; margin-top:10px; padding:11px 12px; border-radius:20px; background:var(--surface2); }
+.profile-about { height:72px; margin-top:10px; padding:11px 16px; border-radius:20px; background:var(--surface2); }
 .profile-about p { margin:0; line-height:1.45; overflow-wrap:anywhere; cursor:text; user-select:text; }
 .profile-about span { display:block; margin-top:5px; color:var(--muted); font-size:11px; }
 .profile-content-tabs { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); height:46px; margin-top:10px; padding:4px; border-radius:14px; background:var(--surface2); }
