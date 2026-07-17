@@ -277,7 +277,7 @@ body.is-dragging-panel { cursor: grabbing; user-select: none; }
 .ws-preview .panel { width: 100% !important; height: 100% !important; border-radius:12px; overflow:hidden; }
 
 
-.profile-shell { display:flex; flex-direction:column; min-height:100%; }
+.profile-shell { display:flex; flex-direction:column; min-height:100%; overflow:hidden; }
 .profile {
   position: relative;
   display: flex; align-items: center; gap: 12px;
@@ -313,7 +313,7 @@ body.is-dragging-panel { cursor: grabbing; user-select: none; }
 }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }
 .status-dot.off { background: var(--danger); }
-.profile-panel-details { position:relative; display:none; flex:1; min-height:0; padding:8px 12px 12px; flex-direction:column; gap:8px; overflow:auto; }
+.profile-panel-details { position:relative; display:flex; flex:1; min-height:0; padding:4px 12px 12px; flex-direction:column; overflow:hidden; }
 .profile-accounts-head { display:flex; align-items:center; justify-content:space-between; padding:2px 4px; }
 .profile-accounts-head b { font-size:13px; }
 .profile-accounts-head span { color:var(--muted); font-size:11px; }
@@ -332,12 +332,12 @@ body.is-dragging-panel { cursor: grabbing; user-select: none; }
 .profile-account-menu button:hover { background:var(--surface2); }
 .profile-account-menu button.danger { color:var(--danger); }
 .profile-account-menu button.hidden { display:none; }
-.profile-account-carousel { display:grid; grid-template-columns:repeat(5,minmax(44px,1fr)); align-items:end; gap:7px; min-height:116px; padding:10px 2px 4px; }
+.profile-account-carousel { display:grid; grid-template-columns:repeat(var(--account-slots,2),minmax(44px,68px)); place-content:center; align-items:center; gap:clamp(9px,3.2cqw,24px); width:100%; min-height:0; flex:1; padding:6px 2px; overflow:hidden; opacity:1; transition:opacity .2s ease; }
 .profile-account-orbit { display:grid; justify-items:center; gap:7px; min-width:0; padding:4px 0; border:0; color:var(--muted); background:transparent; cursor:pointer; transition:transform .28s var(--ease-out),color .2s,opacity .2s; }
 .profile-account-orbit > span { display:grid; place-items:center; width:46px; height:46px; overflow:hidden; border:2px solid transparent; border-radius:50%; color:#fff; font-size:18px; font-weight:700; box-shadow:0 5px 16px rgba(0,0,0,.18); transition:width .28s var(--ease-out),height .28s var(--ease-out),border-color .2s,filter .2s; }
 .profile-account-orbit img { width:100%; height:100%; object-fit:cover; }
 .profile-account-orbit b { width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; font-weight:500; text-align:center; }
-.profile-account-orbit.is-current { color:var(--text); transform:translateY(-4px); }
+.profile-account-orbit.is-current { color:var(--text); }
 .profile-account-orbit.is-current > span { width:68px; height:68px; border-color:color-mix(in srgb,var(--accent) 72%,#fff); font-size:24px; }
 .profile-account-orbit.is-current b { font-size:15px; font-weight:700; }
 .profile-account-orbit:not(.is-current):hover { color:var(--text); transform:translateY(-2px); }
@@ -354,9 +354,11 @@ body.is-dragging-panel { cursor: grabbing; user-select: none; }
 .account-add-dialog input { width:100%; padding:11px 12px; border:0; border-radius:11px; outline:0; color:var(--text); background:var(--surface2); box-shadow:inset 0 0 0 1px transparent; }
 .account-add-dialog input:focus { box-shadow:inset 0 0 0 1px var(--accent); }
 .account-code-step.hidden { display:none; }
-@container profile (min-height: 210px) and (min-width: 176px) {
-  .profile-panel-details { display:flex; }
+@container profile (min-height: 128px) and (min-width: 176px) {
   .profile { margin:0 4px 4px; border-bottom:1px solid color-mix(in srgb,var(--stroke) 62%,transparent); border-radius:8px; }
+}
+@container profile (max-height: 150px) {
+  .profile-account-carousel { opacity:0; pointer-events:none; }
 }
 
 
@@ -367,6 +369,17 @@ body.is-dragging-panel { cursor: grabbing; user-select: none; }
   .profile-info { display: none; }
 
   .profile { padding: 12px 14px; }
+}
+@container profile (max-width: 235px) {
+  .profile { justify-content:center; padding:10px; }
+  .profile-info { display:none; }
+  .profile-settings { position:absolute; right:10px; }
+  .profile-panel-details { padding:2px 8px 8px; }
+  .profile-account-carousel { grid-template-columns:52px; grid-auto-rows:52px; align-content:center; gap:7px; }
+  .profile-account-orbit { display:grid; place-items:center; padding:0; }
+  .profile-account-orbit > span,.profile-account-orbit.is-current > span { width:46px; height:46px; border-width:2px; font-size:17px; }
+  .profile-account-orbit b { display:none; }
+  .profile-account-orbit:hover,.profile-account-orbit.is-current { transform:none; }
 }
 
 .chat-list {
@@ -1306,6 +1319,25 @@ html:not(.show-channel-avatars) .msg.channel-message .avatar { display: none; }
 .composer-round.primary:hover { filter: brightness(1.1); background: var(--accent); }
 .composer-round.primary:active { filter: brightness(.9); }
 .composer-round.hidden { display: none; }
+
+/* Detached chat panels and dock previews use the compact composer markup. */
+.panel[data-id^="chatview:"] .composer {
+  display:flex; align-items:flex-end; gap:7px;
+}
+.panel[data-id^="chatview:"] .composer-field { flex:1 1 auto; min-width:0; }
+.panel[data-id^="chatview:"] .composer-input { display:block; min-width:0; height:40px; padding:10px 7px; }
+.panel[data-id^="chatview:"] .composer-tools { display:flex; align-items:center; gap:1px; flex:0 0 auto; }
+.panel[data-id^="chatview:"] .composer-send {
+  display:grid; place-items:center; flex:0 0 42px; width:42px; height:42px; padding:0;
+  border:0; border-radius:50%; color:#fff; background:var(--accent); cursor:pointer;
+  appearance:none; -webkit-appearance:none;
+  transition:filter .15s,transform .12s;
+}
+.panel[data-id^="chatview:"] .composer-send:hover { filter:brightness(1.08); }
+.panel[data-id^="chatview:"] .composer-send:active { transform:scale(.94); }
+.panel[data-id^="chatview:"] .composer-send:disabled { opacity:.42; cursor:default; }
+.panel[data-id^="chatview:"] :is(.composer-send,.composer-tool) > svg,
+.ws-preview :is(.composer-send,.composer-tool) > svg { display:block; flex:none; max-width:22px; max-height:22px; }
 
 
 .rec-btn { position: relative; overflow: visible; }
