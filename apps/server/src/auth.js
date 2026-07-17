@@ -381,7 +381,12 @@ export async function createAuth(config) {
               pinnedCommunity = { id: room.id, name: room.title, icon: room.icon || '💬', type: room.type };
             }
           }
-          profileMeta = { cover, pinnedBadges, pinnedCommunity, music: previousProfile.music || null, game: previousProfile.game || null };
+          profileMeta = {
+            cover, pinnedBadges, pinnedCommunity,
+            music: previousProfile.music || null,
+            game: previousProfile.game || null,
+            publications: Array.isArray(previousProfile.publications) ? previousProfile.publications.slice(0, 100) : [],
+          };
         }
         if (!USERNAME_RE.test(username)) return json(res, 400, { error: 'USERNAME_INVALID' });
         if (!name) return json(res, 400, { error: 'NAME_INVALID' });
