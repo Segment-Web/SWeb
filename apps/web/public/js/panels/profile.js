@@ -35,8 +35,82 @@ const resizeProfileImage = (file, { width, height, quality = .84 }) => new Promi
   reader.readAsDataURL(file);
 });
 
+const loadProfileImage = (source) => new Promise((resolve, reject) => {
+  const image = new Image();
+  image.onload = () => resolve(image);
+  image.onerror = reject;
+  image.src = source;
+});
+
+function copyProfileText(value) {
+  const input = document.createElement('textarea');
+  input.value = value; input.setAttribute('readonly',''); input.style.position='fixed'; input.style.opacity='0';
+  document.body.appendChild(input); input.select();
+  const copied = document.execCommand('copy'); input.remove();
+  if (!copied) navigator.clipboard?.writeText(value).catch(()=>{});
+  return copied || Boolean(navigator.clipboard);
+}
+
+const profileQrUrl = (user, options) => `/api/auth/profile-qr?username=${encodeURIComponent(user.username)}&dark=${encodeURIComponent(options.dark)}&transparent=${options.transparent ? '1' : '0'}`;
+
+async function makeProfileQrPng(user, options) {
+  const response = await fetch(profileQrUrl(user, options), { credentials:'same-origin' });
+  if (!response.ok) throw new Error('QR_FAILED');
+  const objectUrl = URL.createObjectURL(await response.blob());
+  try {
+    const qr = await loadProfileImage(objectUrl);
+    const canvas = document.createElement('canvas'); canvas.width = 1200; canvas.height = 1200;
+    const context = canvas.getContext('2d');
+    if (!options.transparent) { context.fillStyle = '#fff'; context.fillRect(0,0,1200,1200); }
+    context.drawImage(qr,0,0,1200,1200);
+    if (options.avatar && user.avatar) {
+      const avatar = await loadProfileImage(user.avatar);
+      context.save(); context.beginPath(); context.arc(600,600,116,0,Math.PI*2); context.fillStyle='#fff'; context.fill();
+      context.beginPath(); context.arc(600,600,98,0,Math.PI*2); context.clip(); context.drawImage(avatar,502,502,196,196); context.restore();
+    }
+    return await new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('QR_FAILED')), 'image/png'));
+  } finally { URL.revokeObjectURL(objectUrl); }
+}
+
+function openProfileQrModal(user) {
+  if (!user.username) return;
+  document.querySelector('.profile-qr-modal')?.remove();
+  const profileUrl = `${location.origin}/@${user.username}`;
+  const modal = document.createElement('div');
+  modal.className = 'profile-qr-modal';
+  modal.innerHTML = `<div class="profile-qr-dialog" role="dialog" aria-modal="true" aria-label="QR-код профиля">
+    <header><div><b>QR-код профиля</b><span>@${esc(user.username)}</span></div><button type="button" data-qr-close>${ICONS.close}</button></header>
+    <div class="profile-qr-preview"><img data-qr-image alt="QR-код профиля"><span class="profile-qr-avatar">${user.avatar ? `<img src="${esc(user.avatar)}" alt="">` : esc(user.name?.trim()[0]?.toUpperCase() || 'S')}</span></div>
+    <div class="profile-qr-options">
+      <label class="profile-qr-color"><span>Цвет</span><input type="color" value="#0b1320" data-qr-color></label>
+      <label><span><b>Аватар в центре</b><small>Можно отключить для чистого кода</small></span><input type="checkbox" data-qr-avatar ${user.avatar ? 'checked' : 'disabled'}></label>
+      <label><span><b>Прозрачный фон</b><small>Удобно для оформления и печати</small></span><input type="checkbox" data-qr-transparent></label>
+    </div>
+    <footer><button type="button" data-qr-download>${ICONS.image}<span>Скачать PNG</span></button><button type="button" data-qr-share>${ICONS.forward}<span>Поделиться</span></button></footer>
+  </div>`;
+  document.body.appendChild(modal);
+  const image = modal.querySelector('[data-qr-image]');
+  const avatar = modal.querySelector('.profile-qr-avatar');
+  const color = modal.querySelector('[data-qr-color]');
+  const avatarToggle = modal.querySelector('[data-qr-avatar]');
+  const transparentToggle = modal.querySelector('[data-qr-transparent]');
+  const options = () => ({ dark:color.value, avatar:avatarToggle.checked, transparent:transparentToggle.checked });
+  const refresh = () => { const state=options(); image.src=profileQrUrl(user,state); avatar.classList.toggle('hidden',!state.avatar); modal.querySelector('.profile-qr-preview').classList.toggle('transparent',state.transparent); };
+  const close = () => { document.removeEventListener('keydown',onKey); modal.remove(); };
+  const onKey = (event) => { if(event.key==='Escape')close(); };
+  color.oninput=refresh; avatarToggle.onchange=refresh; transparentToggle.onchange=refresh;
+  modal.querySelector('[data-qr-close]').onclick=close;
+  modal.onclick=(event)=>{if(event.target===modal)close();};
+  modal.querySelector('[data-qr-download]').onclick=async()=>{try{const blob=await makeProfileQrPng(user,options());const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=`${user.username}-qr.png`;link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);}catch{window.Segment?.toast?.('Не удалось создать QR-код');}};
+  modal.querySelector('[data-qr-share]').onclick=async()=>{try{const file=new File([await makeProfileQrPng(user,options())],`${user.username}-qr.png`,{type:'image/png'});if(navigator.share&&(!navigator.canShare||navigator.canShare({files:[file]})))await navigator.share({title:`@${user.username}`,text:'Профиль в Segment',url:profileUrl,files:[file]});else if(await copyProfileText(profileUrl))window.Segment?.toast?.('Ссылка на профиль скопирована');else throw new Error('COPY_FAILED');}catch(error){if(error?.name!=='AbortError')window.Segment?.toast?.('Не удалось поделиться');}};
+  document.addEventListener('keydown',onKey);
+  requestAnimationFrame(()=>modal.classList.add('is-open'));
+  refresh();
+}
+
 function collectProfileContent(client, user, { includeShared = true } = {}) {
   const posts = Array.isArray(user.profile?.publications) ? user.profile.publications.slice(0,100).reverse() : [];
+  const archive = Array.isArray(user.profile?.publicationArchive) ? user.profile.publicationArchive.slice(0,100).reverse() : [];
   const media = []; const files = []; const links = [];
   const matches = (message) => {
     if (message.system || message.deleted || message.channelName) return false;
@@ -44,7 +118,7 @@ function collectProfileContent(client, user, { includeShared = true } = {}) {
     if (user.username && message.username) return message.username === user.username;
     return message.name === user.name;
   };
-  if (!includeShared) return { posts, media, files, links };
+  if (!includeShared) return { posts, archive, media, files, links };
   for (const [roomId, messages] of Object.entries(client.messages || {})) {
     const room = client.chatById(roomId);
     for (const message of messages || []) {
@@ -57,18 +131,23 @@ function collectProfileContent(client, user, { includeShared = true } = {}) {
       }
     }
   }
-  return { posts, media: media.reverse(), files: files.reverse(), links: links.reverse() };
+  return { posts, archive, media: media.reverse(), files: files.reverse(), links: links.reverse() };
+}
+
+function renderPublications(items, emptyText) {
+  return items.length ? `<div class="profile-publications">${items.map((post) => {
+    const createdAt = post.createdAt ? new Date(post.createdAt) : null;
+    const date = createdAt && Number.isFinite(createdAt.getTime()) ? createdAt.toLocaleDateString('ru-RU') : '';
+    return `<article>${post.media ? `<img src="${esc(post.media)}" alt="">` : ''}<div><p>${esc(post.text || '')}</p>${date ? `<small>${esc(date)}</small>` : ''}</div></article>`;
+  }).join('')}</div>` : `<div class="profile-content-empty profile-publications-empty">${emptyText}</div>`;
 }
 
 function renderTabContent(tab, content) {
   if (tab === 'media') return content.media.length ? `<div class="profile-media-grid">${content.media.map((item,index) => `<button data-profile-media="${index}"><img src="${esc(item.poster || item.data || '')}" alt="">${item.kind !== 'photo' ? '<span>▶</span>' : ''}</button>`).join('')}</div>` : '<div class="profile-content-empty">Медиа пока нет</div>';
   if (tab === 'files') return content.files.length ? `<div class="profile-files">${content.files.map((item) => `<a href="${esc(item.data || '')}" download="${esc(item.name || 'file')}">${ICONS.copy}<span><b>${esc(item.name || 'Файл')}</b><small>${esc(item.room)}</small></span></a>`).join('')}</div>` : '<div class="profile-content-empty">Файлов пока нет</div>';
   if (tab === 'links') return content.links.length ? `<div class="profile-links">${content.links.map((item) => `<a href="${esc(item.url)}" target="_blank" rel="noreferrer"><b>${esc(item.url)}</b><small>${esc(item.room)}</small></a>`).join('')}</div>` : '<div class="profile-content-empty">Ссылок пока нет</div>';
-  return content.posts.length ? `<div class="profile-publications">${content.posts.map((post) => {
-    const createdAt = post.createdAt ? new Date(post.createdAt) : null;
-    const date = createdAt && Number.isFinite(createdAt.getTime()) ? createdAt.toLocaleDateString('ru-RU') : '';
-    return `<article>${post.media ? `<img src="${esc(post.media)}" alt="">` : ''}<div><p>${esc(post.text || '')}</p>${date ? `<small>${esc(date)}</small>` : ''}</div></article>`;
-  }).join('')}</div>` : '<div class="profile-content-empty profile-publications-empty">Публикаций пока нет</div>';
+  if (tab === 'archive') return renderPublications(content.archive || [], 'Архив публикаций пуст');
+  return renderPublications(content.posts, 'Публикаций пока нет');
 }
 
 function mountProfileView(root, close, client, user, { own = false, openSettings = null } = {}) {
@@ -82,7 +161,7 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
     const cover = meta.cover || content.media[0]?.poster || content.media[0]?.data || '';
     const music = meta.music;
     const game = meta.game;
-    const tabs = own ? [['posts','Публикации']] : [['posts','Публикации'],['media','Медиа'],['files','Файлы'],['links','Ссылки']];
+    const tabs = own ? [['posts','Публикации'],['archive','Архив']] : [['posts','Публикации'],['media','Медиа'],['files','Файлы'],['links','Ссылки']];
     const presence = [
       music?.active ? `<div class="profile-music"><span>♫</span><div><small>Сейчас играет</small><b>${esc(`${music.artist} — ${music.title}`)}</b></div><em>›</em></div>` : '',
       game?.active ? `<div class="profile-game"><span>${esc(game.icon || '🎮')}</span><div><small>Играет в</small><b>${esc(game.title)}</b></div><em>◉</em></div>` : '',
@@ -96,14 +175,14 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
         ${pinnedBadges.length ? `<button class="profile-chip profile-achievements" type="button"><span>${BADGES[pinnedBadges[0]].icon}</span><b>${pinnedBadges.length} ${pinnedBadges.length === 1 ? 'достижение' : 'достижения'}</b></button>` : ''}
         ${avatarHtml(user,'profile-card-avatar')}
         ${community ? `<button class="profile-chip profile-community" type="button"><span>${esc(community.icon || '◇')}</span><b>${esc(community.name)}</b></button>` : ''}
-        <div class="profile-card-name"><h2>${esc(user.name)}</h2>${user.username ? `<p>@${esc(user.username)}</p>` : ''}${!own && user.status ? `<small>${esc(user.status)}</small>` : ''}</div>
+        <div class="profile-card-name"><h2>${esc(user.name)}</h2>${user.username ? `<button type="button" data-copy-username>@${esc(user.username)}</button>` : ''}${!own && user.status ? `<small>${esc(user.status)}</small>` : ''}</div>
       </div>
       <div class="profile-card-actions ${own ? 'own-actions' : ''}">
         ${own ? `<button data-profile-action="photo">${ICONS.image}<span>Выбрать фото</span></button><button data-profile-action="edit">${ICONS.edit}<span>Изменить</span></button><button data-profile-action="settings">${ICONS.settings}<span>Настройки</span></button>` : `<button data-profile-action="message">${ICONS.open}<span>Чат</span></button><button data-profile-action="sound">${ICONS.bell}<span>Звук</span></button><button data-profile-action="call">${ICONS.phone}<span>Звонок</span></button><button data-profile-action="block">${ICONS.newBlock}<span>+Блок</span></button>`}
       </div>
       ${presence ? `<section class="profile-presence">${presence}</section>` : ''}
       ${user.bio ? `<section class="profile-about"><p>${esc(user.bio)}</p><span>О себе</span></section>` : ''}
-      <nav class="profile-content-tabs ${tabs.length === 1 ? 'is-single' : ''}">${tabs.map(([id,label]) => `<button data-profile-tab="${id}" class="${tab === id ? 'active' : ''}">${label}</button>`).join('')}</nav>
+      <nav class="profile-content-tabs ${own ? 'is-profile-owner' : ''}">${tabs.map(([id,label]) => `<button data-profile-tab="${id}" class="${tab === id ? 'active' : ''}">${label}</button>`).join('')}</nav>
       <div class="profile-content">${renderTabContent(tab, content)}</div>
       </div>
       <div class="profile-detail-popover hidden"></div>
@@ -111,7 +190,8 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
     </div>`;
 
     for (const button of root.querySelectorAll('[data-profile-tab]')) button.onclick = () => { tab = button.dataset.profileTab; render(); };
-    root.querySelector('.profile-cover-code').onclick = async () => { await navigator.clipboard.writeText(`${location.origin}/@${user.username}`); window.Segment?.toast?.('Ссылка на профиль скопирована'); };
+    root.querySelector('.profile-cover-code').onclick = () => openProfileQrModal(user);
+    root.querySelector('[data-copy-username]')?.addEventListener('click',async()=>{if(await copyProfileText(`@${user.username}`))window.Segment?.toast?.('Username скопирован');else window.Segment?.toast?.('Не удалось скопировать username');});
     const applyProfileUpdate = (updated) => {
       Object.assign(client.self,updated); Object.assign(user,updated);
       client.storage.setName(updated.name); client.storage.setUsername?.(updated.username); client.storage.setAvatar?.(updated.avatar); client.storage.setColor(updated.color);
@@ -138,7 +218,8 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
       popover.querySelector('[data-close-profile]').onclick = close;
     };
     root.querySelector('.profile-community')?.addEventListener('click', () => { if (community?.id && client.chatById(community.id)) { close(); client.openRoom(community.id); } });
-    root.querySelector('.profile-achievements').onclick = () => {
+    const achievements = root.querySelector('.profile-achievements');
+    if (achievements) achievements.onclick = () => {
       const popover = root.querySelector('.profile-detail-popover');
       popover.classList.remove('is-menu');
       popover.innerHTML = `<div class="profile-detail-head"><div><b>Достижения</b><span>${own ? 'Выберите до трёх закреплённых' : `${pinnedBadges.length} закреплено`}</span></div><button type="button">×</button></div><div class="profile-badge-list">${Object.entries(BADGES).map(([id,badge]) => `<label class="${pinnedBadges.includes(id) ? 'active' : ''}">${own ? `<input type="checkbox" value="${id}" ${pinnedBadges.includes(id) ? 'checked' : ''}>` : ''}<i>${badge.icon}</i><span><b>${badge.title}</b><small>${badge.text}</small></span></label>`).join('')}</div>${own ? '<button class="profile-badge-save" type="button">Сохранить</button>' : ''}`;

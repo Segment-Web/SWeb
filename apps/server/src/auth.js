@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import nodemailer from 'nodemailer';
 import pg from 'pg';
+import QRCode from 'qrcode';
 
 const { Pool } = pg;
 const COOKIE = 'segment_session';
@@ -229,6 +230,21 @@ export async function createAuth(config) {
         res.writeHead(200, { 'Content-Type': match[1], 'Content-Length': body.length, 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
         res.end(body); return true;
       }
+      if (req.method === 'GET' && url.pathname === '/api/auth/profile-qr') {
+        if (!await userFromRequest(req)) return json(res, 401, { error: 'UNAUTHORIZED' });
+        const username = String(url.searchParams.get('username') || '').toLowerCase();
+        if (!USERNAME_RE.test(username) || !await one('SELECT 1 FROM users WHERE username=$1', [username])) return json(res, 404, { error: 'NOT_FOUND' });
+        const dark = String(url.searchParams.get('dark') || '#0b1320');
+        if (!/^#[0-9a-f]{6}$/i.test(dark)) return json(res, 400, { error: 'COLOR_INVALID' });
+        const transparent = url.searchParams.get('transparent') === '1';
+        const base = String(config.publicUrl || 'http://localhost:3000').replace(/\/$/, '');
+        const svg = await QRCode.toString(`${base}/@${username}`, {
+          type: 'svg', width: 720, margin: 2, errorCorrectionLevel: 'H',
+          color: { dark, light: transparent ? '#00000000' : '#ffffff' },
+        });
+        res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Content-Length': Buffer.byteLength(svg), 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+        res.end(svg); return true;
+      }
       if (req.method === 'GET' && url.pathname === '/api/auth/me') {
         const user = await userFromRequest(req);
         return json(res, user ? 200 : 401, user ? { user: publicUser(user) } : { error: 'UNAUTHORIZED' });
@@ -386,6 +402,7 @@ export async function createAuth(config) {
             music: previousProfile.music || null,
             game: previousProfile.game || null,
             publications: Array.isArray(previousProfile.publications) ? previousProfile.publications.slice(0, 100) : [],
+            publicationArchive: Array.isArray(previousProfile.publicationArchive) ? previousProfile.publicationArchive.slice(0, 100) : [],
           };
         }
         if (!USERNAME_RE.test(username)) return json(res, 400, { error: 'USERNAME_INVALID' });

@@ -388,11 +388,13 @@ export async function createRooms(config, auth) {
       ));
       const privacy = user.privacy && typeof user.privacy === 'object' ? user.privacy : {};
       const visible = (field) => { const scope = privacy[field] || 'everyone'; return self || scope === 'everyone' || (scope === 'members' && shared); };
+      const profile = user.profile_meta && typeof user.profile_meta === 'object' ? { ...user.profile_meta } : {};
+      if (!self) delete profile.publicationArchive;
       return { type: 'profile', user: {
         id: user.id, username: user.username, name: user.name, color: user.color,
         avatar: visible('avatar') ? user.avatar : '', bio: visible('bio') ? user.bio : '',
         status: visible('status') ? user.status : '', links: visible('links') && Array.isArray(user.profile_links) ? user.profile_links : [],
-        profile: user.profile_meta && typeof user.profile_meta === 'object' ? user.profile_meta : {},
+        profile,
       } };
     }
     if ((match = String(path).match(/^\/c\/([a-z0-9-]{3,32})$/i))) {

@@ -13,6 +13,7 @@
     "@segment/protocol": "workspace:*",
     "nodemailer": "^9.0.3",
     "pg": "^8.16.0",
+    "qrcode": "^1.5.4",
     "ws": "^8.18.0"
   },
   "devDependencies": {
