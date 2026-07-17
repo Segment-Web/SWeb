@@ -2367,9 +2367,9 @@ body.is-resizing-surface { cursor: col-resize; user-select: none; }
 /* Profile surface */
 .profile-view-surface .workspace-surface-body { padding:0; background:var(--surface); scrollbar-width:none; }
 .profile-view-surface .workspace-surface-body::-webkit-scrollbar { width:0; height:0; }
-.profile-view-surface .workspace-surface-close::after { top:10px; width:159px; height:8px; }
+.profile-view-surface .workspace-surface-close::after { top:9px; width:120px; height:6px; }
 .profile-view-surface .workspace-surface-close:hover::after,
-.profile-view-surface .workspace-surface-close:focus-visible::after { width:175px; }
+.profile-view-surface .workspace-surface-close:focus-visible::after { width:144px; }
 .profile-card-view { position:relative; min-height:100%; padding:14px 19px 0; color:var(--text); background:var(--surface); }
 .profile-card-cover { position:relative; height:163px; border-radius:20px; background:linear-gradient(145deg,color-mix(in srgb,var(--profile-color) 66%,var(--surface3)),color-mix(in srgb,var(--profile-color) 24%,var(--surface))); background-position:center; background-size:cover; }
 .profile-card-cover button { position:absolute; top:10px; display:grid; place-items:center; width:50px; height:50px; border:0; border-radius:20px; color:#d9e4ed; background:rgba(23,33,43,.7); backdrop-filter:blur(10px); cursor:pointer; transition:background .16s,transform .16s; }
@@ -2390,11 +2390,12 @@ body.is-resizing-surface { cursor: col-resize; user-select: none; }
 .profile-card-name h2 { margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:20px; line-height:25px; }
 .profile-card-name p { margin-top:3px; color:var(--muted); font-size:13px; line-height:17px; }
 .profile-card-name small { display:inline-block; margin-top:4px; padding:2px 9px; border-radius:999px; color:var(--muted); background:var(--surface2); font-size:11px; line-height:16px; }
+.profile-card-view.is-own .profile-card-identity { min-height:132px; }
 .profile-card-actions { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; height:78px; margin:0; }
 .profile-card-actions.own-actions { grid-template-columns:repeat(3,minmax(0,1fr)); }
 .profile-card-actions button { display:grid; place-items:center; align-content:center; gap:7px; min-width:0; height:78px; padding:8px 4px; border:0; border-radius:20px; color:var(--text); background:var(--surface2); cursor:pointer; transition:background .15s,transform .15s; }
 .profile-card-actions button:hover { background:var(--surface3); transform:translateY(-1px); }
-.profile-card-actions svg { width:24px; height:24px; color:color-mix(in srgb,var(--accent) 72%,var(--muted)); }
+.profile-card-actions svg { width:24px; height:24px; color:color-mix(in srgb,var(--accent) 88%,#d9edff); filter:drop-shadow(0 1px 4px color-mix(in srgb,var(--accent) 22%,transparent)); }
 .profile-card-actions span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; font-size:12px; font-weight:600; }
 .profile-presence { display:grid; gap:10px; margin-top:10px; }
 .profile-music,.profile-game { display:flex; align-items:center; gap:10px; background:var(--surface2); }
@@ -2451,6 +2452,7 @@ body.is-resizing-surface { cursor: col-resize; user-select: none; }
 .profile-quick-menu { display:grid; gap:4px; width:100%; }
 .profile-quick-menu button { display:flex; align-items:center; gap:12px; min-height:48px; padding:0 14px; border:0; border-radius:14px; color:var(--text); background:var(--surface2); cursor:pointer; }
 .profile-quick-menu button:hover { background:var(--surface3); }
+.profile-card-file-input { display:none; }
 
 .settings-cover-editor { position:relative; display:flex; align-items:flex-end; gap:8px; min-height:132px; padding:12px; overflow:hidden; border:1px solid var(--stroke); border-radius:15px; background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 35%,var(--surface3)),var(--surface2)); background-position:center; background-size:cover; }
 .settings-cover-editor::after { content:''; position:absolute; inset:45% 0 0; background:linear-gradient(transparent,rgba(0,0,0,.48)); pointer-events:none; }

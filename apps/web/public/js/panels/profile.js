@@ -17,6 +17,24 @@ const profileApi = async (patch) => {
   return data.user;
 };
 
+const resizeProfileImage = (file, { width, height, quality = .84 }) => new Promise((resolve, reject) => {
+  if (!file?.type?.startsWith('image/')) return reject(new Error('INVALID_IMAGE'));
+  const reader = new FileReader();
+  reader.onerror = reject;
+  reader.onload = () => {
+    const image = new Image();
+    image.onerror = reject;
+    image.onload = () => {
+      const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+      const context = canvas.getContext('2d'); const scale = Math.max(width / image.width, height / image.height);
+      context.drawImage(image, (width - image.width * scale) / 2, (height - image.height * scale) / 2, image.width * scale, image.height * scale);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    image.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+});
+
 function collectProfileContent(client, user) {
   const posts = []; const media = []; const files = []; const links = [];
   const matches = (message) => {
@@ -64,7 +82,7 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
     root.innerHTML = `<div class="profile-card-view ${own ? 'is-own' : ''}">
       <div class="profile-card-cover" style="${cover ? `background-image:linear-gradient(180deg,rgba(8,12,18,.08),rgba(8,12,18,.22)),url('${esc(cover)}')` : `--profile-color:${user.color || 'var(--accent)'}`}">
         <button class="profile-cover-code" type="button" aria-label="Ссылка профиля">${ICONS.qr}</button>
-        <button class="profile-cover-menu" type="button" aria-label="Меню">${ICONS.more}</button>
+        <button class="profile-cover-menu" type="button" aria-label="${own ? 'Изменить обложку' : 'Меню'}">${own ? ICONS.image : ICONS.more}</button>
       </div>
       <div class="profile-card-identity">
         <button class="profile-chip profile-achievements" type="button"><span>${pinnedBadges[0] ? BADGES[pinnedBadges[0]].icon : '🏆'}</span><b>${pinnedBadges.length || 0} ${pinnedBadges.length === 1 ? 'достижение' : 'достижения'}</b></button>
@@ -83,11 +101,29 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
       <nav class="profile-content-tabs">${[['posts','Публикации'],['media','Медиа'],['files','Файлы'],['links','Ссылки']].map(([id,label]) => `<button data-profile-tab="${id}" class="${tab === id ? 'active' : ''}">${label}</button>`).join('')}</nav>
       <div class="profile-content">${renderTabContent(tab, content)}</div>
       <div class="profile-detail-popover hidden"></div>
+      ${own ? '<input class="profile-card-file-input" data-profile-avatar-file type="file" accept="image/*"><input class="profile-card-file-input" data-profile-cover-file type="file" accept="image/*">' : ''}
     </div>`;
 
     for (const button of root.querySelectorAll('[data-profile-tab]')) button.onclick = () => { tab = button.dataset.profileTab; render(); };
     root.querySelector('.profile-cover-code').onclick = async () => { await navigator.clipboard.writeText(`${location.origin}/@${user.username}`); window.Segment?.toast?.('Ссылка на профиль скопирована'); };
-    root.querySelector('.profile-cover-menu').onclick = () => {
+    const applyProfileUpdate = (updated) => {
+      Object.assign(client.self,updated); Object.assign(user,updated);
+      client.storage.setName(updated.name); client.storage.setUsername?.(updated.username); client.storage.setAvatar?.(updated.avatar); client.storage.setColor(updated.color);
+      client._emit('identity',{name:updated.name,user:updated}); render();
+    };
+    const avatarInput = root.querySelector('[data-profile-avatar-file]');
+    const coverInput = root.querySelector('[data-profile-cover-file]');
+    avatarInput?.addEventListener('change',async () => {
+      const file=avatarInput.files?.[0]; if(!file)return;
+      try { applyProfileUpdate(await profileApi({avatar:await resizeProfileImage(file,{width:512,height:512,quality:.86})})); window.Segment?.toast?.('Фото профиля обновлено'); }
+      catch { window.Segment?.toast?.('Не удалось обновить фото'); }
+    });
+    coverInput?.addEventListener('change',async () => {
+      const file=coverInput.files?.[0]; if(!file)return;
+      try { applyProfileUpdate(await profileApi({profile:{cover:await resizeProfileImage(file,{width:1200,height:400,quality:.82})}})); window.Segment?.toast?.('Обложка обновлена'); }
+      catch { window.Segment?.toast?.('Не удалось обновить обложку'); }
+    });
+    root.querySelector('.profile-cover-menu').onclick = own ? () => coverInput?.click() : () => {
       const popover = root.querySelector('.profile-detail-popover');
       popover.classList.add('is-menu');
       popover.innerHTML = `<div class="profile-quick-menu"><button data-copy-profile type="button">${ICONS.copy}<span>Скопировать ссылку</span></button><button data-close-profile type="button">${ICONS.close}<span>Закрыть профиль</span></button></div>`;
@@ -109,7 +145,7 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
     };
     for (const item of root.querySelectorAll('[data-profile-media]')) item.onclick = () => window.Segment?.openMedia?.(content.media.map((entry) => ({type:entry.kind === 'photo' ? 'photo' : 'video',src:entry.data,poster:entry.poster,name:entry.name,author:user.name})),Number(item.dataset.profileMedia));
     const action = (name, handler) => root.querySelector(`[data-profile-action="${name}"]`)?.addEventListener('click', handler);
-    action('photo',()=>openSettings?.('profile')); action('edit',()=>openSettings?.('profile')); action('settings',()=>openSettings?.('home'));
+    action('photo',()=>avatarInput?.click()); action('edit',()=>openSettings?.('profile')); action('settings',()=>openSettings?.('home'));
     action('copy',()=>root.querySelector('.profile-cover-code').click());
     for (const id of ['message','sound','call','block']) action(id,()=>window.Segment?.toast?.('Функция будет подключена к профилям следующим этапом'));
   };
@@ -123,7 +159,7 @@ export function openProfileSurface(client, user, { sourceId = 'profile', openSet
     mount(root,close){ return mountSettings(root,close,client,()=>client._emit('identity',{name:client.self.name,user:client.self}),page); },
   }) : null);
   return window.Segment?.workspace?.openSurface({
-    id: `profile-view:${user.username || user.id || 'self'}`, sourceId, minWidth:480, maxWidth:529, className:'profile-view-surface',
+    id: `profile-view:${user.username || user.id || 'self'}`, sourceId, minWidth:480, maxWidth:1200, className:'profile-view-surface',
     mount(root,close){ mountProfileView(root,close,client,user,{own,openSettings:settings}); },
   });
 }
