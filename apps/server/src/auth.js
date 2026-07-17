@@ -5,6 +5,7 @@ import QRCode from 'qrcode';
 
 const { Pool } = pg;
 const COOKIE = 'segment_session';
+const DEVICE_COOKIE = 'segment_device';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const USERNAME_RE = /^[a-z0-9_]{3,24}$/;
 const COLORS = ['#7c5cff', '#00a9d4', '#e25c82', '#36a96b', '#e19a3b', '#db5b5b', '#478fd8', '#8b62dc'];
@@ -143,6 +144,7 @@ export async function createAuth(config) {
     ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_agent TEXT NOT NULL DEFAULT '';
     ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ip TEXT NOT NULL DEFAULT '';
     ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    ALTER TABLE sessions ADD COLUMN IF NOT EXISTS device_hash TEXT NOT NULL DEFAULT '';
     CREATE UNIQUE INDEX IF NOT EXISTS sessions_id_idx ON sessions(id);
     CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at);
@@ -165,6 +167,7 @@ export async function createAuth(config) {
   const sign = (value) => createHmac('sha256', secret).update(value).digest('hex');
   const equal = (a, b) => { const x = Buffer.from(a || '', 'hex'); const y = Buffer.from(b || '', 'hex'); return x.length === y.length && timingSafeEqual(x, y); };
   const cookie = (token, maxAge) => `${COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${config.production ? '; Secure' : ''}`;
+  const deviceCookie = (token, maxAge) => `${DEVICE_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${config.production ? '; Secure' : ''}`;
   const cleanup = async () => {
     await pool.query(`
       DELETE FROM login_codes WHERE expires_at < NOW();
@@ -195,10 +198,15 @@ export async function createAuth(config) {
       WHERE sessions.token_hash=$1 AND sessions.expires_at>NOW()`, [hash(token)]);
   };
   const userFromRequest = sessionFromRequest;
-  const createSession = async (userId, req) => {
+  const deviceForRequest = (req) => {
+    const existing = parseCookies(req)[DEVICE_COOKIE];
+    const token = existing && existing.length >= 32 ? existing : randomBytes(32).toString('base64url');
+    return { token, hash: hash(token), fresh: token !== existing };
+  };
+  const createSession = async (userId, req, deviceHash = '') => {
     const token = randomBytes(32).toString('base64url');
-    await pool.query(`INSERT INTO sessions(token_hash,user_id,expires_at,user_agent,ip)
-      VALUES($1,$2,NOW()+($3::text)::interval,$4,$5)`, [hash(token), userId, `${config.authSessionTtlMs} milliseconds`, String(req?.headers?.['user-agent'] || '').slice(0, 320), req ? requestIp(req) : '']);
+    await pool.query(`INSERT INTO sessions(token_hash,user_id,expires_at,user_agent,ip,device_hash)
+      VALUES($1,$2,NOW()+($3::text)::interval,$4,$5,$6)`, [hash(token), userId, `${config.authSessionTtlMs} milliseconds`, String(req?.headers?.['user-agent'] || '').slice(0, 320), req ? requestIp(req) : '', deviceHash]);
     return token;
   };
   const validateAvatar = (avatar) => {
@@ -247,6 +255,36 @@ export async function createAuth(config) {
       if (req.method === 'GET' && url.pathname === '/api/auth/me') {
         const user = await userFromRequest(req);
         return json(res, user ? 200 : 401, user ? { user: publicUser(user) } : { error: 'UNAUTHORIZED' });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/auth/device-accounts') {
+        const current = await sessionFromRequest(req);
+        const device = deviceForRequest(req);
+        if (!current) return json(res, 401, { error: 'UNAUTHORIZED' });
+        await pool.query('UPDATE sessions SET device_hash=$1,last_seen_at=NOW() WHERE id=$2', [device.hash,current.session_id]);
+        const accounts = (await pool.query(`SELECT DISTINCT ON (u.id) u.* FROM sessions s
+          JOIN users u ON u.id=s.user_id WHERE s.device_hash=$1 AND s.expires_at>NOW()
+          ORDER BY u.id,s.last_seen_at DESC LIMIT 5`, [device.hash])).rows.map(publicUser);
+        return json(res, 200, { accounts, currentId: current.id }, device.fresh ? { 'Set-Cookie':deviceCookie(device.token,Math.floor(config.authSessionTtlMs / 1000)) } : {});
+      }
+      if (req.method === 'POST' && url.pathname === '/api/auth/switch-account') {
+        const current = await sessionFromRequest(req);
+        const device = deviceForRequest(req);
+        if (!current) return json(res, 401, { error: 'UNAUTHORIZED' });
+        const body = await readJson(req, 4096); const userId = String(body.userId || '');
+        const target = await one(`SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id
+          WHERE s.device_hash=$1 AND s.user_id=$2 AND s.expires_at>NOW() ORDER BY s.last_seen_at DESC LIMIT 1`, [device.hash,userId]);
+        if (!target) return json(res, 404, { error: 'ACCOUNT_NOT_FOUND' });
+        const token = await createSession(target.id, req, device.hash);
+        return json(res, 200, { user:publicUser(target) }, { 'Set-Cookie':cookie(token,Math.floor(config.authSessionTtlMs / 1000)) });
+      }
+      if (req.method === 'DELETE' && url.pathname.startsWith('/api/auth/device-accounts/')) {
+        const current = await sessionFromRequest(req);
+        const device = deviceForRequest(req);
+        if (!current) return json(res, 401, { error:'UNAUTHORIZED' });
+        const userId = url.pathname.slice('/api/auth/device-accounts/'.length);
+        if (userId === current.id) return json(res, 400, { error:'CURRENT_ACCOUNT' });
+        await pool.query('DELETE FROM sessions WHERE device_hash=$1 AND user_id=$2', [device.hash,userId]);
+        return json(res, 200, { ok:true });
       }
       if (req.method === 'GET' && url.pathname === '/api/auth/sessions') {
         const current = await sessionFromRequest(req);
@@ -342,8 +380,11 @@ export async function createAuth(config) {
         await pool.query('DELETE FROM login_codes WHERE email=$1', [email]);
         const user = await one('SELECT * FROM users WHERE email=$1', [email]);
         if (user) {
-          const token = await createSession(user.id, req);
-          return json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': cookie(token, Math.floor(config.authSessionTtlMs / 1000)) });
+          const device = deviceForRequest(req);
+          const count = Number((await one('SELECT COUNT(DISTINCT user_id)::int AS count FROM sessions WHERE device_hash=$1 AND expires_at>NOW()', [device.hash]))?.count || 0);
+          if (count >= 5 && !await one('SELECT 1 FROM sessions WHERE device_hash=$1 AND user_id=$2 AND expires_at>NOW()', [device.hash,user.id])) return json(res, 409, { error:'DEVICE_ACCOUNT_LIMIT' });
+          const token = await createSession(user.id, req, device.hash);
+          return json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': [cookie(token, Math.floor(config.authSessionTtlMs / 1000)), deviceCookie(device.token, Math.floor(config.authSessionTtlMs / 1000))] });
         }
         const registrationToken = randomBytes(32).toString('base64url');
         await pool.query('INSERT INTO registration_tokens(token_hash,email,expires_at) VALUES($1,$2,NOW()+INTERVAL \'15 minutes\')', [hash(registrationToken), email]);
@@ -353,6 +394,9 @@ export async function createAuth(config) {
         const body = await readJson(req, config.authMaxAvatarBytes * 2); const tokenHash = hash(String(body.registrationToken || ''));
         const ticket = await one('SELECT * FROM registration_tokens WHERE token_hash=$1 AND expires_at>NOW()', [tokenHash]);
         if (!ticket) return json(res, 400, { error: 'REGISTRATION_EXPIRED' });
+        const device = deviceForRequest(req);
+        const deviceAccountCount = Number((await one('SELECT COUNT(DISTINCT user_id)::int AS count FROM sessions WHERE device_hash=$1 AND expires_at>NOW()', [device.hash]))?.count || 0);
+        if (deviceAccountCount >= 5) return json(res, 409, { error:'DEVICE_ACCOUNT_LIMIT' });
         const username = String(body.username || '').trim().toLowerCase(); const name = String(body.name || '').trim().slice(0, 40);
         if (!USERNAME_RE.test(username)) return json(res, 400, { error: 'USERNAME_INVALID' });
         if (!name) return json(res, 400, { error: 'NAME_INVALID' });
@@ -360,8 +404,8 @@ export async function createAuth(config) {
         const avatar = validateAvatar(body.avatar); const id = randomUUID(); const color = COLORS[randomInt(COLORS.length)];
         const user = await one(`INSERT INTO users(id,email,username,name,avatar,color) VALUES($1,$2,$3,$4,$5,$6) RETURNING *`, [id, ticket.email, username, name, avatar, color]);
         await pool.query('DELETE FROM registration_tokens WHERE token_hash=$1', [tokenHash]);
-        const session = await createSession(id, req);
-        return json(res, 201, { user: publicUser(user) }, { 'Set-Cookie': cookie(session, Math.floor(config.authSessionTtlMs / 1000)) });
+        const session = await createSession(id, req, device.hash);
+        return json(res, 201, { user: publicUser(user) }, { 'Set-Cookie': [cookie(session, Math.floor(config.authSessionTtlMs / 1000)), deviceCookie(device.token, Math.floor(config.authSessionTtlMs / 1000))] });
       }
       if (req.method === 'PATCH' && url.pathname === '/api/auth/profile') {
         const current = await userFromRequest(req);
