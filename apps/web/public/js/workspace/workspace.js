@@ -173,7 +173,8 @@ export class Workspace {
     const otherMin = childEls.reduce((sum, child, index) => (
       index === target.index ? sum : sum + this._minSize(child, true)
     ), 0);
-    const minTarget = this._minSize(branchEl, true);
+    const surfaceMin = this._surface?.sourceId === id ? this._surface.effectiveMinWidth?.() || 0 : 0;
+    const minTarget = Math.max(this._minSize(branchEl, true), surfaceMin);
     const width = clamp(requestedWidth, minTarget, Math.max(minTarget, available - otherMin));
     const totalWeight = target.node.children.reduce((sum, child) => sum + (child.weight || 0), 0) || 1;
     const targetWeight = totalWeight * (width / available);
@@ -234,12 +235,17 @@ export class Workspace {
     if (typeof dispose !== 'function') dispose = () => {};
     const syncFromSource = () => {
       if (!source.isConnected || this._surface?.element !== element) return;
-      width = clamp(source.getBoundingClientRect().width, effectiveMinWidth(), widthLimit());
+      const sourceWidth = source.getBoundingClientRect().width;
+      width = sourceWidth < effectiveMinWidth()
+        ? clamp(this._resizePanelWidth(sourceId, effectiveMinWidth()), effectiveMinWidth(), widthLimit())
+        : clamp(sourceWidth, effectiveMinWidth(), widthLimit());
       place();
     };
     const sourceResizeObserver = new ResizeObserver(syncFromSource);
     sourceResizeObserver.observe(source);
-    this._surface = { id, sourceId, element, dispose, place, syncFromSource, sourceResizeObserver };
+    this._surface = { id, sourceId, element, dispose, place, syncFromSource, sourceResizeObserver, effectiveMinWidth };
+    width = clamp(this._resizePanelWidth(sourceId, width), effectiveMinWidth(), widthLimit());
+    place();
 
     element.querySelector('.workspace-surface-close').addEventListener('click', () => this.closeSurface(id));
     element.querySelector('.workspace-surface-resizer').addEventListener('pointerdown', (event) => {
@@ -585,8 +591,10 @@ export class Workspace {
     const pair = aSize + bSize;
     const pairWeight = node.children[i].weight + node.children[i + 1].weight;
     const total = node.children.reduce((s, c) => s + (c.weight || 0), 0) || 1;
-    const minA = this._minSize(aEl, horizontal);
-    const minB = this._minSize(bEl, horizontal);
+    const surfaceSource = horizontal && this._surface ? this.frames[this._surface.sourceId]?.wrapper : null;
+    const surfaceMin = (el) => surfaceSource && (el === surfaceSource || el.contains(surfaceSource)) ? this._surface.effectiveMinWidth?.() || 0 : 0;
+    const minA = Math.max(this._minSize(aEl, horizontal), surfaceMin(aEl));
+    const minB = Math.max(this._minSize(bEl, horizontal), surfaceMin(bEl));
 
     const onMove = (ev) => {
       const now = horizontal ? ev.clientX : ev.clientY;

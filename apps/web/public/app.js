@@ -192,7 +192,7 @@ const fwd = document.createElement('div');
 fwd.className = 'fwd-modal hidden';
 fwd.innerHTML = `
   <div class="fwd-box">
-    <div class="fwd-head"><b>Переслать в…</b><button class="fwd-close" aria-label="Закрыть">✕</button></div>
+    <div class="fwd-head"><button class="fwd-close" aria-label="Закрыть"></button><b>Переслать в…</b></div>
     <input class="fwd-search" placeholder="Поиск чата" aria-label="Поиск чата">
     <div class="fwd-list"></div>
     <label class="fwd-attribution"><input type="checkbox" data-fwd-attribution checked><span>Показывать автора</span></label>

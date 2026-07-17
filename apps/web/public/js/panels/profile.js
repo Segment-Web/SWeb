@@ -51,7 +51,7 @@ function copyProfileText(value) {
   return copied || Boolean(navigator.clipboard);
 }
 
-const profileQrUrl = (user, options) => `/api/auth/profile-qr?username=${encodeURIComponent(user.username)}&dark=${encodeURIComponent(options.dark)}&transparent=${options.transparent ? '1' : '0'}`;
+const profileQrUrl = (user, options) => `/api/auth/profile-qr?username=${encodeURIComponent(user.username)}&dark=${encodeURIComponent(options.dark)}`;
 
 async function makeProfileQrPng(user, options) {
   const response = await fetch(profileQrUrl(user, options), { credentials:'same-origin' });
@@ -61,7 +61,8 @@ async function makeProfileQrPng(user, options) {
     const qr = await loadProfileImage(objectUrl);
     const canvas = document.createElement('canvas'); canvas.width = 1200; canvas.height = 1200;
     const context = canvas.getContext('2d');
-    if (!options.transparent) { context.fillStyle = '#fff'; context.fillRect(0,0,1200,1200); }
+    context.beginPath(); context.roundRect(0,0,1200,1200,92); context.clip();
+    context.fillStyle = '#fff'; context.fillRect(0,0,1200,1200);
     context.drawImage(qr,0,0,1200,1200);
     if (options.avatar && user.avatar) {
       const avatar = await loadProfileImage(user.avatar);
@@ -72,37 +73,35 @@ async function makeProfileQrPng(user, options) {
   } finally { URL.revokeObjectURL(objectUrl); }
 }
 
-function openProfileQrModal(user) {
+function openProfileQrModal(user, root) {
   if (!user.username) return;
-  document.querySelector('.profile-qr-modal')?.remove();
-  const profileUrl = `${location.origin}/@${user.username}`;
+  const host = root.closest('.workspace-surface') || document.body;
+  host.querySelector('.profile-qr-modal')?.remove();
   const modal = document.createElement('div');
   modal.className = 'profile-qr-modal';
   modal.innerHTML = `<div class="profile-qr-dialog" role="dialog" aria-modal="true" aria-label="QR-код профиля">
-    <header><div><b>QR-код профиля</b><span>@${esc(user.username)}</span></div><button type="button" data-qr-close>${ICONS.close}</button></header>
+    <button class="profile-qr-close" type="button" data-qr-close aria-label="Закрыть"></button>
+    <header><div><b>QR-код профиля</b><span>@${esc(user.username)}</span></div></header>
     <div class="profile-qr-preview"><img data-qr-image alt="QR-код профиля"><span class="profile-qr-avatar">${user.avatar ? `<img src="${esc(user.avatar)}" alt="">` : esc(user.name?.trim()[0]?.toUpperCase() || 'S')}</span></div>
     <div class="profile-qr-options">
       <label class="profile-qr-color"><span>Цвет</span><input type="color" value="#0b1320" data-qr-color></label>
-      <label><span><b>Аватар в центре</b><small>Можно отключить для чистого кода</small></span><input type="checkbox" data-qr-avatar ${user.avatar ? 'checked' : 'disabled'}></label>
-      <label><span><b>Прозрачный фон</b><small>Удобно для оформления и печати</small></span><input type="checkbox" data-qr-transparent></label>
+      <label><span><b>Аватар в центре</b><small>Можно отключить для чистого кода</small></span><input type="checkbox" data-qr-avatar ${user.avatar ? 'checked' : 'disabled'}><i class="profile-qr-switch"></i></label>
     </div>
-    <footer><button type="button" data-qr-download>${ICONS.image}<span>Скачать PNG</span></button><button type="button" data-qr-share>${ICONS.forward}<span>Поделиться</span></button></footer>
+    <footer><button type="button" data-qr-download>${ICONS.image}<span>Скачать PNG</span></button></footer>
   </div>`;
-  document.body.appendChild(modal);
+  host.appendChild(modal);
   const image = modal.querySelector('[data-qr-image]');
   const avatar = modal.querySelector('.profile-qr-avatar');
   const color = modal.querySelector('[data-qr-color]');
   const avatarToggle = modal.querySelector('[data-qr-avatar]');
-  const transparentToggle = modal.querySelector('[data-qr-transparent]');
-  const options = () => ({ dark:color.value, avatar:avatarToggle.checked, transparent:transparentToggle.checked });
-  const refresh = () => { const state=options(); image.src=profileQrUrl(user,state); avatar.classList.toggle('hidden',!state.avatar); modal.querySelector('.profile-qr-preview').classList.toggle('transparent',state.transparent); };
+  const options = () => ({ dark:color.value, avatar:avatarToggle.checked });
+  const refresh = () => { const state=options(); image.src=profileQrUrl(user,state); avatar.classList.toggle('hidden',!state.avatar); };
   const close = () => { document.removeEventListener('keydown',onKey); modal.remove(); };
   const onKey = (event) => { if(event.key==='Escape')close(); };
-  color.oninput=refresh; avatarToggle.onchange=refresh; transparentToggle.onchange=refresh;
+  color.oninput=refresh; avatarToggle.onchange=refresh;
   modal.querySelector('[data-qr-close]').onclick=close;
   modal.onclick=(event)=>{if(event.target===modal)close();};
   modal.querySelector('[data-qr-download]').onclick=async()=>{try{const blob=await makeProfileQrPng(user,options());const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=`${user.username}-qr.png`;link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);}catch{window.Segment?.toast?.('Не удалось создать QR-код');}};
-  modal.querySelector('[data-qr-share]').onclick=async()=>{try{const file=new File([await makeProfileQrPng(user,options())],`${user.username}-qr.png`,{type:'image/png'});if(navigator.share&&(!navigator.canShare||navigator.canShare({files:[file]})))await navigator.share({title:`@${user.username}`,text:'Профиль в Segment',url:profileUrl,files:[file]});else if(await copyProfileText(profileUrl))window.Segment?.toast?.('Ссылка на профиль скопирована');else throw new Error('COPY_FAILED');}catch(error){if(error?.name!=='AbortError')window.Segment?.toast?.('Не удалось поделиться');}};
   document.addEventListener('keydown',onKey);
   requestAnimationFrame(()=>modal.classList.add('is-open'));
   refresh();
@@ -161,7 +160,7 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
     const cover = meta.cover || content.media[0]?.poster || content.media[0]?.data || '';
     const music = meta.music;
     const game = meta.game;
-    const tabs = own ? [['posts','Публикации'],['archive','Архив']] : [['posts','Публикации'],['media','Медиа'],['files','Файлы'],['links','Ссылки']];
+    const tabs = own ? [['posts','Публикации'],['archive','Архив публикаций']] : [['posts','Публикации'],['media','Медиа'],['files','Файлы'],['links','Ссылки']];
     const presence = [
       music?.active ? `<div class="profile-music"><span>♫</span><div><small>Сейчас играет</small><b>${esc(`${music.artist} — ${music.title}`)}</b></div><em>›</em></div>` : '',
       game?.active ? `<div class="profile-game"><span>${esc(game.icon || '🎮')}</span><div><small>Играет в</small><b>${esc(game.title)}</b></div><em>◉</em></div>` : '',
@@ -190,7 +189,7 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
     </div>`;
 
     for (const button of root.querySelectorAll('[data-profile-tab]')) button.onclick = () => { tab = button.dataset.profileTab; render(); };
-    root.querySelector('.profile-cover-code').onclick = () => openProfileQrModal(user);
+    root.querySelector('.profile-cover-code').onclick = () => openProfileQrModal(user,root);
     root.querySelector('[data-copy-username]')?.addEventListener('click',async()=>{if(await copyProfileText(`@${user.username}`))window.Segment?.toast?.('Username скопирован');else window.Segment?.toast?.('Не удалось скопировать username');});
     const applyProfileUpdate = (updated) => {
       Object.assign(client.self,updated); Object.assign(user,updated);
@@ -222,7 +221,7 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
     if (achievements) achievements.onclick = () => {
       const popover = root.querySelector('.profile-detail-popover');
       popover.classList.remove('is-menu');
-      popover.innerHTML = `<div class="profile-detail-head"><div><b>Достижения</b><span>${own ? 'Выберите до трёх закреплённых' : `${pinnedBadges.length} закреплено`}</span></div><button type="button">×</button></div><div class="profile-badge-list">${Object.entries(BADGES).map(([id,badge]) => `<label class="${pinnedBadges.includes(id) ? 'active' : ''}">${own ? `<input type="checkbox" value="${id}" ${pinnedBadges.includes(id) ? 'checked' : ''}>` : ''}<i>${badge.icon}</i><span><b>${badge.title}</b><small>${badge.text}</small></span></label>`).join('')}</div>${own ? '<button class="profile-badge-save" type="button">Сохранить</button>' : ''}`;
+      popover.innerHTML = `<div class="profile-detail-head"><button type="button" aria-label="Закрыть"></button><div><b>Достижения</b><span>${own ? 'Выберите до трёх закреплённых' : `${pinnedBadges.length} закреплено`}</span></div></div><div class="profile-badge-list">${Object.entries(BADGES).map(([id,badge]) => `<label class="${pinnedBadges.includes(id) ? 'active' : ''}">${own ? `<input type="checkbox" value="${id}" ${pinnedBadges.includes(id) ? 'checked' : ''}>` : ''}<i>${badge.icon}</i><span><b>${badge.title}</b><small>${badge.text}</small></span></label>`).join('')}</div>${own ? '<button class="profile-badge-save" type="button">Сохранить</button>' : ''}`;
       popover.classList.remove('hidden');
       popover.querySelector('.profile-detail-head button').onclick = () => popover.classList.add('hidden');
       popover.querySelector('.profile-badge-save')?.addEventListener('click', async () => {

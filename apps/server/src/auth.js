@@ -236,11 +236,10 @@ export async function createAuth(config) {
         if (!USERNAME_RE.test(username) || !await one('SELECT 1 FROM users WHERE username=$1', [username])) return json(res, 404, { error: 'NOT_FOUND' });
         const dark = String(url.searchParams.get('dark') || '#0b1320');
         if (!/^#[0-9a-f]{6}$/i.test(dark)) return json(res, 400, { error: 'COLOR_INVALID' });
-        const transparent = url.searchParams.get('transparent') === '1';
         const base = String(config.publicUrl || 'http://localhost:3000').replace(/\/$/, '');
         const svg = await QRCode.toString(`${base}/@${username}`, {
           type: 'svg', width: 720, margin: 2, errorCorrectionLevel: 'H',
-          color: { dark, light: transparent ? '#00000000' : '#ffffff' },
+          color: { dark, light: '#ffffff' },
         });
         res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Content-Length': Buffer.byteLength(svg), 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
         res.end(svg); return true;
