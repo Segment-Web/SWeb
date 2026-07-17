@@ -6,7 +6,7 @@
 
 Segment is an extensible open-source messenger with a panel-based desktop web interface and end-to-end encryption.
 
-Current release: **0.0.3** · [Changelog](CHANGELOG.md) · [Versioning](VERSIONING.md) · [Latest release](https://github.com/Segment-Web/SWeb/releases/latest)
+Current release: **0.0.3** · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/Segment-Web/SWeb/releases/latest)
 
 ## Features
 
@@ -32,7 +32,7 @@ apps/server        Account, room, history and file APIs plus the WebSocket relay
 apps/web           Browser client
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for package boundaries and data flow, and [docs/SCALING.md](docs/SCALING.md) for capacity boundaries and the scaling roadmap.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for package boundaries, rooms and data flow, and [docs/SCALING.md](docs/SCALING.md) for capacity boundaries and the scaling roadmap.
 
 ## Local development
 

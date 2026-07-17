@@ -4,7 +4,7 @@ This document defines the supported first-stage topology and the work required b
 
 ## Current target
 
-`v0.0.1` uses one Segment application process, one PostgreSQL instance and one persistent file volume. The configuration is prepared for up to 2,000 WebSocket connections so a deployment can be load-tested around 1,000 concurrent clients without first changing an artificial 500-connection ceiling.
+The current topology uses one Segment application process, one PostgreSQL instance and one persistent file volume. The configuration is prepared for up to 2,000 WebSocket connections so a deployment can be load-tested around 1,000 concurrent clients without first changing an artificial 500-connection ceiling.
 
 This is not a guarantee that every 2-core, 4 GB VPS will sustain 1,000 active users. Measure CPU, event-loop delay, PostgreSQL latency, outbound bandwidth and disk usage with realistic traffic before opening access.
 

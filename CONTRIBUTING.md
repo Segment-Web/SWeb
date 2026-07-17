@@ -45,3 +45,15 @@ Keep protocol and core code independent from Node-specific and DOM-specific APIs
 - Include screenshots or recordings for visible interface changes.
 
 Run `pnpm check` before opening a pull request.
+
+## Releases and versioning
+
+Segment uses `MAJOR.MINOR.PATCH`, with optional pre-release identifiers such as `0.0.1-beta`.
+
+- `MAJOR` and `MINOR` change only on an explicit instruction from the project owner.
+- `PATCH` changes only when a release is explicitly prepared.
+- Ordinary commits do not change the product version.
+
+Increasing `MINOR` resets `PATCH` to zero. Increasing `MAJOR` resets both remaining components to zero.
+
+The current version must match in `VERSION`, the root `package.json` and every workspace package. Each published release receives a changelog entry and a matching Git tag such as `v0.0.3`.

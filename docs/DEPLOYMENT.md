@@ -1,6 +1,6 @@
 # Production deployment
 
-This guide describes the supported `v0.0.1` deployment with Docker Compose and an existing HTTPS reverse proxy.
+This guide describes the supported deployment with Docker Compose and an existing HTTPS reverse proxy.
 
 ## Requirements
 
