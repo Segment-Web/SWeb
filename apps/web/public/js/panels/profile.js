@@ -252,12 +252,26 @@ export function openProfileSurface(client, user, { sourceId = 'profile', openSet
 function mountAccountModal(modal, body) {
   const panel = body.closest('.panel[data-id="profile"]') || body;
   const dialog = modal.querySelector('.account-add-dialog');
+  const oldClose = dialog.querySelector('[data-close]');
+  oldClose.outerHTML = `<div class="account-dialog-bars"><button class="account-dialog-move" type="button" data-account-move aria-label="Переместить окно"><i></i></button><button class="account-dialog-close" type="button" data-close aria-label="Закрыть"><i></i></button></div>`;
+  const codeInput = dialog.querySelector('input[name="code"]');
+  codeInput.removeAttribute('maxlength'); codeInput.classList.add('account-code-value');
+  const codeCells = document.createElement('div');
+  codeCells.className = 'account-code-cells'; codeCells.setAttribute('aria-hidden','true');
+  codeCells.innerHTML = '<i></i>'.repeat(6); codeInput.insertAdjacentElement('afterend',codeCells);
+  const renderCode = () => {
+    codeInput.value = codeInput.value.replace(/\D/g,'').slice(0,6);
+    [...codeCells.children].forEach((cell,index) => { cell.textContent=codeInput.value[index]||''; cell.classList.toggle('filled',index<codeInput.value.length); });
+  };
+  codeInput.addEventListener('input',renderCode); codeCells.addEventListener('click',()=>codeInput.focus()); renderCode();
   const place = () => {
     const panelRect = panel.getBoundingClientRect();
     const dialogRect = dialog.getBoundingClientRect();
     const margin = 16;
-    const centerX = Math.min(innerWidth - dialogRect.width / 2 - margin, Math.max(dialogRect.width / 2 + margin, panelRect.left + panelRect.width / 2));
-    const centerY = Math.min(innerHeight - dialogRect.height / 2 - margin, Math.max(dialogRect.height / 2 + margin, panelRect.top + panelRect.height / 2));
+    const desiredX = modal._accountDragged ? Number.parseFloat(dialog.style.left) : panelRect.left + panelRect.width / 2;
+    const desiredY = modal._accountDragged ? Number.parseFloat(dialog.style.top) : panelRect.top + panelRect.height / 2;
+    const centerX = Math.min(innerWidth - dialogRect.width / 2 - margin, Math.max(dialogRect.width / 2 + margin, desiredX));
+    const centerY = Math.min(innerHeight - dialogRect.height / 2 - margin, Math.max(dialogRect.height / 2 + margin, desiredY));
     modal.style.setProperty('--account-panel-left', `${panelRect.left}px`);
     modal.style.setProperty('--account-panel-top', `${panelRect.top}px`);
     modal.style.setProperty('--account-panel-width', `${panelRect.width}px`);
@@ -270,6 +284,14 @@ function mountAccountModal(modal, body) {
   const observer = new ResizeObserver(place);
   observer.observe(panel); observer.observe(dialog);
   window.addEventListener('resize', place);
+  const moveHandle = dialog.querySelector('[data-account-move]');
+  moveHandle.addEventListener('pointerdown',(event)=>{
+    if(event.button>0)return; event.preventDefault(); modal._accountDragged=true;
+    const startX=event.clientX; const startY=event.clientY; const initialX=Number.parseFloat(dialog.style.left); const initialY=Number.parseFloat(dialog.style.top);
+    const move=(next)=>{dialog.style.left=`${initialX+next.clientX-startX}px`;dialog.style.top=`${initialY+next.clientY-startY}px`;place();};
+    const finish=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',finish);window.removeEventListener('pointercancel',finish);};
+    window.addEventListener('pointermove',move);window.addEventListener('pointerup',finish);window.addEventListener('pointercancel',finish);
+  });
   modal._accountCleanup = () => { observer.disconnect(); window.removeEventListener('resize', place); if (body._accountModal === modal) body._accountModal = null; };
   place();
 }
