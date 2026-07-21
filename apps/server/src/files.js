@@ -25,6 +25,7 @@ export async function createFiles(config, auth, rooms = null) {
   const ttlMs = config.fileTtlMs;
   const uploadLimit = config.fileUploadsPerMinute || 60;
   const accountQuotaBytes = 2 * 1024 * 1024 * 1024;
+  const maxOpenUploads = 12;
   const uploadsByUser = new Map();
   const claimsByUser = new Map();
   const uploadLocks = new Set();
@@ -105,9 +106,13 @@ export async function createFiles(config, auth, rooms = null) {
   };
   const quotaUsed = async (userId) => {
     if (!auth.pool?.query) return 0;
+    // Include bytes already written to still-unfinished uploads: otherwise a
+    // single account could open many resumable sessions and stream gigabytes to
+    // disk that no quota ever accounts for (cleaned only after a 24h TTL).
     const row = (await auth.pool.query(`SELECT
       COALESCE((SELECT SUM(size) FROM file_capabilities WHERE uploader_id=$1),0)
-      + COALESCE((SELECT SUM(size) FROM file_refs WHERE uploader_id=$1),0) AS size`, [userId])).rows[0];
+      + COALESCE((SELECT SUM(size) FROM file_refs WHERE uploader_id=$1),0)
+      + COALESCE((SELECT SUM(received_size) FROM file_uploads WHERE user_id=$1),0) AS size`, [userId])).rows[0];
     return Number(row?.size || 0);
   };
   const createCapability = async ({ fileId, roomId, uploaderId, size }) => {
@@ -251,6 +256,10 @@ export async function createFiles(config, auth, rooms = null) {
         const roomId = String(req.headers['upload-room'] || '');
         if (rooms && (!roomId || !rooms.canAccess(user.id, roomId))) return json(res, 403, { error: 'ROOM_FORBIDDEN' });
         if (auth.pool?.query) {
+          // Bound how many resumable sessions one account may hold open at once,
+          // so unfinished uploads cannot be used to reserve disk indefinitely.
+          const open = Number((await auth.pool.query('SELECT COUNT(*)::int AS count FROM file_uploads WHERE user_id=$1', [user.id])).rows[0]?.count || 0);
+          if (open >= maxOpenUploads) return json(res, 429, { error: 'TOO_MANY_UPLOADS' });
           const used = await quotaUsed(user.id);
           if (used + expected > accountQuotaBytes) return json(res, 413, { error: 'STORAGE_QUOTA_EXCEEDED' });
         }
@@ -276,6 +285,12 @@ export async function createFiles(config, auth, rooms = null) {
           const remaining = Number(row.expected_size) - offset;
           const chunk = await readBody(req, Math.min(4 * 1024 * 1024, remaining));
           if (!chunk.length || chunk.length > remaining) return json(res, 400, { error: 'UPLOAD_CHUNK_INVALID' });
+          if (auth.pool?.query) {
+            // quotaUsed already counts this upload's prior bytes, so the sum is
+            // the projected total after this chunk lands.
+            const used = await quotaUsed(user.id);
+            if (used + chunk.length > accountQuotaBytes) return json(res, 413, { error: 'STORAGE_QUOTA_EXCEEDED' });
+          }
           await appendFile(uploadPath(id), chunk);
           const next = offset + chunk.length;
           await updateUpload(id, user.id, next);

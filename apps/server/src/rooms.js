@@ -171,6 +171,19 @@ export async function createRooms(config, auth) {
 
   const one = async (sql, params = []) => (await pool.query(sql, params)).rows[0] || null;
 
+  // Per-account sliding-window cap on durable history writes. Without it a
+  // single member could pour unlimited (2 MB max) envelopes into room_history
+  // and bloat the database. Keyed by user id; entries self-expire on read.
+  const historyWritesPerMinute = config.roomHistoryWritesPerMinute || 120;
+  const historyWritesByUser = new Map();
+  const allowHistoryWrite = (userId) => {
+    const now = Date.now();
+    const recent = (historyWritesByUser.get(userId) || []).filter((time) => now - time < 60000);
+    if (recent.length >= historyWritesPerMinute) { historyWritesByUser.set(userId, recent); return false; }
+    recent.push(now); historyWritesByUser.set(userId, recent);
+    return true;
+  };
+
   // Synchronous access decision used by the gateway on every ciphertext frame.
   const exists = (roomId) => existing.has(roomId);
   const canAccess = (userId, roomId) => publicRooms.has(roomId) || Boolean(members.get(roomId)?.has(userId));
@@ -338,7 +351,8 @@ export async function createRooms(config, auth) {
     const cap = Math.min(Math.max(Number(limit) || 100, 1), 200);
     const sharedIds = new Set((await pool.query(
       `SELECT other.user_id FROM room_members mine JOIN room_members other ON other.room_id=mine.room_id
-       WHERE mine.user_id=$1`, [user.id],
+       JOIN rooms r ON r.id=mine.room_id
+       WHERE mine.user_id=$1 AND r.is_public=FALSE`, [user.id],
     )).rows.map((row) => row.user_id));
     const rows = (await pool.query(
       `SELECT h.seq,h.sender_id,h.iv,h.ct,h.key_id,u.name AS sender_name,u.username AS sender_username,
@@ -403,6 +417,11 @@ export async function createRooms(config, auth) {
     if (!canAccess(user.id, roomId)) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
     const top = await one('SELECT COALESCE(MAX(seq),0) AS seq FROM room_history WHERE room_id=$1', [roomId]);
     const clearedSeq = Number(top?.seq || 0);
+    // Public rooms have no membership rows and are readable by everyone; never
+    // fabricate a membership here. Doing so also used to make the caller "share
+    // a room" with every other public-room member, leaking members-only profile
+    // fields to strangers. The caller's own view is still cleared client-side.
+    if (publicRooms.has(roomId)) return { clearedSeq };
     await pool.query(
       `INSERT INTO room_members(room_id,user_id,join_seq,cleared_seq) VALUES($1,$2,$3,$3)
        ON CONFLICT (room_id,user_id) DO UPDATE SET cleared_seq=EXCLUDED.cleared_seq`,
@@ -436,7 +455,8 @@ export async function createRooms(config, auth) {
       const self = user.id === viewerId;
       const shared = self || Boolean(await one(
         `SELECT 1 FROM room_members mine JOIN room_members other ON other.room_id=mine.room_id
-         WHERE mine.user_id=$1 AND other.user_id=$2 LIMIT 1`,
+         JOIN rooms r ON r.id=mine.room_id
+         WHERE mine.user_id=$1 AND other.user_id=$2 AND r.is_public=FALSE LIMIT 1`,
         [viewerId, user.id],
       ));
       const privacy = user.privacy && typeof user.privacy === 'object' ? user.privacy : {};
@@ -496,6 +516,7 @@ export async function createRooms(config, auth) {
         return json(res, 200, { room });
       }
       if (req.method === 'POST' && url.pathname === '/api/rooms/history') {
+        if (!allowHistoryWrite(user.id)) return json(res, 429, { error: 'TOO_MANY_REQUESTS' });
         const body = await readJson(req, 4 * 1024 * 1024);
         if (!exists(String(body.roomId))) return json(res, 404, { error: 'NOT_FOUND' });
         return json(res, 201, await appendHistory(user, String(body.roomId), body.epoch, body.eventId, body.iv, body.ct, body.keyId));

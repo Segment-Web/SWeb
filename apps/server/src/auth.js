@@ -247,7 +247,8 @@ export async function createAuth(config) {
   const sessionFromRequest = async (req) => {
     const token = parseCookies(req)[sessionCookieName]; if (!token) return null;
     return one(`SELECT users.*, sessions.id AS session_id, sessions.created_at AS session_created_at,
-      sessions.last_seen_at AS session_last_seen_at FROM sessions JOIN users ON users.id=sessions.user_id
+      sessions.last_seen_at AS session_last_seen_at, sessions.device_hash AS session_device_hash
+      FROM sessions JOIN users ON users.id=sessions.user_id
       WHERE sessions.token_hash=$1 AND sessions.expires_at>NOW()`, [hash(token)]);
   };
   const userFromRequest = sessionFromRequest;
@@ -279,8 +280,12 @@ export async function createAuth(config) {
   };
   const validateAvatar = (avatar) => {
     if (!avatar) return '';
-    if (typeof avatar !== 'string' || !/^data:image\/(png|jpeg|webp);base64,/i.test(avatar)) throw Object.assign(new Error('AVATAR_INVALID'), { status: 400 });
-    if (Buffer.byteLength(avatar.slice(avatar.indexOf(',') + 1), 'base64') > config.authMaxAvatarBytes) throw Object.assign(new Error('AVATAR_TOO_LARGE'), { status: 413 });
+    // Require a well-formed base64 image data URL with NO trailing content. A
+    // prefix-only check let callers append arbitrary text (e.g. an HTML fragment)
+    // after the comma, which the image endpoint and self-view sinks echoed back.
+    const match = typeof avatar === 'string' && avatar.match(/^data:image\/(?:png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/i);
+    if (!match) throw Object.assign(new Error('AVATAR_INVALID'), { status: 400 });
+    if (Buffer.byteLength(match[1], 'base64') > config.authMaxAvatarBytes) throw Object.assign(new Error('AVATAR_TOO_LARGE'), { status: 413 });
     return avatar;
   };
   const validPublicKey = (value) => Array.isArray(value) && value.length >= 32 && value.length <= 160
@@ -392,7 +397,8 @@ export async function createAuth(config) {
         const scope = row?.privacy?.avatar || 'everyone';
         const shared = id === viewer.id || scope === 'everyone' || (scope === 'members' && Boolean(await one(
           `SELECT 1 FROM room_members mine JOIN room_members other ON other.room_id=mine.room_id
-           WHERE mine.user_id=$1 AND other.user_id=$2 LIMIT 1`, [viewer.id, id],
+           JOIN rooms r ON r.id=mine.room_id
+           WHERE mine.user_id=$1 AND other.user_id=$2 AND r.is_public=FALSE LIMIT 1`, [viewer.id, id],
         )));
         if (!shared) return json(res, 404, { error: 'NOT_FOUND' });
         if (!row?.avatar) { res.writeHead(404, { 'Cache-Control': 'private, max-age=60' }); res.end(); return true; }
@@ -422,32 +428,54 @@ export async function createAuth(config) {
       }
       if (req.method === 'GET' && url.pathname === '/api/auth/device-accounts') {
         const current = await sessionFromRequest(req);
-        const device = await deviceForRequest(req);
         if (!current) return json(res, 401, { error: 'UNAUTHORIZED' });
-        await pool.query('UPDATE sessions SET device_hash=$1,last_seen_at=NOW() WHERE id=$2', [device.hash,current.session_id]);
-        const accounts = (await pool.query(`SELECT DISTINCT ON (u.id) u.* FROM sessions s
-          JOIN users u ON u.id=s.user_id WHERE s.device_hash=$1 AND s.expires_at>NOW()
-          ORDER BY u.id,s.last_seen_at DESC LIMIT 5`, [device.hash])).rows.map(publicUser);
+        const device = await deviceForRequest(req);
+        // The device cookie is a bearer credential for fast account switching, so
+        // a live session is bound to its device exactly ONCE — at creation, or
+        // lazily here for a legacy session that predates the column — and is
+        // never silently re-pointed at a different device presented later. Blind
+        // rebinding let anyone holding a victim's device cookie pull every
+        // co-located account into their own view and mint sessions for them.
+        let deviceHash = current.session_device_hash || '';
+        if (!deviceHash) {
+          const foreign = await one('SELECT 1 FROM sessions WHERE device_hash=$1 AND user_id<>$2 AND expires_at>NOW() LIMIT 1', [device.hash, current.id]);
+          if (!foreign) {
+            deviceHash = device.hash;
+            await pool.query('UPDATE sessions SET device_hash=$1 WHERE id=$2', [deviceHash, current.session_id]);
+          }
+        }
+        await pool.query('UPDATE sessions SET last_seen_at=NOW() WHERE id=$1', [current.session_id]);
+        const accounts = deviceHash
+          ? (await pool.query(`SELECT DISTINCT ON (u.id) u.* FROM sessions s
+              JOIN users u ON u.id=s.user_id WHERE s.device_hash=$1 AND s.expires_at>NOW()
+              ORDER BY u.id,s.last_seen_at DESC LIMIT 5`, [deviceHash])).rows.map(publicUser)
+          : [publicUser(current)];
         return json(res, 200, { accounts, currentId: current.id }, device.fresh ? { 'Set-Cookie':deviceCookie(device.token,Math.floor(config.authSessionTtlMs / 1000)) } : {});
       }
       if (req.method === 'POST' && url.pathname === '/api/auth/switch-account') {
         const current = await sessionFromRequest(req);
-        const device = await deviceForRequest(req);
         if (!current) return json(res, 401, { error: 'UNAUTHORIZED' });
+        // Authorize the switch purely by the CURRENT session's own recorded
+        // device, never by a device cookie presented in the request. A stolen
+        // device cookie must not be enough to mint a session for a co-located
+        // account.
+        const deviceHash = current.session_device_hash || '';
+        if (!deviceHash) return json(res, 404, { error: 'ACCOUNT_NOT_FOUND' });
         const body = await readJson(req, 4096); const userId = String(body.userId || '');
         const target = await one(`SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id
-          WHERE s.device_hash=$1 AND s.user_id=$2 AND s.expires_at>NOW() ORDER BY s.last_seen_at DESC LIMIT 1`, [device.hash,userId]);
+          WHERE s.device_hash=$1 AND s.user_id=$2 AND s.expires_at>NOW() ORDER BY s.last_seen_at DESC LIMIT 1`, [deviceHash,userId]);
         if (!target) return json(res, 404, { error: 'ACCOUNT_NOT_FOUND' });
-        const token = await createSession(target.id, req, device.hash);
+        const token = await createSession(target.id, req, deviceHash);
         return json(res, 200, { user:publicUser(target) }, { 'Set-Cookie':cookie(token,Math.floor(config.authSessionTtlMs / 1000)) });
       }
       if (req.method === 'DELETE' && url.pathname.startsWith('/api/auth/device-accounts/')) {
         const current = await sessionFromRequest(req);
-        const device = await deviceForRequest(req);
         if (!current) return json(res, 401, { error:'UNAUTHORIZED' });
+        const deviceHash = current.session_device_hash || '';
         const userId = url.pathname.slice('/api/auth/device-accounts/'.length);
         if (userId === current.id) return json(res, 400, { error:'CURRENT_ACCOUNT' });
-        await pool.query('DELETE FROM sessions WHERE device_hash=$1 AND user_id=$2', [device.hash,userId]);
+        // Only unlink accounts that share THIS session's own device anchor.
+        if (deviceHash) await pool.query('DELETE FROM sessions WHERE device_hash=$1 AND user_id=$2', [deviceHash,userId]);
         return json(res, 200, { ok:true });
       }
       if (req.method === 'GET' && url.pathname === '/api/auth/devices') {

@@ -95,7 +95,7 @@ export function mountSettings(root, close, client, renderIdentity, initialPage =
   const home = () => {
     const self = client.self;
     root.innerHTML = `<div class="settings-shell">
-      <div class="settings-hero"><div class="settings-hero-avatar">${self.avatar ? `<img src="${self.avatar}" alt="">` : escapeHtml(self.name?.[0]?.toUpperCase() || 'S')}</div><div><h2>${escapeHtml(self.name)}</h2><p>@${escapeHtml(self.username || '')}</p></div></div>
+      <div class="settings-hero"><div class="settings-hero-avatar">${safeProfileImage(self.avatar) ? `<img src="${escapeHtml(self.avatar)}" alt="">` : escapeHtml(self.name?.[0]?.toUpperCase() || 'S')}</div><div><h2>${escapeHtml(self.name)}</h2><p>@${escapeHtml(self.username || '')}</p></div></div>
       <div class="settings-nav">
         ${[['profile','Аккаунт','Имя, username, фото и информация'],['appearance','Настройки чатов','Темы, масштаб и анимации'],['privacy','Конфиденциальность','Видимость профиля и данные'],['chats','Сообщения и медиа','Отправка и отображение'],['storage','Данные и память','Хранилище и локальные данные'],['devices','Устройства','Активные сеансы и перенос ключей'],['language','Язык и доступность','Русский язык и контраст'],['mods','Модификации','Безопасные дополнения интерфейса']].map(([id,title,desc]) => `<button class="settings-nav-item" data-page="${id}"><i>${icon(id)}</i><span><b>${title}</b><small>${desc}</small></span><em>›</em></button>`).join('')}
       </div><button class="settings-logout" data-action="logout">Выйти из аккаунта</button>
