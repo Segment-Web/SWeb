@@ -2894,3 +2894,245 @@ body.desktop-required .desktop-only-gate {
 .desktop-only-card .logo { margin: 0 auto 20px; }
 .desktop-only-card h1 { margin: 0 0 12px; font-size: 23px; line-height: 1.25; }
 .desktop-only-card p { margin: 0; color: #91a4b7; font-size: 15px; line-height: 1.55; }
+
+/* Unified visual language ------------------------------------------------- */
+:root {
+  --control-bg: color-mix(in srgb, var(--surface2) 94%, transparent);
+  --control-hover: color-mix(in srgb, var(--surface3) 88%, var(--surface2));
+  --control-pressed: color-mix(in srgb, var(--surface3) 72%, var(--accent));
+  --hairline: color-mix(in srgb, var(--stroke) 62%, transparent);
+  --shadow-sm: 0 5px 16px rgba(0, 0, 0, .16);
+  --shadow-md: 0 14px 38px rgba(0, 0, 0, .30);
+  --shadow-lg: 0 24px 70px rgba(0, 0, 0, .46);
+  --radius-control: 11px;
+  --radius-menu: 15px;
+  --radius-card: 16px;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.panel {
+  border-color: var(--hairline);
+  border-radius: 14px;
+  box-shadow: inset 0 1px rgba(255,255,255,.025), 0 8px 28px rgba(0,0,0,.10);
+}
+.panel-head { min-height: 26px; padding-block: 5px; }
+.panel-grip { width: 38px; background: color-mix(in srgb,var(--grip) 88%,transparent); }
+.panel-head:hover .panel-grip { width: 48px; }
+.splitter::before { border-radius: 999px; }
+.splitter:hover::before { background: color-mix(in srgb,var(--accent) 70%,transparent); }
+
+:where(button, [role="button"]) {
+  -webkit-tap-highlight-color: transparent;
+}
+:where(
+  .profile-settings,.room-head-action,.composer-tool,.composer-round,
+  .sel-close,.sel-btn,.info-close,.pinned-manager-head>button,.pm-unpin,
+  .settings-page header [data-back],.lightbox-tools button,.lightbox-close,
+  .lightbox-nav,.profile-card-actions button,.profile-qr-action
+) {
+  transition: background-color .16s ease, color .16s ease, border-color .16s ease,
+              box-shadow .16s ease, transform .14s var(--ease-out), opacity .16s ease;
+}
+:where(
+  .profile-settings,.room-head-action,.composer-tool,.composer-round,
+  .sel-close,.sel-btn,.info-close,.pinned-manager-head>button,.pm-unpin,
+  .settings-page header [data-back],.lightbox-tools button,.lightbox-close,
+  .lightbox-nav,.profile-card-actions button,.profile-qr-action
+):active { transform: scale(.95); }
+
+:where(
+  .ctx-menu,.fab-menu,.send-menu,.emoji-menu,.attach-menu,.msg-menu,
+  .profile-account-menu,.new-chat,.autocomplete,.pinned-manager
+) {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-menu);
+  background: color-mix(in srgb,var(--surface2) 96%,transparent);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(16px);
+}
+:where(.ctx-menu,.fab-menu,.send-menu,.attach-menu,.profile-account-menu) { padding: 7px; }
+:where(.ctx-item,.fab-item,.send-menu>button,.attach-menu>button,.profile-account-menu>button) {
+  min-height: 42px;
+  border-radius: 10px;
+  transition: background-color .14s ease, color .14s ease, transform .12s ease;
+}
+:where(.ctx-item,.fab-item,.send-menu>button,.attach-menu>button,.profile-account-menu>button):hover {
+  background: var(--control-hover);
+}
+:where(.ctx-item,.fab-item,.send-menu>button,.attach-menu>button,.profile-account-menu>button):active {
+  transform: scale(.985);
+}
+.ctx-sep { margin-block: 5px; background: var(--hairline); }
+.ctx-item.danger:hover { background: color-mix(in srgb,var(--danger) 11%,transparent); }
+
+:where(
+  .chat-search,.room-searchbar,.composer-field,.new-chat-emoji,.new-chat-name,
+  .account-add-dialog input,.settings-field input,.settings-card textarea,
+  .settings-link-row input,.settings-card select,.room-create-identity input,
+  .card input,.fwd-search
+) {
+  border-color: transparent;
+  border-radius: var(--radius-control);
+  background: var(--control-bg);
+  box-shadow: inset 0 0 0 1px transparent;
+  transition: background-color .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+:where(.chat-search,.room-searchbar,.composer-field):focus-within,
+:where(
+  .new-chat-emoji,.new-chat-name,.account-add-dialog input,
+  .settings-field input,.settings-card textarea,.settings-link-row input,
+  .settings-card select,.room-create-identity input,.card input,.fwd-search
+):focus {
+  border-color: transparent;
+  background: color-mix(in srgb,var(--surface2) 94%,var(--accent));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--accent) 78%,transparent),
+              0 0 0 3px color-mix(in srgb,var(--accent) 10%,transparent);
+  outline: 0;
+}
+.chat-search,.room-searchbar { min-height: 42px; }
+.composer { border-top-color: var(--hairline); }
+.composer-field { min-height: 44px; }
+.composer-format {
+  border-color: var(--hairline);
+  border-radius: 13px;
+  background: color-mix(in srgb,var(--surface2) 97%,transparent);
+  box-shadow: var(--shadow-sm);
+}
+.composer-format .fmt-btn { border-radius: 8px; }
+.composer-format .fmt-btn.active {
+  color: #fff;
+  background: color-mix(in srgb,var(--accent) 72%,var(--surface3));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,#fff 8%,transparent);
+}
+
+.chat-item { border-radius: 0; }
+.chat-item:hover { background: color-mix(in srgb,var(--surface2) 86%,transparent); }
+.chat-item.active,.chat-item.active:hover {
+  background: color-mix(in srgb,var(--mine-bg) 88%,var(--surface));
+  box-shadow: inset 3px 0 color-mix(in srgb,var(--accent) 72%,#fff);
+}
+.chat-filter,.folder-add,.archive-back {
+  border-radius: 999px;
+  transition: background-color .14s ease, color .14s ease, transform .12s ease;
+}
+.chat-filter:active,.folder-add:active,.archive-back:active { transform: scale(.96); }
+.selection-bar {
+  min-height: 62px;
+  border-bottom: 1px solid var(--hairline);
+  background: color-mix(in srgb,var(--surface) 97%,transparent);
+  backdrop-filter: blur(14px);
+}
+.selection-bar :is(.sel-close,.sel-btn),
+.panel[data-id="chat-list"] .selection-bar button {
+  border-radius: 11px;
+  background: var(--control-bg);
+}
+
+.room-head {
+  min-height: 72px;
+  border-bottom-color: var(--hairline);
+  background: color-mix(in srgb,var(--surface) 98%,transparent);
+}
+.room-head:hover { background: color-mix(in srgb,var(--surface2) 34%,var(--surface)); }
+.room-head-action,.profile-settings { border-radius: 12px; background: var(--control-bg); }
+.pinned-bar { border-bottom-color: var(--hairline); }
+.date-divider span {
+  background: color-mix(in srgb,var(--surface2) 94%,transparent);
+  border-color: color-mix(in srgb,var(--stroke) 45%,transparent);
+  box-shadow: 0 3px 12px rgba(0,0,0,.14);
+}
+
+:where(
+  .settings-card,.storage-card,.settings-toggle-row,.settings-select-row,
+  .settings-range-row,.settings-session,.room-manager-card,.room-settings-list,
+  .room-member-list,.profile-about,.profile-card-section,.sheet-stats div
+) {
+  border-color: transparent;
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb,var(--surface2) 90%,transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--stroke) 24%,transparent);
+}
+.settings-nav {
+  border: 0;
+  border-radius: 18px;
+  background: color-mix(in srgb,var(--surface2) 90%,transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--stroke) 22%,transparent);
+}
+.settings-nav-item { min-height: 62px; }
+.settings-nav-item + .settings-nav-item::before { background: var(--hairline); }
+.settings-nav-item:hover { background: color-mix(in srgb,var(--surface3) 70%,transparent); }
+.settings-page header {
+  background: color-mix(in srgb,var(--surface) 94%,transparent);
+  border-bottom: 1px solid color-mix(in srgb,var(--stroke) 36%,transparent);
+  backdrop-filter: blur(16px);
+}
+.settings-primary,.room-primary {
+  border: 0;
+  border-radius: 11px;
+  box-shadow: 0 5px 16px color-mix(in srgb,var(--accent) 18%,transparent);
+  transition: filter .15s ease, transform .14s var(--ease-out), box-shadow .15s ease;
+}
+.settings-primary:hover,.room-primary:hover:not(:disabled) { filter: brightness(1.07); }
+.settings-primary:active,.room-primary:active:not(:disabled) { transform: scale(.98); }
+.settings-secondary,.room-secondary,.settings-action {
+  border: 0;
+  border-radius: 11px;
+  background: var(--control-bg);
+  transition: background-color .15s ease, transform .14s ease;
+}
+.settings-secondary:hover,.room-secondary:hover,.settings-action:hover { background: var(--control-hover); }
+.settings-secondary:active,.room-secondary:active,.settings-action:active { transform: scale(.985); }
+.room-type-switch { border-radius: 14px; background: var(--control-bg); }
+.room-type-switch button { border-radius: 11px; }
+.room-type-switch button.active { background: var(--surface3); box-shadow: var(--shadow-sm); }
+.room-settings-list>button,.room-member-row { border-bottom-color: var(--hairline); }
+
+.workspace-surface {
+  border-color: var(--hairline);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+.workspace-surface.is-open { clip-path: inset(0 round 14px); }
+.workspace-surface-body { scrollbar-gutter: stable; }
+.account-add-dialog,.profile-qr-dialog {
+  border-color: var(--hairline);
+  border-radius: 20px;
+  background: color-mix(in srgb,var(--surface) 98%,transparent);
+  box-shadow: var(--shadow-lg);
+}
+.account-dialog-bars,.profile-qr-bars { height: 28px; }
+.profile-qr-preview { border: 0; box-shadow: 0 14px 36px rgba(0,0,0,.24); }
+.profile-qr-action,.profile-card-actions button {
+  border-radius: 16px;
+  background: var(--control-bg);
+}
+.profile-qr-action:hover,.profile-card-actions button:hover { background: var(--control-hover); }
+
+.info-top { border-bottom-color: var(--hairline); }
+.info-act { border-radius: 12px; background: var(--control-bg); }
+.info-tabs { border-bottom-color: var(--hairline); }
+.info-tab { transition: color .15s ease, background-color .15s ease, border-color .15s ease; }
+.info-tab:hover { color: var(--text); background: color-mix(in srgb,var(--surface2) 45%,transparent); }
+.info-cell { border-radius: 7px; }
+.segment-toast {
+  border-color: var(--hairline);
+  border-radius: 14px;
+  background: color-mix(in srgb,var(--surface2) 96%,transparent);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(14px);
+}
+
+.lightbox-tools { border-radius: 13px; background: rgba(17,23,30,.64); }
+.lightbox-tools button,.lightbox .lightbox-close { border-radius: 10px; }
+.lightbox-nav { border-radius: 13px; }
+.lightbox-caption,.lightbox-thumbs { border: 1px solid rgba(255,255,255,.06); }
+
+@container panel (max-width: 310px) {
+  .room-head { min-height: 66px; }
+  .selection-bar { min-height: 56px; padding-inline: 8px; }
+}
