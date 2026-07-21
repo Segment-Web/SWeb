@@ -4,7 +4,8 @@
 
 // Increase the protocol layer when a wire-format change is incompatible.
 // Layer 2 introduced encrypted envelopes and a blind ciphertext relay.
-export const PROTOCOL_VERSION = 2;
+// Layer 3 scopes sender chains to a room membership epoch.
+export const PROTOCOL_VERSION = 3;
 
 /** Supported chat categories. */
 export const ChatType = {
@@ -45,9 +46,11 @@ export const MessageType = {
   PreKeyRequest: 'prekey-request',
   PreKey: 'prekey',
   KeyShare: 'keyshare',
+  SenderKeyShare: 'sender-key-share',
   HistoryKeyRequest: 'history-key-request',
   HistoryKeyShare: 'history-key-share',
   RoomMembersChanged: 'room-members-changed',
+  RoomAccessRevoked: 'room-access-revoked',
   Cipher: 'cipher',
   Ack: 'ack',
   Typing: 'typing',

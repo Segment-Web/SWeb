@@ -32,7 +32,7 @@ const readJson = (req, limit = 64 * 1024) => new Promise((resolve, reject) => {
   req.on('error', reject);
 });
 
-const publicRoom = (row) => ({ id: row.id, type: row.type, slug: row.slug || '', title: row.title, icon: row.icon || '', isPublic: row.is_public, ownerId: row.owner_id, historyKey: row.is_public ? (row.history_key || '') : '', historyVisibility: row.history_visibility || 'joined' });
+const publicRoom = (row) => ({ id: row.id, type: row.type, slug: row.slug || '', title: row.title, icon: row.icon || '', isPublic: row.is_public, ownerId: row.owner_id, historyKey: row.is_public ? (row.history_key || '') : '', historyVisibility: row.history_visibility || 'joined', membershipEpoch: Number(row.membership_epoch || 1) });
 
 export async function createRooms(config, auth) {
   const pool = auth.pool;
@@ -48,11 +48,13 @@ export async function createRooms(config, auth) {
       history_visibility VARCHAR(16) NOT NULL DEFAULT 'joined',
       history_key TEXT,
       history_seq BIGINT NOT NULL DEFAULT 0,
+      membership_epoch BIGINT NOT NULL DEFAULT 1,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     ALTER TABLE rooms ADD COLUMN IF NOT EXISTS history_visibility VARCHAR(16) NOT NULL DEFAULT 'joined';
     ALTER TABLE rooms ADD COLUMN IF NOT EXISTS history_key TEXT;
     ALTER TABLE rooms ADD COLUMN IF NOT EXISTS history_seq BIGINT NOT NULL DEFAULT 0;
+    ALTER TABLE rooms ADD COLUMN IF NOT EXISTS membership_epoch BIGINT NOT NULL DEFAULT 1;
     CREATE TABLE IF NOT EXISTS room_members (
       room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -130,14 +132,16 @@ export async function createRooms(config, auth) {
   const members = new Map();              // roomId -> Set<userId>
   const existing = new Set();             // roomId
   const owners = new Map();                // roomId -> userId
+  const epochs = new Map();                // roomId -> membership epoch
   const membershipListeners = new Set();
   const emitMembership = (change) => { for (const listener of membershipListeners) { try { listener(change); } catch {} } };
   const hydrate = async () => {
-    publicRooms.clear(); members.clear(); existing.clear(); owners.clear();
-    for (const row of (await pool.query('SELECT id, is_public, owner_id FROM rooms')).rows) {
+    publicRooms.clear(); members.clear(); existing.clear(); owners.clear(); epochs.clear();
+    for (const row of (await pool.query('SELECT id, is_public, owner_id, membership_epoch FROM rooms')).rows) {
       existing.add(row.id);
       if (row.is_public) publicRooms.add(row.id);
       if (row.owner_id) owners.set(row.id, row.owner_id);
+      epochs.set(row.id, Number(row.membership_epoch || 1));
     }
     for (const row of (await pool.query('SELECT room_id, user_id FROM room_members')).rows) {
       if (!members.has(row.room_id)) members.set(row.room_id, new Set());
@@ -146,7 +150,7 @@ export async function createRooms(config, auth) {
   };
   await hydrate();
 
-  const indexRoom = (row) => { existing.add(row.id); if (row.is_public) publicRooms.add(row.id); if (row.owner_id) owners.set(row.id, row.owner_id); };
+  const indexRoom = (row) => { existing.add(row.id); if (row.is_public) publicRooms.add(row.id); if (row.owner_id) owners.set(row.id, row.owner_id); epochs.set(row.id, Number(row.membership_epoch || 1)); };
   const indexMember = (roomId, userId) => {
     if (!members.has(roomId)) members.set(roomId, new Set());
     members.get(roomId).add(userId);
@@ -157,6 +161,8 @@ export async function createRooms(config, auth) {
   // Synchronous access decision used by the gateway on every ciphertext frame.
   const exists = (roomId) => existing.has(roomId);
   const canAccess = (userId, roomId) => publicRooms.has(roomId) || Boolean(members.get(roomId)?.has(userId));
+  const roomEpoch = (roomId) => epochs.get(roomId) || 1;
+  const epochsFor = (userId) => Object.fromEntries([...epochs].filter(([roomId]) => canAccess(userId, roomId)));
 
   const listForUser = async (userId) => {
     const rows = (await pool.query(
@@ -228,7 +234,7 @@ export async function createRooms(config, auth) {
   const redeemInvite = async (user, token) => {
     const tokenHash = hashToken(String(token || ''));
     const connection = await pool.connect();
-    let invite; let joined = false;
+    let invite; let joined = false; let changedEpoch = 0;
     try {
       await connection.query('BEGIN');
       invite = (await connection.query(
@@ -244,21 +250,29 @@ export async function createRooms(config, auth) {
         [invite.room_id, user.id],
       );
       joined = inserted.rowCount > 0;
-      if (joined) await connection.query('UPDATE room_invites SET uses=uses+1 WHERE token_hash=$1', [tokenHash]);
+      if (joined) {
+        await connection.query('UPDATE room_invites SET uses=uses+1 WHERE token_hash=$1', [tokenHash]);
+        const changed = (await connection.query('UPDATE rooms SET membership_epoch=membership_epoch+1 WHERE id=$1 RETURNING membership_epoch', [invite.room_id])).rows[0];
+        changedEpoch = Number(changed?.membership_epoch || 0);
+      }
       await connection.query('COMMIT');
     } catch (error) {
       await connection.query('ROLLBACK').catch(() => {});
       throw error;
     } finally { connection.release(); }
     indexMember(invite.room_id, user.id);
-    if (joined) emitMembership({ roomId: invite.room_id, userId: user.id, action: 'joined' });
+    if (joined) epochs.set(invite.room_id, Math.max(roomEpoch(invite.room_id), changedEpoch || roomEpoch(invite.room_id) + 1));
+    if (joined) emitMembership({ roomId: invite.room_id, userId: user.id, action: 'joined', epoch: roomEpoch(invite.room_id) });
     const room = await one('SELECT * FROM rooms WHERE id=$1', [invite.room_id]);
     return room ? { ...publicRoom(room), joined } : null;
   };
 
   // Append one encrypted history envelope; returns its assigned sequence.
-  const appendHistory = async (user, roomId, eventId, iv, ct, keyId = '') => {
+  const appendHistory = async (user, roomId, epoch, eventId, iv, ct, keyId = '') => {
     if (!canAccess(user.id, roomId)) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
+    if (!Number.isSafeInteger(Number(epoch)) || Number(epoch) !== roomEpoch(roomId)) {
+      throw Object.assign(new Error('STALE_ROOM_EPOCH'), { status: 409 });
+    }
     if (typeof iv !== 'string' || iv.length > 256 || typeof ct !== 'string' || !ct.length || ct.length > 2 * 1024 * 1024) {
       throw Object.assign(new Error('ENVELOPE_INVALID'), { status: 400 });
     }
@@ -320,12 +334,14 @@ export async function createRooms(config, auth) {
 
     if (room.owner_id === user.id) {
       await pool.query('DELETE FROM rooms WHERE id=$1', [roomId]);
-      existing.delete(roomId); publicRooms.delete(roomId); members.delete(roomId); owners.delete(roomId);
+      existing.delete(roomId); publicRooms.delete(roomId); members.delete(roomId); owners.delete(roomId); epochs.delete(roomId);
       return { deleted: true };
     }
     await pool.query('DELETE FROM room_members WHERE room_id=$1 AND user_id=$2', [roomId, user.id]);
     members.get(roomId)?.delete(user.id);
-    emitMembership({ roomId, userId: user.id, action: 'left' });
+    const changed = await one('UPDATE rooms SET membership_epoch=membership_epoch+1 WHERE id=$1 RETURNING membership_epoch', [roomId]);
+    epochs.set(roomId, Math.max(roomEpoch(roomId), Number(changed?.membership_epoch || roomEpoch(roomId) + 1)));
+    emitMembership({ roomId, userId: user.id, action: 'left', epoch: roomEpoch(roomId) });
     return { deleted: false, left: true };
   };
 
@@ -445,7 +461,7 @@ export async function createRooms(config, auth) {
       if (req.method === 'POST' && url.pathname === '/api/rooms/history') {
         const body = await readJson(req, 4 * 1024 * 1024);
         if (!exists(String(body.roomId))) return json(res, 404, { error: 'NOT_FOUND' });
-        return json(res, 201, await appendHistory(user, String(body.roomId), body.eventId, body.iv, body.ct, body.keyId));
+        return json(res, 201, await appendHistory(user, String(body.roomId), body.epoch, body.eventId, body.iv, body.ct, body.keyId));
       }
       if (req.method === 'POST' && url.pathname === '/api/rooms/history/public-key') {
         const body = await readJson(req);
@@ -484,5 +500,5 @@ export async function createRooms(config, auth) {
     }
   };
 
-  return { handle, exists, canAccess, ownerId: (roomId) => owners.get(roomId) || '', listForUser, rehydrate: hydrate, onMembershipChange(listener) { membershipListeners.add(listener); return () => membershipListeners.delete(listener); } };
+  return { handle, exists, canAccess, epoch: roomEpoch, epochsFor, ownerId: (roomId) => owners.get(roomId) || '', listForUser, rehydrate: hydrate, onMembershipChange(listener) { membershipListeners.add(listener); return () => membershipListeners.delete(listener); } };
 }

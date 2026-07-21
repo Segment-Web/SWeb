@@ -12,3 +12,8 @@ connection time, IP address, room membership, routing, typing events and payload
 sizes. Message history and attachments are persisted only as client-encrypted
 data. TLS/HTTPS is still required in production in addition to end-to-end
 encryption.
+
+Live sender keys are scoped to one room and one persisted membership epoch.
+Membership changes replace current sender and history keys, and the relay rejects
+stale-epoch key shares, live ciphertext and history writes. This hardening has not
+been independently reviewed and is not a claim of Signal or MLS compatibility.

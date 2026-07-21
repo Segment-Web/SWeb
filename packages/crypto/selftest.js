@@ -49,6 +49,15 @@ check('room: second member decrypted', (await member2.decrypt(g1)) === 'hello, r
 
 const g2 = await sender.encrypt('second');
 check('room: next message', (await member1.decrypt(g2)) === 'second');
+let replayRejected = false;
+try { await member1.decrypt(g1); } catch { replayRejected = true; }
+check('room: replayed sender message is rejected', replayRejected);
+let skipRejected = false;
+try { await member2.decrypt({ ...g2, n: g2.n + 257 }); } catch { skipRejected = true; }
+check('room: excessive sender-key skip is rejected', skipRejected);
+let malformedSenderKeyRejected = false;
+try { SenderKeyView.from({ chain: [1], n: 0 }); } catch { malformedSenderKeyRejected = true; }
+check('room: malformed sender key is rejected', malformedSenderKeyRejected);
 
 // ── X3DH + Double Ratchet ──
 

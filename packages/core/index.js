@@ -69,6 +69,7 @@ export class SegmentClient {
 
     this.historyKeys = new Map(Object.entries(storage.getHistoryKeys?.() || {}));
     this.historyKeyArchive = new Map(Object.entries(storage.getHistoryKeyArchive?.() || {}));
+    this.historyKeyEpochs = new Map(Object.entries(storage.getHistoryKeyEpochs?.() || {}).map(([roomId, epoch]) => [roomId, Number(epoch) || 0]));
     this._backfilled = new Set();   // rooms already backfilled this session
     this._appliedEvents = new Set();
     this.outbox = Array.isArray(storage.getOutbox?.()) ? storage.getOutbox() : [];
@@ -79,9 +80,11 @@ export class SegmentClient {
     this._relayAcks = new Map();
     this._activeUploads = new Map();
     this.kit = null;
-    this.senderKey = null;
+    this.senderKeys = new Map(); // roomId -> { epoch, key }
+    this._serverRoomEpochs = new Map();
+    this._historyRecoveryRooms = new Set();
     this.myId = null;
-    this.peers = new Map();    // id -> { name, color, bundle, ratchet, view, pendingCiphers }
+    this.peers = new Map();    // id -> { identity, ratchet, room views and room queues }
     this._queue = Promise.resolve();
   }
 
@@ -182,10 +185,11 @@ export class SegmentClient {
       existing.ownerId = room.ownerId || existing.ownerId;
       existing.historyKey = room.historyKey || existing.historyKey || '';
       existing.historyVisibility = room.historyVisibility || existing.historyVisibility;
+      existing.membershipEpoch = Number(this._serverRoomEpochs.get(room.id) || room.membershipEpoch || existing.membershipEpoch || 1);
     } else {
       this.chats.push({
         id: room.id, name: room.title, icon: room.icon || '💬', type: room.type, slug: room.slug || '',
-        ownerId: room.ownerId || '', isPublic: Boolean(room.isPublic), historyKey: room.historyKey || '', historyVisibility: room.historyVisibility || 'joined',
+        ownerId: room.ownerId || '', isPublic: Boolean(room.isPublic), historyKey: room.historyKey || '', historyVisibility: room.historyVisibility || 'joined', membershipEpoch: Number(this._serverRoomEpochs.get(room.id) || room.membershipEpoch || 1),
       });
       this.messages[room.id] ||= [];
       this._emit('chats');
@@ -195,7 +199,9 @@ export class SegmentClient {
         const key = Array.from(this._unb64(room.historyKey));
         if (key.length === 32) {
           this.historyKeys.set(room.id, key);
+          this.historyKeyEpochs.set(room.id, Number(room.membershipEpoch || 1));
           this._persistHistoryKeys();
+          this.storage.setHistoryKeyEpochs?.(Object.fromEntries(this.historyKeyEpochs));
         }
       } catch {}
     }
@@ -210,6 +216,11 @@ export class SegmentClient {
       for (const room of rooms || []) {
         this._addServerRoom(room);
         await this._ensureOwnedRoomHistoryKey(room);
+        const epoch = Number(this._serverRoomEpochs.get(room.id) || room.membershipEpoch || 1);
+        const recoverHistory = this._historyRecoveryRooms.has(room.id)
+          && room.ownerId === this.self.id
+          && Number(this.historyKeyEpochs.get(room.id) || 0) < epoch;
+        await this._advanceRoomEpoch(room.id, epoch, recoverHistory);
       }
       await this.preloadRoomHistories();
     } catch { /* offline or unauthenticated: keep local defaults */ }
@@ -265,22 +276,23 @@ export class SegmentClient {
   async createInvite(roomId) {
     if (!this.chatById(roomId)) return null;
     const { token } = await this._roomsApi('POST', '/api/rooms/invite', { roomId });
-    const key = this._historyKey(roomId);
-    const fragment = key ? `#k=${this._b64(new Uint8Array(key)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')}` : '';
-    return `${location.origin}/j/${token}${fragment}`;
+    return `${location.origin}/j/${token}`;
   }
 
   // Redeem an invite token and open the joined room.
   async joinByToken(token, encodedKey = '') {
     const { room } = await this._roomsApi('POST', '/api/rooms/join', { token });
+    this._serverRoomEpochs.set(room.id, Number(room.membershipEpoch || 1));
     if (encodedKey) {
       try {
         const padded = encodedKey.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(encodedKey.length / 4) * 4, '=');
         const key = Array.from(this._unb64(padded));
-        if (key.length === 32) this._adoptHistoryKeys({ [room.id]: key });
+        if (key.length === 32) this._adoptHistoryKeys({ [room.id]: key }, { [room.id]: Math.max(1, Number(room.membershipEpoch || 1) - (room.joined ? 1 : 0)) });
       } catch {}
     }
-    return this._addServerRoom(room, { open: true });
+    const roomId = this._addServerRoom(room, { open: true });
+    await this._advanceRoomEpoch(room.id, Number(room.membershipEpoch || 1), false);
+    return roomId;
   }
 
   // Owner-only, one-way: switch a room to full history for all members.
@@ -683,8 +695,9 @@ export class SegmentClient {
     const { roomId, event, historyKeyId = '' } = item;
     const historyAck = await this._storeToHistory(roomId, event, historyKeyId);
     await this._ensureCrypto();
-    const box = await this.senderKey.encrypt(JSON.stringify({ segment: 'event', ...event }));
-    const frame = { type: MessageType.Cipher, room: roomId, eventId: event.eventId, n: box.n, iv: box.iv, ct: box.ct };
+    const { epoch, key } = await this._ensureRoomSenderKey(roomId);
+    const box = await key.encrypt(JSON.stringify({ segment: 'event', room: roomId, epoch, ...event }));
+    const frame = { type: MessageType.Cipher, room: roomId, epoch, eventId: event.eventId, n: box.n, iv: box.iv, ct: box.ct };
     // Private rooms are acknowledged by their durable PostgreSQL history write.
     // Rooms without a history key still require a live relay before dequeueing.
     if (historyAck) this._send(frame);
@@ -908,7 +921,7 @@ export class SegmentClient {
     if (!keyId || this._historyKeyId(current) === keyId) return current;
     return (this.historyKeyArchive.get(roomId) || []).find((key) => this._historyKeyId(key) === keyId) || null;
   }
-  _installRotatedHistoryKey(roomId, key) {
+  _installRotatedHistoryKey(roomId, key, epoch = this._roomEpoch(roomId)) {
     if (!Array.isArray(key) || key.length !== 32) return false;
     const current = this._historyKey(roomId);
     if (current && this._historyKeyId(current) !== this._historyKeyId(key)) {
@@ -917,28 +930,39 @@ export class SegmentClient {
       this.historyKeyArchive.set(roomId, archive.slice(-12));
       this.storage.setHistoryKeyArchive?.(Object.fromEntries(this.historyKeyArchive));
     }
-    this.historyKeys.set(roomId, key); this._persistHistoryKeys(); return true;
+    this.historyKeys.set(roomId, key);
+    this.historyKeyEpochs.set(roomId, Number(epoch) || 0);
+    for (const item of this.outbox) {
+      if (item.roomId === roomId) item.historyKeyId = this._historyKeyId(key);
+    }
+    this._persistOutbox();
+    this.storage.setHistoryKeyEpochs?.(Object.fromEntries(this.historyKeyEpochs));
+    this._persistHistoryKeys(); return true;
   }
 
   _seedHistoryKey(roomId) {
     if (!this.historyKeys.has(roomId)) {
       this.historyKeys.set(roomId, randomFileKey());
+      this.historyKeyEpochs.set(roomId, this._roomEpoch(roomId));
       this._persistHistoryKeys();
+      this.storage.setHistoryKeyEpochs?.(Object.fromEntries(this.historyKeyEpochs));
     }
     return this.historyKeys.get(roomId);
   }
 
-  _adoptHistoryKeys(map) {
+  _adoptHistoryKeys(map, epochs = {}) {
     if (!map || typeof map !== 'object') return;
     let changed = false;
     for (const [roomId, key] of Object.entries(map)) {
       if (!this.historyKeys.has(roomId) && Array.isArray(key) && key.length === 32) {
         this.historyKeys.set(roomId, key);
+        if (Number(epochs[roomId]) > 0) this.historyKeyEpochs.set(roomId, Number(epochs[roomId]));
         changed = true;
       }
     }
     if (changed) {
       this._persistHistoryKeys();
+      this.storage.setHistoryKeyEpochs?.(Object.fromEntries(this.historyKeyEpochs));
       this._backfilled.clear();
       if (this.currentRoom) this._backfillRoom(this.currentRoom);
       this._flushOutbox();
@@ -955,11 +979,12 @@ export class SegmentClient {
     if (roomId === SAVED_ID) return;
     const key = this._historyKeyFor(roomId, historyKeyId) || this._historyKey(roomId);
     if (!key || !event) return null;
+    if (Number(this.historyKeyEpochs.get(roomId) || 0) < this._roomEpoch(roomId)) throw new Error('HISTORY_KEY_STALE');
     const clean = event.message ? { ...event, message: { ...event.message } } : event;
     if (clean.message) delete clean.message.status;
     try {
       const { iv, ct } = await sealBytes(key, new TextEncoder().encode(JSON.stringify(clean)));
-      const { seq } = await this._roomsApi('POST', '/api/rooms/history', { roomId, eventId: event.eventId, keyId: this._historyKeyId(key), iv: this._b64(iv), ct: this._b64(ct) });
+      const { seq } = await this._roomsApi('POST', '/api/rooms/history', { roomId, epoch: this._roomEpoch(roomId), eventId: event.eventId, keyId: this._historyKeyId(key), iv: this._b64(iv), ct: this._b64(ct) });
       // Remember where this message lives so deleting it can erase it for good.
       const local = event.message?.id ? this._messageById(roomId, event.message.id) : null;
       if (local && seq) local.seq = seq;
@@ -1032,19 +1057,43 @@ export class SegmentClient {
   async _ensureCrypto() {
     if (this.kit) return;
     this.kit = await createPreKeyBundle();
-    this.senderKey = SenderKey.create();
+  }
+
+  _roomEpoch(roomId) { return Number(this.chatById(roomId)?.membershipEpoch || this._serverRoomEpochs.get(roomId) || 1); }
+
+  async _ensureRoomSenderKey(roomId) {
+    const epoch = this._roomEpoch(roomId);
+    let entry = this.senderKeys.get(roomId);
+    if (entry?.epoch === epoch) return entry;
+    entry = { epoch, key: SenderKey.create() };
+    this.senderKeys.set(roomId, entry);
+    for (const peerId of this.peers.keys()) await this._shareSenderKeyWith(peerId, roomId);
+    return entry;
+  }
+
+  async _shareSenderKeyWith(peerId, roomId) {
+    const peer = this.peers.get(peerId);
+    const entry = this.senderKeys.get(roomId);
+    if (!peer?.ratchet || !peer.ready || !entry || entry.epoch !== this._roomEpoch(roomId) || this.ws?.readyState !== 1) return;
+    const payload = JSON.stringify({ segment: 'sender-key', roomId, epoch: entry.epoch, state: entry.key.export() });
+    const box = await peer.ratchet.encrypt(payload);
+    this._send({ type: MessageType.SenderKeyShare, to: peerId, room: roomId, epoch: entry.epoch, box });
+  }
+
+  async _shareAllRoomKeysWith(peerId) {
+    for (const roomId of this.senderKeys.keys()) await this._shareSenderKeyWith(peerId, roomId);
   }
 
   async _join() {
     if (!this.self.name) return;
     await this._ensureCrypto();
-    this._send({ type: MessageType.Join, name: this.self.name, color: this.self.color, bundle: this.kit.bundle });
+    this._send({ type: MessageType.Join, version: PROTOCOL_VERSION, name: this.self.name, color: this.self.color, bundle: this.kit.bundle });
     this._emit('identity', { name: this.self.name });
   }
 
   _addPeer(m) {
     if (this.peers.has(m.id)) return;
-    this.peers.set(m.id, { userId: m.userId || '', name: m.name, username: m.username, avatar: m.avatar, color: m.color, bundle: m.bundle, pendingCiphers: [] });
+    this.peers.set(m.id, { userId: m.userId || '', name: m.name, username: m.username, avatar: m.avatar, color: m.color, bundle: m.bundle, ready: false, views: new Map(), pendingCiphers: new Map() });
   }
 
 
@@ -1059,72 +1108,91 @@ export class SegmentClient {
     const bundle = { ...p.bundle, opks: opk ? [opk] : [] };
     const { ratchet, x3dh } = await x3dhInitiate(this.kit.secret, bundle);
     p.ratchet = ratchet;
-    const box = await ratchet.encrypt(JSON.stringify(this.senderKey.export()));
+    const box = await ratchet.encrypt(JSON.stringify({ segment: 'pairwise-ready', version: PROTOCOL_VERSION }));
     this._send({ type: MessageType.KeyShare, to: from, x3dh, box });
+    await this._shareAllRoomKeysWith(from);
   }
 
   async _onKeyShare(from, x3dh, box) {
     const p = this.peers.get(from);
     if (!p) return;
     if (x3dh && !p.ratchet) {
-
-
       p.ratchet = await x3dhRespond(this.kit.secret, x3dh);
-      p.view = SenderKeyView.from(JSON.parse(await p.ratchet.decrypt(box)));
-      await this._drain(p);
-      const reply = await p.ratchet.encrypt(JSON.stringify(this.senderKey.export()));
+      const hello = JSON.parse(await p.ratchet.decrypt(box));
+      if (hello?.segment !== 'pairwise-ready') { p.ratchet = null; return; }
+      p.ready = true;
+      const reply = await p.ratchet.encrypt(JSON.stringify({ segment: 'pairwise-ready', version: PROTOCOL_VERSION }));
       this._send({ type: MessageType.KeyShare, to: from, box: reply });
     } else if (p.ratchet) {
-
-      p.view = SenderKeyView.from(JSON.parse(await p.ratchet.decrypt(box)));
-      await this._drain(p);
+      if (p.ready) return;
+      const hello = JSON.parse(await p.ratchet.decrypt(box));
+      if (hello?.segment !== 'pairwise-ready') return;
+      p.ready = true;
     }
+    await this._shareAllRoomKeysWith(from);
+    this._requestMissingHistoryKeys();
   }
 
-  async _drain(p) {
-    const pend = p.pendingCiphers;
-    p.pendingCiphers = [];
+  async _onSenderKeyShare(from, roomId, epoch, box) {
+    const peer = this.peers.get(from);
+    if (!peer?.ratchet || !peer.ready || !box || epoch !== this._roomEpoch(roomId)) return;
+    try {
+      const payload = JSON.parse(await peer.ratchet.decrypt(box));
+      if (payload?.segment !== 'sender-key' || payload.roomId !== roomId || payload.epoch !== epoch) return;
+      peer.views.set(roomId, { epoch, view: SenderKeyView.from(payload.state) });
+      await this._drain(peer, roomId);
+    } catch {}
+  }
+
+  async _drain(p, roomId) {
+    const pend = p.pendingCiphers.get(roomId) || [];
+    p.pendingCiphers.delete(roomId);
     for (const c of pend) await this._decryptCipher(p, c);
   }
 
 
 
   async _onPeerLeft(id) {
-    const had = this.peers.delete(id);
-    if (!had || !this.senderKey) return;
-    this.senderKey = SenderKey.create();
-    const state = JSON.stringify(this.senderKey.export());
-    for (const [pid, p] of this.peers) {
-      if (p.ratchet) this._send({ type: MessageType.KeyShare, to: pid, box: await p.ratchet.encrypt(state) });
-    }
+    this.peers.delete(id);
   }
 
   _requestHistoryKey(roomId) {
-    if (!roomId || this._historyKey(roomId) || this.ws?.readyState !== 1) return;
-    this._send({ type: MessageType.HistoryKeyRequest, room: roomId });
+    if (!roomId || this.ws?.readyState !== 1) return;
+    if (this._historyKey(roomId) && Number(this.historyKeyEpochs.get(roomId) || 0) >= this._roomEpoch(roomId)) return;
+    this._send({ type: MessageType.HistoryKeyRequest, room: roomId, epoch: this._roomEpoch(roomId) });
   }
 
   _requestMissingHistoryKeys() {
     for (const chat of this.chats) {
-      if (!chat.local && !this._historyKey(chat.id)) this._requestHistoryKey(chat.id);
+      if (!chat.local) this._requestHistoryKey(chat.id);
     }
   }
 
-  async _onHistoryKeyRequest(from, roomId) {
+  async _onHistoryKeyRequest(from, roomId, epoch) {
     const key = this._historyKey(roomId);
     const peer = this.peers.get(from);
-    if (!key || !peer?.ratchet) return;
-    const box = await peer.ratchet.encrypt(JSON.stringify({ roomId, key }));
-    this._send({ type: MessageType.HistoryKeyShare, to: from, room: roomId, box });
+    if (!key || !peer?.ratchet || !peer.ready || epoch !== this._roomEpoch(roomId)
+      || Number(this.historyKeyEpochs.get(roomId) || 0) < epoch) return;
+    await this._shareHistoryKeyWith(from, roomId, false);
   }
 
-  async _onHistoryKeyShare(from, roomId, box) {
+  async _shareHistoryKeyWith(peerId, roomId, rotate) {
+    const peer = this.peers.get(peerId);
+    const key = this._historyKey(roomId);
+    const epoch = this._roomEpoch(roomId);
+    if (!key || !peer?.ratchet || !peer.ready || this.ws?.readyState !== 1) return;
+    const box = await peer.ratchet.encrypt(JSON.stringify({ segment: 'history-key', roomId, epoch, key, rotate: Boolean(rotate) }));
+    this._send({ type: MessageType.HistoryKeyShare, to: peerId, room: roomId, epoch, box });
+  }
+
+  async _onHistoryKeyShare(from, roomId, epoch, box) {
     const peer = this.peers.get(from);
-    if (!peer?.ratchet || !box) return;
+    if (!peer?.ratchet || !peer.ready || !box || epoch !== this._roomEpoch(roomId)) return;
     try {
       const payload = JSON.parse(await peer.ratchet.decrypt(box));
-      if (payload.roomId === roomId) {
-        this._adoptHistoryKeys({ [roomId]: payload.key });
+      if (payload?.segment === 'history-key' && payload.roomId === roomId && payload.epoch === epoch) {
+        if (payload.rotate || Number(this.historyKeyEpochs.get(roomId) || 0) < epoch) this._installRotatedHistoryKey(roomId, payload.key, epoch);
+        else this._adoptHistoryKeys({ [roomId]: payload.key }, { [roomId]: epoch });
         this.preloadRoomHistories();
       }
     } catch {}
@@ -1132,23 +1200,65 @@ export class SegmentClient {
 
   async _rotateRoomHistoryKey(roomId) {
     const chat = this.chatById(roomId);
-    if (!chat || chat.ownerId !== this.self.id || !this._historyKey(roomId) || this.ws?.readyState !== 1) return;
+    if (!chat || chat.ownerId !== this.self.id || this.ws?.readyState !== 1) return;
     const key = Array.from(randomFileKey());
-    await this.sendEvent(roomId, { kind: 'history-key-rotate', key }, false);
-    this._installRotatedHistoryKey(roomId, key);
+    this._installRotatedHistoryKey(roomId, key, this._roomEpoch(roomId));
+    for (const peerId of this.peers.keys()) await this._shareHistoryKeyWith(peerId, roomId, true);
+  }
+
+  async _advanceRoomEpoch(roomId, epoch, rotateHistory = false) {
+    if (!Number.isSafeInteger(epoch) || epoch < Number(this._serverRoomEpochs.get(roomId) || 0)) return;
+    this._serverRoomEpochs.set(roomId, epoch);
+    const chat = this.chatById(roomId);
+    if (!chat || epoch < this._roomEpoch(roomId)) return;
+    const changed = epoch !== this._roomEpoch(roomId);
+    chat.membershipEpoch = epoch;
+    if (changed || !this.senderKeys.has(roomId)) {
+      this.senderKeys.delete(roomId);
+      for (const peer of this.peers.values()) {
+        peer.views.delete(roomId);
+        peer.pendingCiphers.delete(roomId);
+      }
+      await this._ensureRoomSenderKey(roomId);
+    }
+    if (rotateHistory) await this._rotateRoomHistoryKey(roomId);
+    else if (Number(this.historyKeyEpochs.get(roomId) || 0) < epoch) this._requestHistoryKey(roomId);
+  }
+
+  _revokeRoomAccess(roomId) {
+    this.senderKeys.delete(roomId);
+    this.historyKeys.delete(roomId);
+    this.historyKeyArchive.delete(roomId);
+    this.historyKeyEpochs.delete(roomId);
+    for (const peer of this.peers.values()) {
+      peer.views.delete(roomId);
+      peer.pendingCiphers.delete(roomId);
+    }
+    this._persistHistoryKeys();
+    this.storage.setHistoryKeyArchive?.(Object.fromEntries(this.historyKeyArchive));
+    this.storage.setHistoryKeyEpochs?.(Object.fromEntries(this.historyKeyEpochs));
   }
 
   async _onCipher(msg) {
     const p = this.peers.get(msg.from);
-    if (!p) return;
-    if (!p.view) { p.pendingCiphers.push(msg); return; }
+    if (!p || msg.epoch !== this._roomEpoch(msg.room)) return;
+    const entry = p.views.get(msg.room);
+    if (!entry || entry.epoch !== msg.epoch) {
+      const pending = p.pendingCiphers.get(msg.room) || [];
+      if (pending.length < 256) pending.push(msg);
+      p.pendingCiphers.set(msg.room, pending);
+      return;
+    }
     await this._decryptCipher(p, msg);
   }
 
   async _decryptCipher(p, msg) {
+    const entry = p.views.get(msg.room);
+    if (!entry || entry.epoch !== msg.epoch) return;
     let text;
-    try { text = await p.view.decrypt({ n: msg.n, iv: msg.iv, ct: msg.ct }); } catch { return; }
+    try { text = await entry.view.decrypt({ n: msg.n, iv: msg.iv, ct: msg.ct }); } catch { return; }
     const event = parseEnvelope(text);
+    if (event.room !== msg.room || event.epoch !== msg.epoch) return;
     this._applyEvent(msg.room, event, { id: p.userId, name: p.name, username: p.username, avatar: p.avatar, color: p.color });
     if (event.kind === 'message' && event.message?.id) {
       this.sendEvent(msg.room, { kind: 'receipt', ids: [event.message.id], state: msg.room === this.currentRoom ? 'read' : 'delivered' }, false);
@@ -1162,7 +1272,16 @@ export class SegmentClient {
       case MessageType.Roster:
         this.myId = msg.self.id;
         this.online = msg.online;
+        this._serverRoomEpochs = new Map(Object.entries(msg.roomEpochs || {}).map(([roomId, epoch]) => [roomId, Number(epoch) || 1]));
+        this._historyRecoveryRooms = new Set(msg.historyRecoveryRooms || []);
         for (const m of msg.members) this._addPeer(m);
+        for (const [roomId, epochValue] of Object.entries(msg.roomEpochs || {})) {
+          const epoch = Number(epochValue);
+          const recoverHistory = (msg.historyRecoveryRooms || []).includes(roomId)
+            && this.chatById(roomId)?.ownerId === this.self.id
+            && Number(this.historyKeyEpochs.get(roomId) || 0) < epoch;
+          await this._advanceRoomEpoch(roomId, epoch, recoverHistory);
+        }
         for (const m of msg.members) this._maybeInitiate(m.id);
         this._emit('chats');
         if (this.currentRoom) {
@@ -1195,19 +1314,26 @@ export class SegmentClient {
 
       case MessageType.KeyShare:
         await this._onKeyShare(msg.from, msg.x3dh, msg.box);
-        this._requestMissingHistoryKeys();
+        break;
+
+      case MessageType.SenderKeyShare:
+        await this._onSenderKeyShare(msg.from, msg.room, msg.epoch, msg.box);
         break;
 
       case MessageType.HistoryKeyRequest:
-        await this._onHistoryKeyRequest(msg.from, msg.room);
+        await this._onHistoryKeyRequest(msg.from, msg.room, msg.epoch);
         break;
 
       case MessageType.HistoryKeyShare:
-        await this._onHistoryKeyShare(msg.from, msg.room, msg.box);
+        await this._onHistoryKeyShare(msg.from, msg.room, msg.epoch, msg.box);
         break;
 
       case MessageType.RoomMembersChanged:
-        await this._rotateRoomHistoryKey(msg.room);
+        await this._advanceRoomEpoch(msg.room, msg.epoch, msg.rotateHistory);
+        break;
+
+      case MessageType.RoomAccessRevoked:
+        this._revokeRoomAccess(msg.room);
         break;
 
       case MessageType.Ack: {
@@ -1356,15 +1482,9 @@ export class SegmentClient {
       if (changed) this._refreshRoom(roomId);
       return;
     }
-    if (event.kind === 'history-key-rotate') {
-      const chat = this.chatById(roomId);
-      if (!chat?.ownerId || !author.id || author.id !== chat.ownerId) return;
-      if (this._installRotatedHistoryKey(roomId, event.key)) {
-        this._backfilled.delete(roomId);
-        this._backfillRoom(roomId);
-      }
-      return;
-    }
+    // Protocol v3 never accepts key material from a room event. Membership-key
+    // rotation travels only over the room-scoped pairwise control channel.
+    if (event.kind === 'history-key-rotate') return;
 
     const message = this._messageById(roomId, event.id);
     if (event.kind === 'reaction' && message) {

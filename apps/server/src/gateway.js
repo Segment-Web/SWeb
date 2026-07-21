@@ -1,7 +1,7 @@
 // Segment WebSocket gateway: a stateless relay for public keys and E2EE ciphertext.
 
 import { WebSocket, WebSocketServer } from 'ws';
-import { MessageType, isCipherFrame } from '@segment/protocol';
+import { MessageType, PROTOCOL_VERSION, isCipherFrame } from '@segment/protocol';
 
 const publicBundle = (bundle) => bundle && typeof bundle === 'object' ? {
   idDh: bundle.idDh,
@@ -94,7 +94,23 @@ export function attachGateway(server, config, auth, rooms) {
   const offMembership = rooms.onMembershipChange?.((change) => {
     const ownerId = rooms.ownerId?.(change.roomId);
     const ownerSockets = [...clients.entries()].filter(([, client]) => client.joined && client.userId === ownerId).sort((a, b) => a[1].id.localeCompare(b[1].id));
-    if (ownerSockets[0]) send(ownerSockets[0][0], { type: MessageType.RoomMembersChanged, room: change.roomId, action: change.action });
+    const epoch = Number(change.epoch || rooms.epoch?.(change.roomId) || 1);
+    for (const [ws, client] of clients) {
+      if (!client.joined) continue;
+      if (client.userId === change.userId && !rooms.canAccess(client.userId, change.roomId)) {
+        send(ws, { type: MessageType.RoomAccessRevoked, room: change.roomId, epoch });
+        continue;
+      }
+      if (rooms.canAccess(client.userId, change.roomId)) {
+        send(ws, {
+          type: MessageType.RoomMembersChanged,
+          room: change.roomId,
+          action: change.action,
+          epoch,
+          rotateHistory: ownerSockets[0]?.[0] === ws,
+        });
+      }
+    }
   });
 
   wss.on('connection', (ws, request) => {
@@ -135,10 +151,22 @@ export function attachGateway(server, config, auth, rooms) {
 
       if (message.type === MessageType.Join) {
         if (client.joined) return;
+        if (message.version !== PROTOCOL_VERSION) {
+          ws.close(1002, 'Protocol upgrade required');
+          return;
+        }
         client.joined = true;
         client.bundle = message.bundle && typeof message.bundle === 'object' ? message.bundle : null;
         const members = [...clients.values()].filter((other) => other.joined && other !== client).map(publicOf);
-        send(ws, { type: MessageType.Roster, self: { id: client.id }, members, online: online() });
+        const roomEpochs = rooms.epochsFor?.(client.userId) || {};
+        const historyRecoveryRooms = Object.keys(roomEpochs).filter((roomId) => {
+          if (rooms.ownerId?.(roomId) !== client.userId) return false;
+          const ownerSocketIds = [...clients.values()]
+            .filter((other) => other.joined && other.userId === client.userId)
+            .map((other) => other.id).sort();
+          return ownerSocketIds[0] === client.id;
+        });
+        send(ws, { type: MessageType.Roster, self: { id: client.id }, members, online: online(), roomEpochs, historyRecoveryRooms });
         broadcast({ type: MessageType.Peer, ...publicOf(client) }, ws);
         broadcast({ type: MessageType.System, text: `${client.name} в чате` }, ws);
         schedulePresence();
@@ -156,23 +184,34 @@ export function attachGateway(server, config, auth, rooms) {
         sendTo(message.to, { type: MessageType.KeyShare, from: client.id, x3dh: message.x3dh, box: message.box });
         return;
       }
-      if (message.type === MessageType.HistoryKeyRequest && rooms.exists(message.room) && rooms.canAccess(client.userId, message.room)) {
-        broadcastRoom(message.room, { type: MessageType.HistoryKeyRequest, from: client.id, room: message.room }, ws);
+      const validRoomEpoch = (roomId, epoch) => Number.isSafeInteger(epoch) && epoch > 0 && epoch === rooms.epoch?.(roomId);
+      if (message.type === MessageType.SenderKeyShare && typeof message.to === 'string' && message.box && typeof message.box === 'object'
+        && rooms.exists(message.room) && validRoomEpoch(message.room, message.epoch) && rooms.canAccess(client.userId, message.room)) {
+        const target = clientsById.get(message.to)?.client;
+        if (target && rooms.canAccess(target.userId, message.room)) {
+          sendTo(message.to, { type: MessageType.SenderKeyShare, from: client.id, room: message.room, epoch: message.epoch, box: message.box });
+        }
+        return;
+      }
+      if (message.type === MessageType.HistoryKeyRequest && rooms.exists(message.room)
+        && validRoomEpoch(message.room, message.epoch) && rooms.canAccess(client.userId, message.room)) {
+        broadcastRoom(message.room, { type: MessageType.HistoryKeyRequest, from: client.id, room: message.room, epoch: message.epoch }, ws);
         return;
       }
       if (message.type === MessageType.HistoryKeyShare && typeof message.to === 'string' && message.box && typeof message.box === 'object'
-        && rooms.exists(message.room) && rooms.canAccess(client.userId, message.room)) {
+        && rooms.exists(message.room) && validRoomEpoch(message.room, message.epoch) && rooms.canAccess(client.userId, message.room)) {
         const target = clientById(message.to);
         if (target && rooms.canAccess(target.userId, message.room)) {
-          sendTo(message.to, { type: MessageType.HistoryKeyShare, from: client.id, room: message.room, box: message.box });
+          sendTo(message.to, { type: MessageType.HistoryKeyShare, from: client.id, room: message.room, epoch: message.epoch, box: message.box });
         }
         return;
       }
       if (message.type === MessageType.Cipher && rooms.exists(message.room)
+        && validRoomEpoch(message.room, message.epoch)
         && rooms.canAccess(client.userId, message.room)
         && isCipherFrame(message, config.maxWsPayload)) {
         const eventId = typeof message.eventId === 'string' && message.eventId.length <= 96 ? message.eventId : '';
-        broadcastRoom(message.room, { type: MessageType.Cipher, from: client.id, room: message.room, eventId, n: message.n, iv: message.iv, ct: message.ct }, ws);
+        broadcastRoom(message.room, { type: MessageType.Cipher, from: client.id, room: message.room, epoch: message.epoch, eventId, n: message.n, iv: message.iv, ct: message.ct }, ws);
         if (eventId) send(ws, { type: MessageType.Ack, eventId });
         return;
       }

@@ -44,6 +44,9 @@ const ok = (cond, label) => { if (cond) { pass++; console.log('ok   ' + label); 
 
 // Drive rooms.handle with a mock request/response.
 const call = async (method, url, { user = null, body } = {}) => {
+  if (method === 'POST' && url === '/api/rooms/history' && body?.roomId && body.epoch == null) {
+    body = { ...body, epoch: rooms.epoch(body.roomId) };
+  }
   const req = Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))]);
   req.method = method; req.url = url; req.headers = { origin: '' }; req._user = user;
   let status = 0, payload = '';
@@ -110,6 +113,7 @@ ok(invite.status === 201 && invite.data.token, 'owner mints invite');
 const joined = await call('POST', '/api/rooms/join', { user: other, body: { token: invite.data.token } });
 ok(joined.status === 200 && joined.data.room?.id === roomId && joined.data.room.joined === true, 'redeem invite -> joined room');
 ok(rooms.canAccess(other.id, roomId), 'redeemer now has access');
+ok(joined.data.room.membershipEpoch === rooms.epoch(roomId) && membershipChanges.at(-1)?.epoch === rooms.epoch(roomId), 'joining advances the persisted membership epoch');
 const membershipEventsAfterJoin = membershipChanges.length;
 const joinedAgain = await call('POST', '/api/rooms/join', { user: other, body: { token: invite.data.token } });
 const inviteUsage = await pool.query('SELECT uses FROM room_invites WHERE token_hash IS NOT NULL AND room_id=$1', [roomId]);
@@ -139,6 +143,9 @@ ok(idemHistory.data.envelopes.length === 1, 'history retry does not duplicate th
 
 // --- Encrypted history: append, join-point gating, one-way full visibility ---
 const env = (n) => ({ iv: `iv${n}`, ct: `cipher-${n}` });
+
+const staleEpochAppend = await call('POST', '/api/rooms/history', { user: owner, body: { roomId, epoch: rooms.epoch(roomId) - 1, ...env(0) } });
+ok(staleEpochAppend.status === 409, 'history encrypted for a stale membership epoch is rejected');
 
 // Owner appends two envelopes to the private room (seq 1, 2).
 const h1 = await call('POST', '/api/rooms/history', { user: owner, body: { roomId, ...env(1) } });

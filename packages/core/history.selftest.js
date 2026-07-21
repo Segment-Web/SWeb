@@ -4,6 +4,7 @@
 // Run: node packages/core/history.selftest.js
 
 import { SegmentClient } from './index.js';
+import { SenderKeyView } from '@segment/crypto';
 
 let pass = 0, fail = 0;
 const ok = (cond, label) => { if (cond) { pass++; console.log('ok   ' + label); } else { fail++; console.log('FAIL ' + label); } };
@@ -205,23 +206,34 @@ const secureKeyBefore = JSON.stringify(B._historyKey(secureRoom));
 B._applyEvent(secureRoom, { kind: 'history-key-rotate', key: Array(32).fill(22) }, { id: 'user-b', name: 'B' });
 ok(JSON.stringify(B._historyKey(secureRoom)) === secureKeyBefore, 'non-owner cannot rotate room history key');
 B._applyEvent(secureRoom, { kind: 'history-key-rotate', key: Array(32).fill(23) }, { id: 'user-a', name: 'A' });
-ok(JSON.stringify(B._historyKey(secureRoom)) === JSON.stringify(Array(32).fill(23)), 'room owner can rotate room history key');
+ok(JSON.stringify(B._historyKey(secureRoom)) === secureKeyBefore, 'room events cannot carry history key material, even from the owner');
 
-// A membership change may arrive while another outbox flush is active. The
-// rotation stays queued under the old history key while the owner immediately
-// adopts the new key for subsequent messages.
+// Membership changes never publish a fresh history key inside a room event
+// encrypted under the key that the removed member already knows.
 const raceRoom = 'chat-rotation-race';
 A._addServerRoom({ id: raceRoom, title: 'Race', type: 'chat', icon: 'R', ownerId: 'user-a' });
 A._seedHistoryKey(raceRoom);
 const oldRaceKeyId = A._historyKeyId(A._historyKey(raceRoom));
-A.ws = { readyState: 1 };
-A._flushingOutbox = true;
+A.ws = { readyState: 1, send: () => {} };
 await A._rotateRoomHistoryKey(raceRoom);
-A._flushingOutbox = false;
 const queuedRotation = A.outbox.find((item) => item.roomId === raceRoom && item.event.kind === 'history-key-rotate');
-ok(Boolean(queuedRotation) && queuedRotation.historyKeyId === oldRaceKeyId, 'queued rotation retains the previous history key');
-ok(A._historyKeyId(A._historyKey(raceRoom)) !== oldRaceKeyId, 'owner adopts the rotated key while outbox is busy');
-A.outbox = A.outbox.filter((item) => item !== queuedRotation);
+ok(!queuedRotation, 'fresh history key is never wrapped in an old room event');
+ok(A._historyKeyId(A._historyKey(raceRoom)) !== oldRaceKeyId, 'owner immediately adopts a fresh history key');
+
+// Sender chains are isolated by room and replaced at every membership epoch.
+const roomA = 'chat-key-scope-a', roomB = 'chat-key-scope-b';
+A._addServerRoom({ id: roomA, title: 'A', type: 'chat', membershipEpoch: 1 });
+A._addServerRoom({ id: roomB, title: 'B', type: 'chat', membershipEpoch: 1 });
+const senderA = await A._ensureRoomSenderKey(roomA);
+const senderB = await A._ensureRoomSenderKey(roomB);
+ok(JSON.stringify(senderA.key.export()) !== JSON.stringify(senderB.key.export()), 'different rooms use different sender chains');
+const formerMemberView = SenderKeyView.from(senderA.key.export());
+await A._advanceRoomEpoch(roomA, 2, false);
+const rotatedSenderA = await A._ensureRoomSenderKey(roomA);
+const futureCipher = await rotatedSenderA.key.encrypt('future private message');
+let formerMemberRead = false;
+try { await formerMemberView.decrypt(futureCipher); formerMemberRead = true; } catch {}
+ok(!formerMemberRead, 'a former member sender view cannot decrypt the next membership epoch');
 
 // A backfill cannot bring the erased message back.
 A._backfilled.clear();

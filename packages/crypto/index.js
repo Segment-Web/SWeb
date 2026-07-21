@@ -204,6 +204,8 @@ export class SenderKey {
 
 export class SenderKeyView {
   static from(state) {
+    if (!state || !Array.isArray(state.chain) || state.chain.length !== 32
+      || !Number.isSafeInteger(state.n) || state.n < 0) throw new Error('INVALID_SENDER_KEY');
     const v = new SenderKeyView();
     v._chain = a2b(state.chain);
     v._n = state.n;
@@ -211,6 +213,8 @@ export class SenderKeyView {
   }
 
   async decrypt(msg) {
+    if (!msg || !Number.isSafeInteger(msg.n) || msg.n < this._n) throw new Error('REPLAYED_SENDER_MESSAGE');
+    if (msg.n - this._n > MAX_SKIP) throw new Error('SENDER_SKIP_LIMIT');
     while (this._n < msg.n) {
       this._chain = (await ratchetStep(this._chain)).nextChain;
       this._n++;
