@@ -193,6 +193,8 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
     const cover = safeImageUrl(meta.cover || content.media[0]?.poster || content.media[0]?.data || '');
     const music = meta.music;
     const game = meta.game;
+    const online = own || (client.online || []).some((entry) => entry?.id === user.id || entry?.accountId === user.id || (user.username && entry?.username === user.username));
+    const lastSeen = online ? 'в сети' : 'был(а) недавно';
     const tabs = own ? [['posts','Публикации'],['archive','Архив публикаций']] : [['posts','Публикации'],['media','Медиа'],['files','Файлы'],['links','Ссылки']];
     const presence = [
       music?.active ? `<div class="profile-music"><span>♫</span><div><small>Сейчас играет</small><b>${esc(`${music.artist} — ${music.title}`)}</b></div><em>›</em></div>` : '',
@@ -203,17 +205,17 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
         <button class="profile-cover-code" type="button" aria-label="Ссылка профиля">${ICONS.qr}</button>
         <button class="profile-cover-menu" type="button" aria-label="${own ? 'Изменить баннер' : 'Меню'}">${own ? ICONS.image : ICONS.more}</button>
       </div>
-      <div class="profile-card-identity ${user.status && !own ? 'has-status' : ''}">
+      <div class="profile-card-identity">
         ${pinnedBadge ? `<button class="profile-chip profile-achievements" type="button"><span>${pinnedBadge.icon}</span><b>${esc(pinnedBadge.title)}</b></button>` : ''}
         ${avatarHtml(user,'profile-card-avatar')}
         ${community ? `<button class="profile-chip profile-community" type="button"><span>${esc(community.icon || '◇')}</span><b>${esc(community.name)}</b></button>` : ''}
-        <div class="profile-card-name"><h2>${esc(user.name)}</h2>${user.username ? `<button type="button" data-copy-username>@${esc(user.username)}</button>` : ''}${!own && user.status ? `<small>${esc(user.status)}</small>` : ''}</div>
+        <div class="profile-card-name"><h2>${esc(user.name)}</h2><small class="profile-last-seen">${esc(lastSeen)}</small></div>
       </div>
       <div class="profile-card-actions ${own ? 'own-actions' : ''}">
         ${own ? `<button data-profile-action="photo">${ICONS.image}<span>Выбрать фото</span></button><button data-profile-action="edit">${ICONS.edit}<span>Изменить</span></button><button data-profile-action="settings">${ICONS.settings}<span>Настройки</span></button>` : `<button data-profile-action="message">${ICONS.open}<span>Чат</span></button><button data-profile-action="sound">${ICONS.bell}<span>Звук</span></button><button data-profile-action="call">${ICONS.phone}<span>Звонок</span></button><button data-profile-action="block">${ICONS.newBlock}<span>+Блок</span></button>`}
       </div>
       ${presence ? `<section class="profile-presence">${presence}</section>` : ''}
-      ${user.bio ? `<section class="profile-about"><p>${esc(user.bio)}</p><span>О себе</span></section>` : ''}
+      ${user.username || user.bio ? `<section class="profile-about">${user.username ? `<button class="profile-about-username" type="button" data-copy-username>@${esc(user.username)}</button><span>Имя пользователя</span>` : ''}${user.username && user.bio ? '<i class="profile-about-divider" aria-hidden="true"></i>' : ''}${user.bio ? `<p>${esc(user.bio)}</p><span>О себе</span>` : ''}</section>` : ''}
       <nav class="profile-content-tabs ${own ? 'is-profile-owner' : ''}">${tabs.map(([id,label]) => `<button data-profile-tab="${id}" class="${tab === id ? 'active' : ''}">${label}</button>`).join('')}</nav>
       <div class="profile-content">${renderTabContent(tab, content)}</div>
       </div>
@@ -281,11 +283,11 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
 export function openProfileSurface(client, user, { sourceId = 'profile', openSettings = null } = {}) {
   const own = Boolean(user?.id && user.id === client.self.id) || user === client.self;
   const settings = openSettings || (own ? (page = 'home') => window.Segment?.workspace?.openSurface({
-    id:'settings', sourceId, minWidth:370, maxWidth:720, className:'settings-surface',
+    id:'settings', sourceId, minWidth:400, maxWidth:720, className:'settings-surface',
     mount(root,close){ return mountSettings(root,close,client,()=>client._emit('identity',{name:client.self.name,user:client.self}),page); },
   }) : null);
   return window.Segment?.workspace?.openSurface({
-    id: `profile-view:${user.username || user.id || 'self'}`, sourceId, minWidth:360, maxWidth:2400, className:'profile-view-surface',
+    id: `profile-view:${user.username || user.id || 'self'}`, sourceId, minWidth:400, maxWidth:2400, className:'profile-view-surface',
     mount(root,close){ mountProfileView(root,close,client,user,{own,openSettings:settings}); },
   });
 }
@@ -356,7 +358,7 @@ export function profilePanel(client) {
       const avatar=body.querySelector('.profile-avatar');const name=body.querySelector('.profile-name');const state=body.querySelector('.profile-state');const dot=body.querySelector('.status-dot');
       const renderIdentity=()=>{name.textContent=client.self.name||'гость';const safeAvatar=safeImageUrl(client.self.avatar);avatar.innerHTML=safeAvatar?`<img src="${esc(safeAvatar)}" alt="">`:'';if(!safeAvatar)avatar.textContent=client.self.name?.trim()[0]?.toUpperCase()||'·';avatar.style.background=client.self.color;};
       const offs=[client.on('identity',renderIdentity),client.on('connection',({connected})=>{dot.classList.toggle('off',!connected);state.textContent=connected?'в сети':'не в сети';})];
-      const openSettings=(page='home')=>window.Segment?.workspace?.openSurface({id:'settings',sourceId:'profile',minWidth:370,maxWidth:720,className:'settings-surface',mount(settings,close){return mountSettings(settings,close,client,renderIdentity,page);}});
+      const openSettings=(page='home')=>window.Segment?.workspace?.openSurface({id:'settings',sourceId:'profile',minWidth:400,maxWidth:720,className:'settings-surface',mount(settings,close){return mountSettings(settings,close,client,renderIdentity,page);}});
       const openProfile=()=>openProfileSurface(client,client.self,{sourceId:'profile',openSettings});
       const carousel=body.querySelector('.profile-account-carousel');const accountMenu=body.querySelector('.profile-account-menu');let deviceAccounts=[client.self];let menuAccount=null;
       const closeAccountMenu=()=>accountMenu.classList.add('hidden');
