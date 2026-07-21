@@ -2373,6 +2373,8 @@ body.media-open { overflow: hidden; }
 .workspace-surface-move { left:50%; cursor:grab!important; transform:translateX(-50%); }
 .workspace-surface-move:active { cursor:grabbing!important; }
 .workspace-surface-move:hover i { width:60px; background:var(--muted); }
+.workspace-surface.is-moving { transition:none; }
+.workspace-surface.is-moving .workspace-surface-move i { width:60px; background:var(--accent); }
 .workspace-surface-close { right:0; }
 .workspace-surface-close i {
   width:40px!important; background:color-mix(in srgb,var(--danger) 86%,#ff8b84)!important;
@@ -2406,6 +2408,7 @@ body.media-open { overflow: hidden; }
 .workspace-surface-left .workspace-surface-resizer { right: -5px; }
 .workspace-surface-right .workspace-surface-resizer { left: -5px; }
 body.is-resizing-surface { cursor: col-resize; user-select: none; }
+body.is-moving-surface { cursor: grabbing; user-select: none; }
 .settings-surface .sheet-head { margin-bottom: 16px; }
 .settings-surface .sheet-head b { font-size: 18px; }
 .settings-surface .settings-label { margin-top: 14px; }

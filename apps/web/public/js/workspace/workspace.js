@@ -201,10 +201,11 @@ export class Workspace {
     const source = this.frames[sourceId]?.wrapper;
     if (!source?.isConnected) return null;
     const sourceRect = source.getBoundingClientRect();
-    const side = sourceRect.left + sourceRect.width / 2 <= window.innerWidth / 2 ? 'left' : 'right';
+    let side = sourceRect.left + sourceRect.width / 2 <= window.innerWidth / 2 ? 'left' : 'right';
     const widthLimit = () => Math.max(0, Math.min(maxWidth, window.innerWidth - SURFACE_EDGE_PX * 2));
     const effectiveMinWidth = () => Math.min(minWidth, widthLimit());
     let width = clamp(sourceRect.width, effectiveMinWidth(), widthLimit());
+    let manualLeft = null;
 
     const element = document.createElement('section');
     element.className = `workspace-surface workspace-surface-${side}${className ? ` ${className}` : ''}`;
@@ -225,7 +226,14 @@ export class Workspace {
       const rect = source.getBoundingClientRect();
       width = clamp(width, effectiveMinWidth(), widthLimit());
       element.style.width = `${width}px`;
-      if (side === 'left') {
+      if (manualLeft !== null) {
+        manualLeft = clamp(manualLeft, SURFACE_EDGE_PX, window.innerWidth - width - SURFACE_EDGE_PX);
+        side = manualLeft + width / 2 <= window.innerWidth / 2 ? 'left' : 'right';
+        element.classList.toggle('workspace-surface-left', side === 'left');
+        element.classList.toggle('workspace-surface-right', side === 'right');
+        element.style.left = `${manualLeft}px`;
+        element.style.right = 'auto';
+      } else if (side === 'left') {
         element.style.left = `${clamp(rect.left, SURFACE_EDGE_PX, window.innerWidth - width - SURFACE_EDGE_PX)}px`;
         element.style.right = 'auto';
       } else {
@@ -259,7 +267,28 @@ export class Workspace {
       if (!event.defaultPrevented) this.closeSurface(id);
     });
     element.querySelector('.workspace-surface-move').addEventListener('pointerdown', (event) => {
-      this._drag(event, sourceId, this.isDocked(sourceId));
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const startRect = element.getBoundingClientRect();
+      const startX = event.clientX;
+      manualLeft = startRect.left;
+      const onMove = (moveEvent) => {
+        manualLeft = startRect.left + moveEvent.clientX - startX;
+        place();
+      };
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+        element.classList.remove('is-moving');
+        document.body.classList.remove('is-moving-surface');
+      };
+      element.classList.add('is-moving');
+      document.body.classList.add('is-moving-surface');
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
     });
     element.querySelector('.workspace-surface-close').addEventListener('click', () => this.closeSurface(id));
     element.querySelector('.workspace-surface-resizer').addEventListener('pointerdown', (event) => {
