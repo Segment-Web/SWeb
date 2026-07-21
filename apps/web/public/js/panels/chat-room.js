@@ -43,25 +43,18 @@ const SLASH = [
   { cmd: 'lenny', desc: 'Lenny', insert: '( ͡° ͜ʖ ͡°)' },
 ];
 
-function stableNumber(seed, min, max) {
-  let hash = 0;
-  for (const ch of seed) hash = ((hash << 5) - hash) + ch.charCodeAt(0);
-  return min + (Math.abs(hash) % (max - min + 1));
-}
-
 function chatStatus(chat, client) {
   if (!chat || chat.local) return { text: '', online: false };
   if (chat.type === 'channel') {
-    const n = chat.subscribers || stableNumber(chat.id, 120000, 130000);
+    const n = Number(chat.subscribers ?? chat.memberCount ?? 0);
     return { text: `${n.toLocaleString('ru-RU')} подписчиков`, online: false };
   }
   if (chat.type === 'dm') {
     const online = client.online?.length > 0;
     return { text: online ? 'в сети' : 'был(а) в сети 1 час назад', online };
   }
-  const members = chat.members || stableNumber(chat.id, 7, 16);
-  const online = Math.max(1, Math.min(members, client.online?.length || 1));
-  return { text: `${members} участников, ${online} в сети`, online: false };
+  const members = Number(chat.members ?? chat.memberCount ?? 0);
+  return { text: `${members} участников`, online: false };
 }
 
 export function chatRoomPanel(client) {
@@ -1103,10 +1096,8 @@ export function chatRoomPanel(client) {
       const collectInfo = () => {
         const msgs = client.messages[currentChat.id] || [];
         const media = []; const files = []; const links = [];
-        const members = new Map();
         for (const m of msgs) {
           if (m.system) continue;
-          if (m.name && !m.deleted) members.set(m.name, { name: m.name, color: m.color });
           if (m.deleted) continue;
           for (const a of m.attachments || []) {
             if (a.kind === 'photo' || a.kind === 'video' || a.kind === 'circle') media.push({ ...a, author: m.channelName || m.name, color: m.color });
@@ -1115,13 +1106,19 @@ export function chatRoomPanel(client) {
           const urls = (m.text || '').match(/https?:\/\/[^\s]+/g);
           if (urls) for (const u of urls) links.push({ u, m });
         }
-        for (const u of client.online || []) members.set(u.name, { name: u.name, color: null });
-        members.set(client.self.name, { name: client.self.name, color: client.self.color, me: true });
-        return { media, files, links, members: [...members.values()] };
+        return { media, files, links, members: Array.isArray(currentChat.roomMembers) ? currentChat.roomMembers : [] };
       };
 
       let infoTab = 'media';
-      const openChatSheet = () => { if (currentChat) { infoTab = 'media'; renderInfo(); sheet.classList.remove('hidden'); } };
+      const openChatSheet = () => {
+        if (!currentChat) return;
+        infoTab = 'media';
+        renderInfo();
+        sheet.classList.remove('hidden');
+        client.loadRoomMembers?.(currentChat.id).then(() => {
+          if (!sheet.classList.contains('hidden')) renderInfo();
+        }).catch(() => {});
+      };
 
       const renderInfo = () => {
         if (!currentChat) return;
@@ -1133,7 +1130,7 @@ export function chatRoomPanel(client) {
         const chatPinned = client.pinned.has(chat.id);
         const editable = client.canEditChat(chat.id);
         const owner = Boolean(chat.ownerId && chat.ownerId === client.self.id);
-        const showMembers = chat.type === 'chat' || chat.type === 'channel';
+        const showMembers = !chat.local;
         const leaveLabel = owner
           ? ({ channel: 'Удалить канал', chat: 'Удалить группу', dm: 'Удалить чат' }[chat.type] || 'Удалить чат')
           : ({ channel: 'Выйти из канала', chat: 'Выйти из группы', dm: 'Удалить чат' }[chat.type] || 'Удалить чат');
@@ -1154,11 +1151,11 @@ export function chatRoomPanel(client) {
             ? info.links.map(({ u }) => `<a class="info-link" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(u)}</a>`).join('')
             : '<div class="info-empty">Нет ссылок</div>';
         } else if (infoTab === 'members') {
-          content = info.members.map((mem) => `
+          content = info.members.length ? info.members.map((mem) => `
             <div class="info-member">
-              <div class="chat-icon" style="background:${avatarColor(mem.name)}">${esc(mem.name[0].toUpperCase())}</div>
-              <div class="info-member-info"><b>${esc(mem.name)}</b><span>${mem.me ? 'вы' : (chat.type === 'channel' ? 'подписчик' : 'участник')}</span></div>
-            </div>`).join('');
+              <div class="chat-icon" style="background:${esc(mem.color || avatarColor(mem.id || mem.name))}">${mem.avatar ? `<img src="${esc(mem.avatar)}" alt="">` : esc((mem.name || '?')[0].toUpperCase())}</div>
+              <div class="info-member-info"><b>${esc(mem.name || mem.username || 'Пользователь')}</b><span>${mem.username ? `@${esc(mem.username)} · ` : ''}${mem.me ? 'вы' : (mem.role === 'owner' ? 'владелец' : (chat.type === 'channel' ? 'подписчик' : 'участник'))}</span></div>
+            </div>`).join('') : '<div class="info-empty">Участников пока нет</div>';
         }
 
         sheet.innerHTML = `
@@ -1187,7 +1184,11 @@ export function chatRoomPanel(client) {
             ${editable ? `<button class="ctx-item danger" data-act="leave">${ICONS.logout}<span>${leaveLabel}</span></button>` : ''}
           </div>`;
 
-        for (const t of sheet.querySelectorAll('.info-tab')) t.onclick = () => { infoTab = t.dataset.tab; renderInfo(); };
+        for (const t of sheet.querySelectorAll('.info-tab')) t.onclick = () => {
+          infoTab = t.dataset.tab;
+          renderInfo();
+          if (infoTab === 'members') client.loadRoomMembers?.(chat.id).then(renderInfo).catch(() => {});
+        };
         const mediaData = info.media.map((a) => ({ type: a.kind === 'photo' ? 'photo' : 'video', src: a.data, poster: a.poster, name: a.name, size: a.size, author: a.author, color: a.color }));
         for (const cell of sheet.querySelectorAll('.info-cell')) {
           cell.onclick = () => window.Segment?.openMedia?.(mediaData, Number(cell.dataset.media) || 0);

@@ -32,7 +32,17 @@ const readJson = (req, limit = 64 * 1024) => new Promise((resolve, reject) => {
   req.on('error', reject);
 });
 
-const publicRoom = (row) => ({ id: row.id, type: row.type, slug: row.slug || '', title: row.title, icon: row.icon || '', isPublic: row.is_public, ownerId: row.owner_id, historyKey: row.is_public ? (row.history_key || '') : '', historyVisibility: row.history_visibility || 'joined', membershipEpoch: Number(row.membership_epoch || 1) });
+const publicRoom = (row) => {
+  const hasMemberCount = row.member_count != null;
+  const memberCount = hasMemberCount ? Number(row.member_count) : undefined;
+  return {
+    id: row.id, type: row.type, slug: row.slug || '', title: row.title, icon: row.icon || '',
+    isPublic: row.is_public, ownerId: row.owner_id, historyKey: row.is_public ? (row.history_key || '') : '',
+    historyVisibility: row.history_visibility || 'joined', membershipEpoch: Number(row.membership_epoch || 1),
+    joined: Boolean(row.joined || row.membership_role), role: row.membership_role || '',
+    ...(hasMemberCount ? { memberCount, members: memberCount, subscribers: row.type === ChatType.Channel ? memberCount : undefined } : {}),
+  };
+};
 const profileFieldVisible = (privacy, field, self, shared) => {
   const scope = privacy && typeof privacy === 'object' ? (privacy[field] || 'everyone') : 'everyone';
   return self || scope === 'everyone' || (scope === 'members' && shared);
@@ -123,8 +133,8 @@ export async function createRooms(config, auth) {
     }
   }
 
-  // Seed the legacy hardcoded rooms as public entities so existing clients keep
-  // working. Public rooms need no membership row; everyone may access them.
+  // Keep legacy public rooms discoverable. Access still requires an explicit
+  // membership row, so a new account starts with its own empty room list.
   for (const room of ROOMS) {
     await pool.query(
       `INSERT INTO rooms(id,type,slug,title,icon,is_public) VALUES($1,$2,$3,$4,$5,TRUE)
@@ -186,18 +196,21 @@ export async function createRooms(config, auth) {
 
   // Synchronous access decision used by the gateway on every ciphertext frame.
   const exists = (roomId) => existing.has(roomId);
-  const canAccess = (userId, roomId) => publicRooms.has(roomId) || Boolean(members.get(roomId)?.has(userId));
+  const canAccess = (userId, roomId) => Boolean(members.get(roomId)?.has(userId));
   const roomEpoch = (roomId) => epochs.get(roomId) || 1;
   const epochsFor = (userId) => Object.fromEntries([...epochs].filter(([roomId]) => canAccess(userId, roomId)));
 
   const listForUser = async (userId) => {
     const rows = (await pool.query(
-      `SELECT DISTINCT r.* FROM rooms r
-       LEFT JOIN room_members m ON m.room_id = r.id AND m.user_id = $1
-       WHERE r.is_public = TRUE OR m.user_id = $1
+      `SELECT r.*,m.role AS membership_role,TRUE AS joined
+       FROM rooms r
+       JOIN room_members m ON m.room_id = r.id AND m.user_id = $1
        ORDER BY r.created_at`,
       [userId],
     )).rows;
+    for (const row of rows) {
+      row.member_count = Number((await one('SELECT COUNT(*)::int AS count FROM room_members WHERE room_id=$1', [row.id]))?.count || 0);
+    }
     return rows.map(publicRoom);
   };
 
@@ -222,7 +235,7 @@ export async function createRooms(config, auth) {
     );
     await pool.query('INSERT INTO room_members(room_id,user_id,role) VALUES($1,$2,$3)', [id, owner.id, 'owner']);
     indexRoom(row); indexMember(id, owner.id);
-    return publicRoom(row);
+    return { ...publicRoom(row), joined: true, role: 'owner', memberCount: 1, members: 1, subscribers: kind === ChatType.Channel ? 1 : undefined };
   };
 
   const updateRoom = async (user, { roomId, title, icon }) => {
@@ -269,6 +282,49 @@ export async function createRooms(config, auth) {
     return publicRoom(updated);
   };
 
+  const roomForUser = async (roomId, userId) => {
+    const room = await one(
+      `SELECT r.*,m.role AS membership_role,(m.user_id IS NOT NULL) AS joined
+       FROM rooms r LEFT JOIN room_members m ON m.room_id=r.id AND m.user_id=$2 WHERE r.id=$1`,
+      [roomId, userId],
+    );
+    if (!room) return null;
+    room.member_count = Number((await one('SELECT COUNT(*)::int AS count FROM room_members WHERE room_id=$1', [roomId]))?.count || 0);
+    return room;
+  };
+
+  const joinPublicRoom = async (user, roomId) => {
+    const room = await one('SELECT * FROM rooms WHERE id=$1 AND is_public=TRUE', [roomId]);
+    if (!room) throw Object.assign(new Error('NOT_FOUND'), { status: 404 });
+    const inserted = await pool.query(
+      `INSERT INTO room_members(room_id,user_id,join_seq)
+       VALUES($1,$2,(SELECT COALESCE(MAX(seq),0) FROM room_history WHERE room_id=$1))
+       ON CONFLICT DO NOTHING RETURNING room_id`,
+      [roomId, user.id],
+    );
+    indexMember(roomId, user.id);
+    if (inserted.rowCount) emitMembership({ roomId, userId: user.id, action: 'joined', epoch: roomEpoch(roomId) });
+    return { ...publicRoom(await roomForUser(roomId, user.id)), joinedNow: inserted.rowCount > 0 };
+  };
+
+  const listMembers = async (user, roomId) => {
+    if (!canAccess(user.id, roomId)) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
+    const room = await one('SELECT is_public FROM rooms WHERE id=$1', [roomId]);
+    if (!room) throw Object.assign(new Error('NOT_FOUND'), { status: 404 });
+    const rows = (await pool.query(
+      `SELECT m.user_id,m.role,m.joined_at,u.name,u.username,u.avatar,u.color,u.privacy
+       FROM room_members m JOIN users u ON u.id=m.user_id
+       WHERE m.room_id=$1 ORDER BY (m.role='owner') DESC,m.joined_at,u.name`,
+      [roomId],
+    )).rows;
+    return rows.map((row) => ({
+      id: row.user_id, name: row.name, username: row.username, color: row.color || '', role: row.role,
+      joinedAt: row.joined_at, me: row.user_id === user.id,
+      avatar: row.avatar && profileFieldVisible(row.privacy, 'avatar', row.user_id === user.id, !room.is_public)
+        ? `/api/auth/avatar/${row.user_id}` : '',
+    }));
+  };
+
   const redeemInvite = async (user, token) => {
     const tokenHash = hashToken(String(token || ''));
     const connection = await pool.connect();
@@ -301,7 +357,7 @@ export async function createRooms(config, auth) {
     indexMember(invite.room_id, user.id);
     if (joined) epochs.set(invite.room_id, Math.max(roomEpoch(invite.room_id), changedEpoch || roomEpoch(invite.room_id) + 1));
     if (joined) emitMembership({ roomId: invite.room_id, userId: user.id, action: 'joined', epoch: roomEpoch(invite.room_id) });
-    const room = await one('SELECT * FROM rooms WHERE id=$1', [invite.room_id]);
+    const room = await roomForUser(invite.room_id, user.id);
     return room ? { ...publicRoom(room), joined } : null;
   };
 
@@ -375,21 +431,23 @@ export async function createRooms(config, auth) {
   //  - anyone else LEAVES it: only their membership row goes. They lose access
   //    (the relay stops delivering to them, backfill refuses them), while the
   //    other members keep the room and their history.
-  // Public rooms have no membership to drop and no owner, so they cannot be
-  // removed this way; the client just hides them locally.
   const removeRoom = async (user, roomId) => {
     if (!canAccess(user.id, roomId)) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
     const room = await one('SELECT owner_id, is_public FROM rooms WHERE id=$1', [roomId]);
     if (!room) throw Object.assign(new Error('NOT_FOUND'), { status: 404 });
-    if (room.is_public) throw Object.assign(new Error('PUBLIC_ROOM'), { status: 400 });
-
     if (room.owner_id === user.id) {
+      const affectedUserIds = [...(members.get(roomId) || [])];
       await pool.query('DELETE FROM rooms WHERE id=$1', [roomId]);
       existing.delete(roomId); publicRooms.delete(roomId); members.delete(roomId); owners.delete(roomId); epochs.delete(roomId);
-      return { deleted: true };
+      emitMembership({ roomId, userId: user.id, affectedUserIds, action: 'deleted', epoch: roomEpoch(roomId) });
+      return { deleted: true, left: false };
     }
     await pool.query('DELETE FROM room_members WHERE room_id=$1 AND user_id=$2', [roomId, user.id]);
     members.get(roomId)?.delete(user.id);
+    if (room.is_public) {
+      emitMembership({ roomId, userId: user.id, action: 'left', epoch: roomEpoch(roomId) });
+      return { deleted: false, left: true };
+    }
     const changed = await one('UPDATE rooms SET membership_epoch=membership_epoch+1 WHERE id=$1 RETURNING membership_epoch', [roomId]);
     epochs.set(roomId, Math.max(roomEpoch(roomId), Number(changed?.membership_epoch || roomEpoch(roomId) + 1)));
     emitMembership({ roomId, userId: user.id, action: 'left', epoch: roomEpoch(roomId) });
@@ -417,11 +475,12 @@ export async function createRooms(config, auth) {
     if (!canAccess(user.id, roomId)) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
     const top = await one('SELECT COALESCE(MAX(seq),0) AS seq FROM room_history WHERE room_id=$1', [roomId]);
     const clearedSeq = Number(top?.seq || 0);
-    // Public rooms have no membership rows and are readable by everyone; never
-    // fabricate a membership here. Doing so also used to make the caller "share
-    // a room" with every other public-room member, leaking members-only profile
-    // fields to strangers. The caller's own view is still cleared client-side.
-    if (publicRooms.has(roomId)) return { clearedSeq };
+    // Never fabricate a public-room membership while clearing history. A
+    // subscribed user already has a row; a non-subscriber cannot reach here.
+    if (publicRooms.has(roomId)) {
+      await pool.query('UPDATE room_members SET cleared_seq=$3 WHERE room_id=$1 AND user_id=$2', [roomId, user.id, clearedSeq]);
+      return { clearedSeq };
+    }
     await pool.query(
       `INSERT INTO room_members(room_id,user_id,join_seq,cleared_seq) VALUES($1,$2,$3,$3)
        ON CONFLICT (room_id,user_id) DO UPDATE SET cleared_seq=EXCLUDED.cleared_seq`,
@@ -471,7 +530,8 @@ export async function createRooms(config, auth) {
       } };
     }
     if ((match = String(path).match(/^\/c\/([a-z0-9-]{3,32})$/i))) {
-      const room = await one('SELECT * FROM rooms WHERE slug=$1 AND is_public=TRUE', [match[1].toLowerCase()]);
+      const found = await one('SELECT id FROM rooms WHERE slug=$1 AND is_public=TRUE', [match[1].toLowerCase()]);
+      const room = found ? await roomForUser(found.id, viewerId) : null;
       return room ? { type: 'channel', room: publicRoom(room) } : null;
     }
     return null; // invite tokens are redeemed via POST, never resolved by GET
@@ -514,6 +574,17 @@ export async function createRooms(config, auth) {
         const body = await readJson(req);
         const room = await redeemInvite(user, body.token);
         return json(res, 200, { room });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/rooms/join-public') {
+        const body = await readJson(req);
+        return json(res, 200, { room: await joinPublicRoom(user, String(body.roomId || '')) });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/rooms/members') {
+        const roomId = String(url.searchParams.get('roomId') || '');
+        const room = await roomForUser(roomId, user.id);
+        if (!room) return json(res, 404, { error: 'NOT_FOUND' });
+        const roomMembers = await listMembers(user, roomId);
+        return json(res, 200, { members: roomMembers, count: roomMembers.length });
       }
       if (req.method === 'POST' && url.pathname === '/api/rooms/history') {
         if (!allowHistoryWrite(user.id)) return json(res, 429, { error: 'TOO_MANY_REQUESTS' });

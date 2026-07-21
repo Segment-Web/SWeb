@@ -58,9 +58,9 @@ const call = async (method, url, { user = null, body } = {}) => {
   return { handled, status, data: payload ? JSON.parse(payload) : null };
 };
 
-// Legacy public rooms are seeded and reachable by everyone.
+// Legacy public rooms are discoverable but require an explicit subscription.
 ok(rooms.exists('flood'), 'seeded public room exists');
-ok(rooms.canAccess(other.id, 'flood'), 'public room accessible to any user');
+ok(!rooms.canAccess(other.id, 'flood'), 'public room is not auto-joined for a new account');
 ok(!rooms.exists('general'), 'the retired general room is gone');
 
 // Unauthenticated is rejected.
@@ -89,7 +89,14 @@ ok(claimedKey.status === 200 && claimedKey.data.room.historyKey === publicKey, '
 const forbiddenKey = await call('POST', '/api/rooms/history/public-key', { user: other, body: { roomId: channel.data.room.id, key: Buffer.alloc(32, 8).toString('base64') } });
 ok(forbiddenKey.status === 403, 'non-owner cannot replace a channel history key');
 const resolvedChannel = await call('GET', '/api/rooms/resolve?path=/c/dev-talk', { user: other });
-ok(resolvedChannel.data?.type === 'channel' && resolvedChannel.data.room.slug === 'dev-talk' && resolvedChannel.data.room.historyKey === publicKey, 'resolve /c/dev-talk with its history key');
+ok(resolvedChannel.data?.type === 'channel' && resolvedChannel.data.room.slug === 'dev-talk' && resolvedChannel.data.room.historyKey === publicKey && resolvedChannel.data.room.joined === false, 'resolve /c/dev-talk without silently subscribing');
+const subscribed = await call('POST', '/api/rooms/join-public', { user: other, body: { roomId: channel.data.room.id } });
+ok(subscribed.status === 200 && subscribed.data.room.joined === true && subscribed.data.room.joinedNow === true, 'subscribe to a public channel');
+ok(rooms.canAccess(other.id, channel.data.room.id), 'subscriber gains public-channel access');
+const subscribedAgain = await call('POST', '/api/rooms/join-public', { user: other, body: { roomId: channel.data.room.id } });
+ok(subscribedAgain.status === 200 && subscribedAgain.data.room.joinedNow === false, 'public subscription is idempotent');
+const channelMembers = await call('GET', `/api/rooms/members?roomId=${channel.data.room.id}`, { user: other });
+ok(channelMembers.status === 200 && channelMembers.data.count === 2 && channelMembers.data.members.some((member) => member.role === 'owner') && channelMembers.data.members.some((member) => member.me), 'channel returns its real subscriber list');
 
 // Duplicate slug is rejected.
 const dup = await call('POST', '/api/rooms', { user: other, body: { type: 'channel', title: 'X', slug: 'dev-talk' } });
@@ -133,12 +140,16 @@ ok(inviteUsage.rows[0].uses === 1 && membershipChanges.length === membershipEven
 const badToken = await call('POST', '/api/rooms/join', { user: other, body: { token: 'nope' } });
 ok(badToken.status === 400, 'bad invite token -> 400');
 
-// /mine reflects membership: owner sees the private room, redeemer too.
+// /mine reflects membership and never injects unrelated public rooms.
 const ownerMine = await call('GET', '/api/rooms/mine', { user: owner });
 ok(ownerMine.data.rooms.some((r) => r.id === roomId), 'owner /mine includes private room');
-ok(ownerMine.data.rooms.filter((r) => r.isPublic).every((r) => r.historyKey), 'seeded public rooms expose durable history keys');
+ok(ownerMine.data.rooms.some((r) => r.id === channel.data.room.id && r.role === 'owner'), 'owner /mine includes owned channel');
+ok(!ownerMine.data.rooms.some((r) => r.id === 'flood'), 'owner /mine excludes unjoined seeded room');
 const otherMine = await call('GET', '/api/rooms/mine', { user: other });
 ok(otherMine.data.rooms.some((r) => r.id === roomId), 'redeemer /mine includes joined room');
+ok(otherMine.data.rooms.some((r) => r.id === channel.data.room.id && r.subscribers === 2), 'subscriber /mine includes joined channel and real count');
+const thirdMine = await call('GET', '/api/rooms/mine', { user: third });
+ok(thirdMine.data.rooms.length === 0, 'new account starts with no shared chats or channels');
 
 // Retrying the same client event is acknowledged with its original sequence
 // instead of inserting a duplicate envelope.
@@ -252,14 +263,17 @@ ok((await call('GET', `/api/rooms/history?roomId=${gone}`, { user: other })).sta
 // The owner deleting it takes the room AND its history away for everyone.
 const deleted = await call('DELETE', '/api/rooms', { user: owner, body: { roomId: gone } });
 ok(deleted.status === 200 && deleted.data.deleted === true, 'the owner deletes the room');
+ok(membershipChanges.at(-1)?.action === 'deleted' && membershipChanges.at(-1)?.affectedUserIds.includes(owner.id), 'live members are notified when an owner deletes a room');
 ok(!rooms.exists(gone), 'the room is gone');
 const leftover = await pool.query('SELECT COUNT(*)::int AS n FROM room_history WHERE room_id=$1', [gone]);
 ok(leftover.rows[0].n === 0, 'its history is erased with it — nothing to come back to');
 ok(!(await call('GET', '/api/rooms/mine', { user: owner })).data.rooms.some((r) => r.id === gone),
   'a user signing in later does not get the deleted room back');
 
-// Public rooms cannot be deleted this way.
-ok((await call('DELETE', '/api/rooms', { user: owner, body: { roomId: 'flood' } })).status === 400, 'public rooms cannot be deleted');
+// A public subscriber can leave without deleting the channel.
+const publicLeft = await call('DELETE', '/api/rooms', { user: other, body: { roomId: channel.data.room.id } });
+ok(publicLeft.status === 200 && publicLeft.data.left === true && rooms.exists(channel.data.room.id), 'subscriber leaves without deleting the public channel');
+ok(!rooms.canAccess(other.id, channel.data.room.id), 'former subscriber loses channel access');
 
 console.log(`\n${pass} ok, ${fail} fail`);
 await pool.end();

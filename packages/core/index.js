@@ -1,7 +1,7 @@
 // Platform-independent Segment client core. It owns the WebSocket lifecycle,
 // chat state, update stream and encrypted session setup without depending on DOM.
 
-import { ROOMS, MessageType, PROTOCOL_VERSION, ChatType, attachmentsWithinLimits } from '../protocol/index.js';
+import { MessageType, PROTOCOL_VERSION, ChatType, attachmentsWithinLimits } from '../protocol/index.js';
 import {
   createPreKeyBundle, createOneTimePreKeys, x3dhInitiate, x3dhRespond, SenderKey, SenderKeyView,
   randomFileKey, sealBytes, openBytes,
@@ -49,7 +49,7 @@ export class SegmentClient {
     this.version = PROTOCOL_VERSION;
     this._listeners = new Map();
 
-    this.chats = [SAVED_CHAT, ...ROOMS];
+    this.chats = [SAVED_CHAT];
     this.self = { name: storage.getName(), username: storage.getUsername?.() || '', avatar: storage.getAvatar?.() || '', color: storage.getColor?.() || pickColor() };
     this.currentRoom = null;
     this.messages = Object.fromEntries(this.chats.map((c) => [c.id, []]));
@@ -204,10 +204,16 @@ export class SegmentClient {
       existing.historyKey = room.historyKey || existing.historyKey || '';
       existing.historyVisibility = room.historyVisibility || existing.historyVisibility;
       existing.membershipEpoch = Number(this._serverRoomEpochs.get(room.id) || room.membershipEpoch || existing.membershipEpoch || 1);
+      if (Number.isFinite(Number(room.memberCount))) existing.memberCount = existing.members = Number(room.memberCount);
+      if (room.type === ChatType.Channel && Number.isFinite(Number(room.subscribers))) existing.subscribers = Number(room.subscribers);
+      if (Array.isArray(room.roomMembers)) existing.roomMembers = room.roomMembers;
     } else {
       this.chats.push({
         id: room.id, name: room.title, icon: room.icon || '💬', type: room.type, slug: room.slug || '',
         ownerId: room.ownerId || '', isPublic: Boolean(room.isPublic), historyKey: room.historyKey || '', historyVisibility: room.historyVisibility || 'joined', membershipEpoch: Number(this._serverRoomEpochs.get(room.id) || room.membershipEpoch || 1),
+        memberCount: Number(room.memberCount || 0), members: Number(room.memberCount || 0),
+        subscribers: room.type === ChatType.Channel ? Number(room.subscribers ?? room.memberCount ?? 0) : undefined,
+        roomMembers: Array.isArray(room.roomMembers) ? room.roomMembers : [],
       });
       this.messages[room.id] ||= [];
       this._emit('chats');
@@ -227,10 +233,13 @@ export class SegmentClient {
     return room.id;
   }
 
-  // Pull the rooms this account belongs to (public + joined) after sign-in.
+  // Pull only rooms this account owns or has explicitly joined.
   async loadRooms() {
     try {
       const { rooms } = await this._roomsApi('GET', '/api/rooms/mine');
+      const roomIds = new Set((rooms || []).map((room) => room.id));
+      this.chats = this.chats.filter((chat) => chat.local || roomIds.has(chat.id));
+      if (this.currentRoom && !this.chatById(this.currentRoom)) this.currentRoom = SAVED_ID;
       for (const room of rooms || []) {
         this._addServerRoom(room);
         await this._ensureOwnedRoomHistoryKey(room);
@@ -240,6 +249,7 @@ export class SegmentClient {
           && Number(this.historyKeyEpochs.get(room.id) || 0) < epoch;
         await this._advanceRoomEpoch(room.id, epoch, recoverHistory);
       }
+      this._emit('chats');
       await this.preloadRoomHistories();
     } catch { /* offline or unauthenticated: keep local defaults */ }
   }
@@ -319,7 +329,29 @@ export class SegmentClient {
     }
     const roomId = this._addServerRoom(room, { open: true });
     await this._advanceRoomEpoch(room.id, Number(room.membershipEpoch || 1), false);
+    await this.loadRoomMembers(room.id).catch(() => {});
     return roomId;
+  }
+
+  async joinPublicRoom(roomId) {
+    const { room } = await this._roomsApi('POST', '/api/rooms/join-public', { roomId });
+    this._serverRoomEpochs.set(room.id, Number(room.membershipEpoch || 1));
+    const id = this._addServerRoom(room, { open: true });
+    await this._advanceRoomEpoch(room.id, Number(room.membershipEpoch || 1), false);
+    await this.loadRoomMembers(room.id).catch(() => {});
+    return id;
+  }
+
+  async loadRoomMembers(roomId) {
+    const chat = this.chatById(roomId);
+    if (!chat || chat.local) return [];
+    const { members = [], count = 0 } = await this._roomsApi('GET', `/api/rooms/members?roomId=${encodeURIComponent(roomId)}`);
+    chat.roomMembers = Array.isArray(members) ? members : [];
+    chat.memberCount = chat.members = Number(count || chat.roomMembers.length);
+    if (chat.type === ChatType.Channel) chat.subscribers = chat.memberCount;
+    this._emit('chats');
+    if (this.currentRoom === roomId) this._emit('room', { chat, messages: this.messages[roomId] || [] });
+    return chat.roomMembers;
   }
 
   // Owner-only, one-way: switch a room to full history for all members.
@@ -1088,11 +1120,10 @@ export class SegmentClient {
     try { await this._roomsApi('POST', '/api/files/refs/claim', { roomId, fileIds }); } catch {}
   }
 
-  // Delete the room (owner) or leave it (member). Public rooms have neither, so
-  // they are simply hidden locally.
+  // Delete an owned room or leave any room this account joined.
   async _removeServerRoom(roomId) {
     const chat = this.chatById(roomId);
-    if (!chat || chat.local || !chat.ownerId) return;
+    if (!chat || chat.local) return;
     this.historyKeys.delete(roomId);
     this._persistHistoryKeys();
     this._backfilled.delete(roomId);
@@ -1537,6 +1568,10 @@ export class SegmentClient {
 
       case MessageType.RoomMembersChanged:
         await this._advanceRoomEpoch(msg.room, msg.epoch, msg.rotateHistory);
+        if (msg.action === 'joined') {
+          for (const peerId of this.peers.keys()) await this._shareSenderKeyWith(peerId, msg.room);
+        }
+        this.loadRoomMembers(msg.room).catch(() => {});
         break;
 
       case MessageType.RoomAccessRevoked:

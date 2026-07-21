@@ -101,6 +101,10 @@ export function attachGateway(server, config, auth, rooms) {
     const epoch = Number(change.epoch || rooms.epoch?.(change.roomId) || 1);
     for (const [ws, client] of clients) {
       if (!client.joined) continue;
+      if (change.action === 'deleted' && change.affectedUserIds?.includes(client.userId)) {
+        send(ws, { type: MessageType.RoomAccessRevoked, room: change.roomId, epoch });
+        continue;
+      }
       if (client.userId === change.userId && !rooms.canAccess(client.userId, change.roomId)) {
         send(ws, { type: MessageType.RoomAccessRevoked, room: change.roomId, epoch });
         continue;
@@ -111,7 +115,7 @@ export function attachGateway(server, config, auth, rooms) {
           room: change.roomId,
           action: change.action,
           epoch,
-          rotateHistory: ownerSockets[0]?.[0] === ws,
+          rotateHistory: !rooms.isPublic?.(change.roomId) && ownerSockets[0]?.[0] === ws,
         });
       }
     }

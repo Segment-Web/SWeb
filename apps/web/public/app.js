@@ -894,8 +894,13 @@ const bootRooms = async () => {
     history.replaceState(null, '', '/');
   } else if ((match = path.match(/^\/c\/([a-z0-9-]{3,32})$/i))) {
     const target = await client.resolveLink(path);
-    if (target?.room) client._addServerRoom(target.room, { open: true });
-    else segmentApi.toast('Канал не найден');
+    if (target?.room) {
+      if (target.room.joined) client._addServerRoom(target.room, { open: true });
+      else {
+        try { await client.joinPublicRoom(target.room.id); segmentApi.toast('Вы подписались на канал'); }
+        catch { segmentApi.toast('Не удалось подписаться на канал'); }
+      }
+    } else segmentApi.toast('Канал не найден');
     history.replaceState(null, '', '/');
   } else if ((match = path.match(/^\/@([a-z0-9_]{3,24})$/i))) {
     const target = await client.resolveLink(path);

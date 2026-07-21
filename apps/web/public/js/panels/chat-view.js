@@ -8,25 +8,18 @@ const QUICK_REACTIONS = ['👍', '❤️', '😂', '🔥', '👏', '🥰', '😮
 const EMOJIS = ['😀', '😂', '😍', '😎', '🤝', '👍', '🔥', '❤️', '🎉', '💡', '👀', '✅'];
 const IMAGE_URL_RE = /(https?:\/\/\S+\.(?:png|jpe?g|gif|webp))(?:\?\S*)?/i;
 
-function stableNumber(seed, min, max) {
-  let hash = 0;
-  for (const ch of seed) hash = ((hash << 5) - hash) + ch.charCodeAt(0);
-  return min + (Math.abs(hash) % (max - min + 1));
-}
-
 function chatStatus(chat, client) {
   if (!chat || chat.local) return { text: '', online: false };
   if (chat.type === 'channel') {
-    const n = chat.subscribers || stableNumber(chat.id, 120000, 130000);
+    const n = Number(chat.subscribers ?? chat.memberCount ?? 0);
     return { text: `${n.toLocaleString('ru-RU')} подписчиков`, online: false };
   }
   if (chat.type === 'dm') {
     const online = client.online?.length > 0;
     return { text: online ? 'в сети' : 'был(а) в сети 1 час назад', online };
   }
-  const members = chat.members || stableNumber(chat.id, 7, 16);
-  const online = Math.max(1, Math.min(members, client.online?.length || 1));
-  return { text: `${members} участников, ${online} в сети`, online: false };
+  const members = Number(chat.members ?? chat.memberCount ?? 0);
+  return { text: `${members} участников`, online: false };
 }
 
 export function chatViewPanel(client, chat) {

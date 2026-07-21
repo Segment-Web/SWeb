@@ -81,7 +81,7 @@ async function makeProfileQrPng(user, options) {
 
 function openProfileQrModal(user, root) {
   if (!user.username) return;
-  const host = root.closest('.workspace-surface') || document.body;
+  const host = document.body;
   host.querySelector('.profile-qr-modal')?.remove();
   const modal = document.createElement('div');
   modal.className = 'profile-qr-modal';

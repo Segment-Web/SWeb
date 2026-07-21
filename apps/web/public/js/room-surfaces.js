@@ -65,6 +65,14 @@ export function openRoomSettings(client, roomId, sourceId = 'chat-room') {
     id: `room-settings:${roomId}`, sourceId, minWidth: 390, maxWidth: 680, className: 'room-manager-surface',
     mount(root, close) {
       let disposed = false;
+      let membersLoading = false;
+      const refreshMembers = async () => {
+        if (membersLoading) return;
+        membersLoading = true;
+        try { await client.loadRoomMembers?.(roomId); }
+        catch { /* keep the settings usable while offline */ }
+        finally { membersLoading = false; if (!disposed) render(); }
+      };
       const showInvites = async () => {
         let invites;
         try { invites = await client.listInvites(roomId); }
@@ -97,6 +105,12 @@ export function openRoomSettings(client, roomId, sourceId = 'chat-room') {
         const muted = client.isMuted(roomId);
         const pinned = client.pinned.has(roomId);
         const archived = client.isArchived(roomId);
+        const roomMembers = Array.isArray(current.roomMembers) ? current.roomMembers : [];
+        const membersLabel = current.type === 'channel' ? 'Подписчики' : 'Участники';
+        const memberRows = roomMembers.map((member) => `<div class="room-member-row">
+          <span class="room-member-avatar" style="background:${esc(member.color || 'var(--accent)')}">${member.avatar ? `<img src="${esc(member.avatar)}" alt="">` : esc((member.name || member.username || '?')[0].toUpperCase())}</span>
+          <span><b>${esc(member.name || member.username || 'Пользователь')}</b><small>${member.username ? `@${esc(member.username)} · ` : ''}${member.me ? 'вы' : (member.role === 'owner' ? 'владелец' : (current.type === 'channel' ? 'подписчик' : 'участник'))}</small></span>
+        </div>`).join('');
         root.innerHTML = `<div class="room-manager room-settings">
           <div class="room-settings-hero">${roomAvatar(current)}<div><h2>${esc(current.name)}</h2><p>${roomTypeLabel(current.type)}${current.slug ? ` · @${esc(current.slug)}` : ''}</p></div></div>
           ${owner ? `<form class="room-manager-form room-identity-form">
@@ -116,6 +130,7 @@ export function openRoomSettings(client, roomId, sourceId = 'chat-room') {
           ${owner && (current.type === 'chat' || current.type === 'channel') ? `<section class="room-settings-section"><h3>История</h3><div class="room-settings-list">
             <button type="button" data-action="history" ${current.historyVisibility === 'full' ? 'disabled' : ''}>${ICONS.info}<span><b>${current.historyVisibility === 'full' ? 'Вся история доступна' : 'Открыть всю историю'}</b><small>${current.historyVisibility === 'full' ? 'Новые участники видят сообщения с самого начала.' : 'Необратимо: новые участники увидят старые сообщения.'}</small></span><em>›</em></button>
           </div></section>` : ''}
+          ${current.type !== 'saved' ? `<section class="room-settings-section"><h3>${membersLabel} · ${Number(current.memberCount ?? roomMembers.length)}</h3><div class="room-member-list">${memberRows || `<div class="room-manager-hint">${membersLoading ? 'Загрузка…' : 'Список пока пуст'}</div>`}</div></section>` : ''}
           <section class="room-settings-section"><h3>Данные</h3><div class="room-settings-list danger-list">
             <button type="button" data-action="clear">${ICONS.broom}<span><b>Очистить историю</b><small>Удалить сообщения только из вашей истории</small></span><em>›</em></button>
             ${current.type !== 'saved' ? `<button type="button" data-action="remove">${ICONS.logout}<span><b>${removeLabel}</b><small>${owner ? 'Комната и её история будут удалены для всех.' : 'Вы потеряете доступ к комнате.'}</small></span><em>›</em></button>` : ''}
@@ -145,6 +160,7 @@ export function openRoomSettings(client, roomId, sourceId = 'chat-room') {
         };
       };
       render();
+      refreshMembers();
       return () => { disposed = true; };
     },
   });
