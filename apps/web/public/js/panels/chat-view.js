@@ -37,10 +37,12 @@ export function chatViewPanel(client, chat) {
         <div class="room">
           <div class="room-top-overlay">
           <header class="room-head" data-el="head">
+            <div class="room-identity">
             <div class="room-avatar" data-el="avatar">${esc(chat.icon || chat.name?.[0] || '')}</div>
             <div class="room-headinfo">
               <div class="room-title" data-el="title">${esc(chat.name)}</div>
               <div class="room-status" data-el="status"></div>
+            </div>
             </div>
           </header>
           <div class="selection-bar hidden" data-el="selectionBar"></div>

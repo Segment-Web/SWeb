@@ -72,10 +72,12 @@ export function chatRoomPanel(client) {
         <div class="room">
           <div class="room-top-overlay">
           <header class="room-head" data-el="head">
+            <div class="room-identity">
             <div class="room-avatar" data-el="avatar">💬</div>
             <div class="room-headinfo">
               <div class="room-title" data-el="title">Общий</div>
               <div class="room-status" data-el="status">подключение...</div>
+            </div>
             </div>
             <button class="room-head-action" data-el="roomSearchOpen" aria-label="Поиск в чате">${ICONS.search}</button>
           </header>

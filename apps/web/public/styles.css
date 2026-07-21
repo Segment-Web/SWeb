@@ -69,7 +69,7 @@ body.authenticated .workspace { display: flex; }
    по ширине через контейнерные запросы, а не выезжает за край */
 /*
    справа — ужать сильнее (чтобы обрезать аватар) нельзя */
-.panel[data-id="profile"] { min-width: 196px; min-height: 160px; }
+.panel[data-id="profile"] { min-width: 78px; min-height: 112px; }
 .panel[data-id="chat-list"] { min-width: 78px; }
 .panel[data-id="chat-room"],
 .panel[data-id^="chatview:"] { min-width: 170px; min-height: 200px; }
@@ -763,6 +763,7 @@ body.is-forwarding .panel[data-id="chat-list"] .chat-item:hover {
   background: var(--surface3);
 }
 .room-headinfo { min-width: 0; flex: 1; }
+.room-identity { display:flex; align-items:center; gap:12px; min-width:0; flex:0 1 auto; margin-right:auto; }
 .room-head-action {
   width: 36px; height: 36px; flex: 0 0 auto; display: grid; place-items: center;
   border: 0; border-radius: 10px; background: transparent; color: var(--muted); cursor: pointer;
@@ -1844,6 +1845,15 @@ html:not(.show-channel-avatars) .msg.channel-message .avatar { display: none; }
 .msg.grouped .bubble > .meta:first-child + .msg-media { margin-top: -6px; border-top-left-radius: 0; border-top-right-radius: 0; }
 
 .bubble.only-media { padding:0; overflow:hidden; border-radius:14px; background:transparent; box-shadow:none; width:fit-content; max-width:min(350px, 100%); }
+.bubble.only-media > .meta {
+  position:absolute; z-index:3; top:8px; left:8px;
+  max-width:calc(100% - 16px); margin:0; padding:4px 8px;
+  overflow:hidden; border-radius:999px;
+  background:color-mix(in srgb,var(--surface) 62%,transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--stroke) 38%,transparent);
+  text-overflow:ellipsis; white-space:nowrap;
+  backdrop-filter:blur(8px);
+}
 .bubble.only-media .msg-media {
   margin:0; width:350px; max-width:100%;
   border-radius: 0;
@@ -3419,6 +3429,14 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
   background:color-mix(in srgb,var(--surface2) 32%,transparent);
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--stroke) 42%,transparent);
 }
+html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .room-identity {
+  max-width:min(390px,calc(100% - 52px));
+  padding:4px 13px 4px 4px;
+  border-radius:24px;
+  background:color-mix(in srgb,var(--surface2) 32%,transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--stroke) 42%,transparent);
+  backdrop-filter:blur(8px);
+}
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .room-head-action:hover {
   background:color-mix(in srgb,var(--surface3) 68%,transparent);
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--stroke) 64%,transparent);
@@ -3426,6 +3444,8 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .feed {
   padding-top:112px;
   padding-bottom:96px;
+  padding-left:18px;
+  padding-right:18px;
   background:transparent;
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .bubble {
