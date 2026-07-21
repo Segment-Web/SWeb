@@ -5,7 +5,8 @@
 // Increase the protocol layer when a wire-format change is incompatible.
 // Layer 2 introduced encrypted envelopes and a blind ciphertext relay.
 // Layer 3 scopes sender chains to a room membership epoch.
-export const PROTOCOL_VERSION = 3;
+// Layer 4 signs sender-key ciphertexts and binds them to room context with AAD.
+export const PROTOCOL_VERSION = 4;
 
 /** Supported chat categories. */
 export const ChatType = {
@@ -45,6 +46,7 @@ export const MessageType = {
   Presence: 'presence',
   PreKeyRequest: 'prekey-request',
   PreKey: 'prekey',
+  PreKeyConsumed: 'prekey-consumed',
   KeyShare: 'keyshare',
   SenderKeyShare: 'sender-key-share',
   HistoryKeyRequest: 'history-key-request',
@@ -88,6 +90,8 @@ export function isValidRoom(id) {
 
 /** Longest AES-GCM nonce we accept on the wire (the crypto layer emits 12 bytes). */
 export const MAX_IV_BYTES = 32;
+const isByteArray = (value, max) => Array.isArray(value) && value.length > 0 && value.length <= max
+  && value.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255);
 
 /**
  * Validate a ciphertext frame. The crypto layer emits `iv` and `ct` as byte
@@ -99,8 +103,9 @@ export const MAX_IV_BYTES = 32;
 export function isCipherFrame(message, maxCtBytes) {
   return Boolean(message)
     && Number.isSafeInteger(message.n) && message.n >= 0
-    && Array.isArray(message.iv) && message.iv.length > 0 && message.iv.length <= MAX_IV_BYTES
-    && Array.isArray(message.ct) && message.ct.length > 0 && message.ct.length <= maxCtBytes;
+    && isByteArray(message.iv, MAX_IV_BYTES)
+    && isByteArray(message.ct, maxCtBytes)
+    && isByteArray(message.sig, 256);
 }
 
 /** Convert arbitrary input to a string and enforce a character limit. */

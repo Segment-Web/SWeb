@@ -1,12 +1,8 @@
-<p align="center">
-  <img src="apps/web/public/logo.png" width="180" alt="Segment logo">
-</p>
-
 # Segment
 
 Segment is an extensible open-source messenger with a panel-based desktop web interface and end-to-end encryption.
 
-Current release: **0.0.3** · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/Segment-Web/SWeb/releases/latest)
+Current release: **0.0.4** · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/Segment-Web/SWeb/releases/latest)
 
 ## Features
 
@@ -74,8 +70,8 @@ Segment Secure Layer has not received an independent security audit and must not
 
 See [docs/encryption.md](docs/encryption.md) and [SECURITY.md](SECURITY.md).
 
-## License and trademarks
+## License
 
-The source code is licensed under [GNU AGPL-3.0-only](LICENSE). The Segment name, logo and visual identity are covered separately by [TRADEMARKS.md](TRADEMARKS.md).
+The source code is licensed under [GNU AGPL-3.0-only](LICENSE).
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -17,7 +17,7 @@ const ok = (cond, label) => { if (cond) { pass++; console.log('ok   ' + label); 
 const MAX_CT = 16 * 1024 * 1024;
 
 // A real sender-key frame (group rooms) must satisfy the relay's validator.
-const sender = SenderKey.create();
+const sender = await SenderKey.create();
 const frame = await sender.encrypt('hello');
 ok(isCipherFrame(frame, MAX_CT), 'real SenderKey frame is accepted by the relay validator');
 ok(Array.isArray(frame.iv) && Array.isArray(frame.ct), 'crypto emits iv/ct as byte arrays, not strings');
@@ -39,10 +39,11 @@ ok(ratchetFrame.header !== undefined && ratchetFrame.n === undefined, 'ratchet f
 
 // Rejections.
 ok(!isCipherFrame({ n: 0, iv: 'aXY=', ct: 'Y3Q=' }, MAX_CT), 'string iv/ct are rejected');
-ok(!isCipherFrame({ n: -1, iv: [1], ct: [1] }, MAX_CT), 'negative sequence is rejected');
-ok(!isCipherFrame({ n: 0, iv: [], ct: [1] }, MAX_CT), 'empty iv is rejected');
-ok(!isCipherFrame({ n: 0, iv: new Array(MAX_IV_BYTES + 1).fill(0), ct: [1] }, MAX_CT), 'oversized iv is rejected');
-ok(!isCipherFrame({ n: 0, iv: [1], ct: [1, 2, 3] }, 2), 'oversized ct is rejected');
+ok(!isCipherFrame({ n: -1, iv: [1], ct: [1], sig: [1] }, MAX_CT), 'negative sequence is rejected');
+ok(!isCipherFrame({ n: 0, iv: [], ct: [1], sig: [1] }, MAX_CT), 'empty iv is rejected');
+ok(!isCipherFrame({ n: 0, iv: new Array(MAX_IV_BYTES + 1).fill(0), ct: [1], sig: [1] }, MAX_CT), 'oversized iv is rejected');
+ok(!isCipherFrame({ n: 0, iv: [1], ct: [1, 2, 3], sig: [1] }, 2), 'oversized ct is rejected');
+ok(!isCipherFrame({ n: 0, iv: [1], ct: [1], sig: [256] }, MAX_CT), 'non-byte signature values are rejected');
 ok(!isCipherFrame(null, MAX_CT), 'null frame is rejected');
 
 // Link helpers.

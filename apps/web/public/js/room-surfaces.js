@@ -65,6 +65,27 @@ export function openRoomSettings(client, roomId, sourceId = 'chat-room') {
     id: `room-settings:${roomId}`, sourceId, minWidth: 390, maxWidth: 680, className: 'room-manager-surface',
     mount(root, close) {
       let disposed = false;
+      const showInvites = async () => {
+        let invites;
+        try { invites = await client.listInvites(roomId); }
+        catch { window.Segment?.toast?.('Не удалось загрузить приглашения'); return; }
+        if (disposed) return;
+        const rows = invites.map((invite) => {
+          const expires = new Date(invite.expires_at || invite.expiresAt).toLocaleString('ru-RU');
+          return `<div class="room-invite-row"><span><b>${Number(invite.uses || 0)} из ${Number(invite.max_uses || invite.maxUses || 20)} использований</b><small>Действует до ${esc(expires)}</small></span><button type="button" data-revoke-invite="${esc(invite.id)}">Отозвать</button></div>`;
+        }).join('');
+        root.innerHTML = `<div class="room-manager room-settings"><header class="room-manager-head"><button type="button" data-invites-back aria-label="Назад">‹</button><div><span>Доступ</span><h2>Пригласительные ссылки</h2></div></header><section class="room-settings-section"><div class="room-settings-list">${rows || '<div class="room-manager-hint">Активных ссылок нет</div>'}</div><button type="button" class="room-primary room-save" data-create-invite>Создать и скопировать ссылку</button></section></div>`;
+        root.querySelector('[data-invites-back]').onclick = render;
+        root.querySelector('[data-create-invite]').onclick = async () => {
+          const link = await client.createInvite(roomId).catch(() => null);
+          if (!link) { window.Segment?.toast?.('Не удалось создать ссылку'); return; }
+          await navigator.clipboard.writeText(link); window.Segment?.toast?.('Ссылка скопирована'); await showInvites();
+        };
+        for (const button of root.querySelectorAll('[data-revoke-invite]')) button.onclick = async () => {
+          await client.revokeInvite(roomId, button.dataset.revokeInvite).catch(() => null);
+          await showInvites();
+        };
+      };
       const render = () => {
         if (disposed) return;
         const current = client.chatById(roomId);
@@ -90,7 +111,7 @@ export function openRoomSettings(client, roomId, sourceId = 'chat-room') {
             <button type="button" data-action="pin">${pinned ? ICONS.unpin : ICONS.pin}<span><b>${pinned ? 'Открепить' : 'Закрепить'}</b><small>Положение в списке чатов</small></span><em>›</em></button>
             <button type="button" data-action="mute">${muted ? ICONS.bell : ICONS.bellOff}<span><b>${muted ? 'Включить звук' : 'Выключить звук'}</b><small>Общие уведомления этой комнаты</small></span><em>›</em></button>
             ${current.type !== 'saved' ? `<button type="button" data-action="archive">${ICONS.archive}<span><b>${archived ? 'Вернуть из архива' : 'Перенести в архив'}</b><small>Скрыть из основного списка</small></span><em>›</em></button>` : ''}
-            ${current.ownerId ? `<button type="button" data-action="invite">${ICONS.open}<span><b>Пригласительная ссылка</b><small>Скопировать ссылку для новых участников</small></span><em>›</em></button>` : ''}
+            ${owner ? `<button type="button" data-action="invite">${ICONS.open}<span><b>Пригласительные ссылки</b><small>Создание и отзыв активных ссылок</small></span><em>›</em></button>` : ''}
           </div></section>
           ${owner && (current.type === 'chat' || current.type === 'channel') ? `<section class="room-settings-section"><h3>История</h3><div class="room-settings-list">
             <button type="button" data-action="history" ${current.historyVisibility === 'full' ? 'disabled' : ''}>${ICONS.info}<span><b>${current.historyVisibility === 'full' ? 'Вся история доступна' : 'Открыть всю историю'}</b><small>${current.historyVisibility === 'full' ? 'Новые участники видят сообщения с самого начала.' : 'Необратимо: новые участники увидят старые сообщения.'}</small></span><em>›</em></button>
@@ -114,8 +135,7 @@ export function openRoomSettings(client, roomId, sourceId = 'chat-room') {
           else if (action === 'mute') client.toggleMute(roomId);
           else if (action === 'archive') client.toggleArchive(roomId);
           else if (action === 'invite') {
-            const link = await client.createInvite(roomId).catch(() => null);
-            if (link) { await navigator.clipboard.writeText(link); window.Segment?.toast?.('Ссылка скопирована'); }
+            await showInvites(); return;
           } else if (action === 'history' && confirm('Открыть всю историю новым участникам? Это действие нельзя отменить.')) {
             const updated = await client.enableFullHistory(roomId).catch(() => null);
             if (updated) { current.historyVisibility = updated.historyVisibility; window.Segment?.toast?.('Вся история теперь доступна'); }

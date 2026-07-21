@@ -2,6 +2,17 @@
 
 User-visible and technical changes are listed by release, newest first.
 
+## 0.0.4 — July 21, 2026
+
+- Strengthened encrypted rooms with independent sender keys and membership-bound key rotation.
+- Added attachment capabilities that prevent file discovery through content hashes.
+- Added cryptographic device management, revocation and pre-key recovery after offline use.
+- Improved email sign-in reliability and protection against abusive code requests.
+- Added mouse back and forward navigation across chats, profiles and settings.
+- Improved chat history loading, attachment recovery and channel message identity.
+- Refined profiles, settings, room management and panel resizing.
+- Updated the application identity and fixed formatting, notification and interface issues.
+
 ## 0.0.3 — July 17, 2026
 
 - Redesigned user profiles with cover images, badges, community identity and dedicated content sections.

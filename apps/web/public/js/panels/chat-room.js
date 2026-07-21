@@ -3,7 +3,7 @@ import { esc, attachLabel, fmtSize } from '../util.js';
 import { ICONS } from '../icons.js';
 import { chatViewPanel } from './chat-view.js';
 import { openRoomSettings } from '../room-surfaces.js';
-import { LIMITS } from '@segment/protocol';
+import { LIMITS } from '/shared/protocol/index.js';
 
 const TYPING_HIDE_MS = 2000;
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '🔥', '👏', '🥰', '😮', '😢'];
@@ -1183,7 +1183,7 @@ export function chatRoomPanel(client) {
         sheet.innerHTML = `
           <div class="info-top">
             <button class="info-close" data-act="close" aria-label="Закрыть">${ICONS.close}</button>
-            <div class="info-avatar" style="background:${avatarColor(chat.id)}">${chat.icon || esc(chat.name[0].toUpperCase())}</div>
+            <div class="info-avatar" style="background:${avatarColor(chat.id)}">${esc(chat.icon || chat.name[0].toUpperCase())}</div>
             <div class="info-title">${esc(chat.name)}</div>
             <div class="info-sub">${esc(subtitle || typeText)}</div>
             <div class="info-actions">

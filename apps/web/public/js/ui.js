@@ -11,7 +11,7 @@ const revealedSpoilers = new Set();
 export function formatText(raw) {
   const codes = [];
 
-  const hold = (html) => `${codes.push(html) - 1}`;
+  const hold = (html) => `\uE000${codes.push(html) - 1}\uE001`;
   let s = esc(raw);
 
   s = s.replace(/```\n?([\s\S]+?)```/g, (_, c) => hold(`<pre class="code-block">${c.replace(/\n$/, '')}</pre>`));
@@ -27,7 +27,7 @@ export function formatText(raw) {
   s = s.replace(/~~([^~\n]+?)~~/g, '<s>$1</s>');
   s = s.replace(/(^|\s)@([a-z0-9_]{3,24})\b/gi, '$1<a class="mention" href="/@$2">@$2</a>');
 
-  s = s.replace(/(\d+)/g, (_, i) => codes[+i]);
+  s = s.replace(/\uE000(\d+)\uE001/g, (_, i) => codes[+i]);
   return s;
 }
 
@@ -354,7 +354,7 @@ export function renderMessage(feed, m, myName, options = {}) {
   el.dataset.date = dateKey;
   if (m.id) el.dataset.id = m.id;
   const time = new Date(m.ts).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
-  const color = m.color || FALLBACK_COLOR;
+  const color = /^#[0-9a-f]{6}$/i.test(String(m.color || '')) ? m.color : FALLBACK_COLOR;
   const replyItems = m.replyTo?.quotes?.length ? m.replyTo.quotes : (m.replyTo ? [m.replyTo] : []);
   const reply = replyItems.length ? `<div class="reply-quote${replyItems.some((q) => q.quote) ? ' fragment' : ''}${replyItems.length > 1 ? ' multiple' : ''}" data-reply="${esc(replyItems[0].id || '')}">${replyItems.map((q) => `<span class="reply-quote-item" data-reply-id="${esc(q.id || '')}"><b>${q.quote ? 'Цитата · ' : ''}${esc(q.name || '')}</b><span>${esc(q.text || '')}</span></span>`).join('')}</div>` : '';
   const forwardFrom = m.forwardFrom || null;
@@ -641,9 +641,9 @@ function chatItemHtml(c, state, selected = false) {
   else if (dot) meta = `<span class="badge dot ${muted ? 'muted' : ''}"></span>`;
   else if (pinned) meta = `<span class="chat-pinmark">${PIN_GLYPH}</span>`;
   return `
-    <div class="chat-item ${c.id === state.currentRoom ? 'active' : ''} ${pinned ? 'pinned' : ''} ${selected ? 'selected' : ''}" data-room="${c.id}" draggable="${pinned}">
+    <div class="chat-item ${c.id === state.currentRoom ? 'active' : ''} ${pinned ? 'pinned' : ''} ${selected ? 'selected' : ''}" data-room="${esc(c.id)}" draggable="${pinned}">
       <span class="chat-select">${selected ? '✓' : ''}</span>
-      <div class="chat-icon" style="background:${avatarColor(c.id)}">${c.icon || esc(initials(c.name))}</div>
+      <div class="chat-icon" style="background:${avatarColor(c.id)}">${esc(c.icon || initials(c.name))}</div>
       <div class="chat-info">
         <div class="chat-row">
           <div class="chat-name">${chatTypeMark(c.type)}<span>${esc(c.name)}</span>${mute}</div>
@@ -671,8 +671,8 @@ function searchResultHtml(c, m, q) {
   const text = m.text || mediaWord(m) || '';
   const snippet = m.text ? highlightedFormattedText(text, q) : esc(text);
   return `
-    <div class="chat-item search-hit" data-room="${c.id}" data-msg="${esc(m.id)}">
-      <div class="chat-icon" style="background:${avatarColor(c.id)}">${c.icon || esc(initials(c.name))}</div>
+    <div class="chat-item search-hit" data-room="${esc(c.id)}" data-msg="${esc(m.id)}">
+      <div class="chat-icon" style="background:${avatarColor(c.id)}">${esc(c.icon || initials(c.name))}</div>
       <div class="chat-info">
         <div class="chat-row">
           <div class="chat-name">${chatTypeMark(c.type)}<span>${esc(c.name)}</span></div>

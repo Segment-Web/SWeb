@@ -5,7 +5,7 @@
 // Run: node apps/server/src/rooms.selftest.js
 
 import { Readable } from 'node:stream';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { newDb } from 'pg-mem';
 import { createRooms } from './rooms.js';
 
@@ -107,6 +107,15 @@ ok(profile.data?.type === 'profile' && profile.data.user.username === 'owner_u',
 const forbidden = await call('POST', '/api/rooms/invite', { user: other, body: { roomId } });
 ok(forbidden.status === 403, 'non-member invite -> 403');
 
+const revokable = await call('POST', '/api/rooms/invite', { user: owner, body: { roomId } });
+const inviteList = await call('GET', `/api/rooms/invites?roomId=${roomId}`, { user: owner });
+ok(inviteList.status === 200 && inviteList.data.invites.some((item) => item.id === revokable.data.id), 'owner lists active invites');
+const hiddenInvites = await call('GET', `/api/rooms/invites?roomId=${roomId}`, { user: other });
+ok(hiddenInvites.status === 403, 'non-owner cannot list invites');
+const revoked = await call('DELETE', '/api/rooms/invite', { user: owner, body: { roomId, inviteId: revokable.data.id } });
+const revokedJoin = await call('POST', '/api/rooms/join', { user: other, body: { token: revokable.data.token } });
+ok(revoked.status === 200 && revokedJoin.status === 400, 'revoked invite cannot be redeemed');
+
 // Owner mints an invite; another user redeems it and gains access.
 const invite = await call('POST', '/api/rooms/invite', { user: owner, body: { roomId } });
 ok(invite.status === 201 && invite.data.token, 'owner mints invite');
@@ -116,7 +125,7 @@ ok(rooms.canAccess(other.id, roomId), 'redeemer now has access');
 ok(joined.data.room.membershipEpoch === rooms.epoch(roomId) && membershipChanges.at(-1)?.epoch === rooms.epoch(roomId), 'joining advances the persisted membership epoch');
 const membershipEventsAfterJoin = membershipChanges.length;
 const joinedAgain = await call('POST', '/api/rooms/join', { user: other, body: { token: invite.data.token } });
-const inviteUsage = await pool.query('SELECT uses FROM room_invites WHERE token_hash IS NOT NULL AND room_id=$1', [roomId]);
+const inviteUsage = await pool.query('SELECT uses FROM room_invites WHERE token_hash=$1', [createHash('sha256').update(invite.data.token).digest('hex')]);
 ok(joinedAgain.status === 200 && joinedAgain.data.room.joined === false, 'redeeming an invite twice is idempotent');
 ok(inviteUsage.rows[0].uses === 1 && membershipChanges.length === membershipEventsAfterJoin, 'duplicate redemption does not consume invite or emit membership change');
 
@@ -185,6 +194,9 @@ const enableFull = await call('POST', '/api/rooms/history/visibility', { user: o
 ok(enableFull.data.room.historyVisibility === 'full', 'owner enables full history');
 const thirdViewFull = await call('GET', `/api/rooms/history?roomId=${roomId}`, { user: third });
 ok(thirdViewFull.data.envelopes.length === 3, 'after full is enabled, joined member sees all history');
+await pool.query(`UPDATE users SET avatar='data:image/png;base64,AA==',privacy='{"avatar":"nobody"}'::jsonb WHERE id=$1`, [owner.id]);
+const privateAvatarView = await call('GET', `/api/rooms/history?roomId=${roomId}`, { user: third });
+ok(privateAvatarView.data.envelopes.filter((envelope) => envelope.senderId === owner.id).every((envelope) => !envelope.senderAvatar), 'history backfill respects avatar privacy');
 const enableAgain = await call('POST', '/api/rooms/history/visibility', { user: owner, body: { roomId } });
 ok(enableAgain.status === 200 && enableAgain.data.room.historyVisibility === 'full', 'enabling full again is idempotent');
 

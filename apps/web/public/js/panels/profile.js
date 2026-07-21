@@ -10,7 +10,12 @@ const BADGES = {
 };
 let activeAccountModal = null;
 
-const avatarHtml = (user, className) => `<div class="${className}" style="background:${user.color || 'var(--accent)'}">${user.avatar ? `<img src="${esc(user.avatar)}" alt="">` : esc(user.name?.trim()[0]?.toUpperCase() || 'S')}</div>`;
+const safeColor = (value) => /^#[0-9a-f]{6}$/i.test(String(value || '')) ? value : 'var(--accent)';
+const safeImageUrl = (value) => /^(?:data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+|blob:https?:\/\/[^\s]+|\/api\/(?:auth\/avatar|files)\/[^\s]+)$/i.test(String(value || '')) ? value : '';
+const avatarHtml = (user, className) => {
+  const avatar = safeImageUrl(user.avatar);
+  return `<div class="${className}" style="background:${safeColor(user.color)}">${avatar ? `<img src="${esc(avatar)}" alt="">` : esc(user.name?.trim()[0]?.toUpperCase() || 'S')}</div>`;
+};
 const profileApi = async (patch) => {
   const response = await fetch('/api/auth/profile', { method:'PATCH', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify(patch) });
   const data = await response.json().catch(() => ({}));
@@ -158,7 +163,7 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
     const pinnedBadges = (meta.pinnedBadges || []).filter((id) => BADGES[id]).slice(0,1);
     const pinnedBadge = pinnedBadges[0] ? BADGES[pinnedBadges[0]] : null;
     const community = meta.pinnedCommunity;
-    const cover = meta.cover || content.media[0]?.poster || content.media[0]?.data || '';
+    const cover = safeImageUrl(meta.cover || content.media[0]?.poster || content.media[0]?.data || '');
     const music = meta.music;
     const game = meta.game;
     const tabs = own ? [['posts','Публикации'],['archive','Архив публикаций']] : [['posts','Публикации'],['media','Медиа'],['files','Файлы'],['links','Ссылки']];
@@ -167,7 +172,7 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
       game?.active ? `<div class="profile-game"><span>${esc(game.icon || '🎮')}</span><div><small>Играет в</small><b>${esc(game.title)}</b></div><em>◉</em></div>` : '',
     ].filter(Boolean).join('');
     root.innerHTML = `<div class="profile-card-view ${own ? 'is-own' : ''}"><div class="profile-card-inner">
-      <div class="profile-card-cover" style="${cover ? `background-image:linear-gradient(180deg,rgba(8,12,18,.08),rgba(8,12,18,.22)),url('${esc(cover)}')` : `--profile-color:${user.color || 'var(--accent)'}`}">
+      <div class="profile-card-cover" style="${cover ? `background-image:linear-gradient(180deg,rgba(8,12,18,.08),rgba(8,12,18,.22)),url('${esc(cover)}')` : `--profile-color:${safeColor(user.color)}`}">
         <button class="profile-cover-code" type="button" aria-label="Ссылка профиля">${ICONS.qr}</button>
         <button class="profile-cover-menu" type="button" aria-label="${own ? 'Изменить обложку' : 'Меню'}">${own ? ICONS.image : ICONS.more}</button>
       </div>
@@ -212,9 +217,15 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
     root.querySelector('.profile-cover-menu').onclick = own ? () => coverInput?.click() : () => {
       const popover = root.querySelector('.profile-detail-popover');
       popover.classList.add('is-menu');
-      popover.innerHTML = `<div class="profile-quick-menu"><button data-copy-profile type="button">${ICONS.copy}<span>Скопировать ссылку</span></button><button data-close-profile type="button">${ICONS.close}<span>Закрыть профиль</span></button></div>`;
+      popover.innerHTML = `<div class="profile-quick-menu"><button data-copy-profile type="button">${ICONS.copy}<span>Скопировать ссылку</span></button><button data-profile-safety type="button">${ICONS.settings}<span>Номер безопасности</span></button><button data-close-profile type="button">${ICONS.close}<span>Закрыть профиль</span></button></div>`;
       popover.classList.remove('hidden');
       popover.querySelector('[data-copy-profile]').onclick = () => root.querySelector('.profile-cover-code').click();
+      popover.querySelector('[data-profile-safety]').onclick = async () => {
+        const numbers = await client.safetyNumbersForUser?.(user.id) || [];
+        popover.classList.remove('is-menu');
+        popover.innerHTML = `<div class="profile-detail-head"><button type="button" aria-label="Закрыть"></button><div><b>Номер безопасности</b><span>Сравните его с собеседником другим способом</span></div></div><div class="profile-badge-list">${numbers.length ? numbers.map((item,index) => `<label><i>${index + 1}</i><span><b>Устройство ${index + 1}</b><small>${esc(item.number)}</small></span></label>`).join('') : '<label><span><b>Устройство не в сети</b><small>Номер появится после защищённого соединения</small></span></label>'}</div>`;
+        popover.querySelector('.profile-detail-head button').onclick = () => popover.classList.add('hidden');
+      };
       popover.querySelector('[data-close-profile]').onclick = close;
     };
     root.querySelector('.profile-community')?.addEventListener('click', () => { if (community?.id && client.chatById(community.id)) { close(); client.openRoom(community.id); } });

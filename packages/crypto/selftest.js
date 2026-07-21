@@ -2,7 +2,7 @@
 
 
 import {
-  generateIdentity, Session, SenderKey, SenderKeyView,
+  SenderKey, SenderKeyView,
   createPreKeyBundle, x3dhInitiate, x3dhRespond,
   randomFileKey, sealBytes, openBytes,
 } from './index.js';
@@ -12,34 +12,8 @@ let fail = 0;
 const check = (name, cond) => { (cond ? ok++ : fail++); console.log(`${cond ? 'ok  ' : 'FAIL'}  ${name}`); };
 
 
-const alice = await generateIdentity();
-const bob = await generateIdentity();
-
-const aSess = await Session.fromKeys(alice.privateKey, bob.publicKey, true);
-const bSess = await Session.fromKeys(bob.privateKey, alice.publicKey, false);
-
-const m1 = await aSess.encrypt('hello, bob 🔒');
-check('direct session: Bob decrypted Alice message', (await bSess.decrypt(m1)) === 'hello, bob 🔒');
-
-const m2 = await bSess.encrypt('hello, alice');
-check('direct session: Alice decrypted Bob response', (await aSess.decrypt(m2)) === 'hello, alice');
-
-
-const m3 = await aSess.encrypt('same text');
-const m4 = await aSess.encrypt('same text');
-check('forward secrecy: identical text produces distinct ciphertext', JSON.stringify(m3.ct) !== JSON.stringify(m4.ct));
-check('ordering: Bob decrypted consecutive messages', (await bSess.decrypt(m3)) === 'same text' && (await bSess.decrypt(m4)) === 'same text');
-
-
-const eve = await generateIdentity();
-const eSess = await Session.fromKeys(eve.privateKey, alice.publicKey, false);
-let eveFailed = false;
-try { await eSess.decrypt(await aSess.encrypt('secret')); } catch { eveFailed = true; }
-check('outsider cannot decrypt', eveFailed);
-
-
-const sender = SenderKey.create();
-const distributed = sender.export();
+const sender = await SenderKey.create();
+const distributed = await sender.export();
 const member1 = SenderKeyView.from(distributed);
 const member2 = SenderKeyView.from(distributed);
 
@@ -58,6 +32,17 @@ check('room: excessive sender-key skip is rejected', skipRejected);
 let malformedSenderKeyRejected = false;
 try { SenderKeyView.from({ chain: [1], n: 0 }); } catch { malformedSenderKeyRejected = true; }
 check('room: malformed sender key is rejected', malformedSenderKeyRejected);
+const forged = { ...g2, sig: g2.sig.slice() };
+forged.sig[0] ^= 1;
+let forgedRejected = false;
+try { await SenderKeyView.from(distributed).decrypt(forged); } catch { forgedRejected = true; }
+check('room: forged sender signature is rejected', forgedRejected);
+const contextSender = await SenderKey.create();
+const contextState = await contextSender.export();
+const contextual = await contextSender.encrypt('bound to room', { roomId: 'room-a', epoch: 4, senderId: 'alice' });
+let transplantRejected = false;
+try { await SenderKeyView.from(contextState).decrypt(contextual, { roomId: 'room-b', epoch: 4, senderId: 'alice' }); } catch { transplantRejected = true; }
+check('room: ciphertext transplant to another room is rejected', transplantRejected);
 
 // ── X3DH + Double Ratchet ──
 
@@ -72,6 +57,10 @@ const { ratchet: aRatchet, x3dh } = await x3dhInitiate(aliceKit.secret, bobPubli
 const dr1 = await aRatchet.encrypt('hello over x3dh 🔑');
 const bRatchet = await x3dhRespond(bobKit.secret, x3dh);
 check('x3dh: Bob restored a session from the first message', (await bRatchet.decrypt(dr1)) === 'hello over x3dh 🔑');
+const headerTamper = await aRatchet.encrypt('header bound');
+let headerTamperRejected = false;
+try { await bRatchet.decrypt({ ...headerTamper, header: { ...headerTamper.header, n: headerTamper.header.n + 1 } }); } catch { headerTamperRejected = true; }
+check('double ratchet: authenticated header tampering is rejected', headerTamperRejected);
 
 
 const dr2 = await bRatchet.encrypt('hello back');

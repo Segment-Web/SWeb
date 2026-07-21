@@ -6,6 +6,7 @@ import QRCode from 'qrcode';
 const { Pool } = pg;
 const COOKIE = 'segment_session';
 const DEVICE_COOKIE = 'segment_device';
+const LOGIN_COOKIE = 'segment_login_challenge';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const USERNAME_RE = /^[a-z0-9_]{3,24}$/;
 const COLORS = ['#7c5cff', '#00a9d4', '#e25c82', '#36a96b', '#e19a3b', '#db5b5b', '#478fd8', '#8b62dc'];
@@ -140,6 +141,11 @@ export async function createAuth(config) {
       id UUID NOT NULL DEFAULT gen_random_uuid(), user_agent TEXT NOT NULL DEFAULT '',
       ip TEXT NOT NULL DEFAULT '', last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS login_challenges (
+      token_hash TEXT PRIMARY KEY, email TEXT NOT NULL, code_hash TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL, attempts SMALLINT NOT NULL DEFAULT 0,
+      requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     ALTER TABLE sessions ADD COLUMN IF NOT EXISTS id UUID NOT NULL DEFAULT gen_random_uuid();
     ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_agent TEXT NOT NULL DEFAULT '';
     ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ip TEXT NOT NULL DEFAULT '';
@@ -149,15 +155,47 @@ export async function createAuth(config) {
     CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at);
     CREATE INDEX IF NOT EXISTS login_codes_expires_at_idx ON login_codes(expires_at);
+    CREATE INDEX IF NOT EXISTS login_challenges_expires_at_idx ON login_challenges(expires_at);
     CREATE INDEX IF NOT EXISTS registration_tokens_expires_at_idx ON registration_tokens(expires_at);
     CREATE TABLE IF NOT EXISTS device_links (
       token_hash TEXT PRIMARY KEY, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       payload TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS device_links_expires_at_idx ON device_links(expires_at);
+    CREATE TABLE IF NOT EXISTS user_devices (
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      device_id UUID NOT NULL,
+      id_dh JSONB NOT NULL,
+      id_sign JSONB NOT NULL,
+      bundle JSONB NOT NULL,
+      used_opks JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, device_id)
+    );
+    ALTER TABLE user_devices ADD COLUMN IF NOT EXISTS used_opks JSONB NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE user_devices ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;
+    CREATE TABLE IF NOT EXISTS device_tokens (
+      token_hash TEXT PRIMARY KEY,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS auth_rate_limits (
+      bucket TEXT PRIMARY KEY,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      window_started_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS device_prekey_requests (
+      requester_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      target_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      target_device_id UUID NOT NULL,
+      last_consumed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY(requester_id,target_id,target_device_id)
+    );
   `);
 
   const smtpReady = Boolean(config.smtp.test || (config.smtp.host && config.smtp.user && config.smtp.pass));
+  const deviceRemovalListeners = new Set();
   const codeRequests = new Map();
   const mailer = config.smtp.test ? nodemailer.createTransport({ jsonTransport: true }) : (smtpReady ? nodemailer.createTransport({
     host: config.smtp.host, port: config.smtp.port, secure: config.smtp.secure, requireTLS: !config.smtp.secure,
@@ -166,14 +204,28 @@ export async function createAuth(config) {
   const hash = (value) => createHash('sha256').update(value).digest('hex');
   const sign = (value) => createHmac('sha256', secret).update(value).digest('hex');
   const equal = (a, b) => { const x = Buffer.from(a || '', 'hex'); const y = Buffer.from(b || '', 'hex'); return x.length === y.length && timingSafeEqual(x, y); };
-  const cookie = (token, maxAge) => `${COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${config.production ? '; Secure' : ''}`;
-  const deviceCookie = (token, maxAge) => `${DEVICE_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${config.production ? '; Secure' : ''}`;
+  const sessionCookieName = config.production ? '__Host-segment_session' : COOKIE;
+  const deviceCookieName = config.production ? '__Host-segment_device' : DEVICE_COOKIE;
+  const loginCookieName = config.production ? '__Host-segment_login_challenge' : LOGIN_COOKIE;
+  const cookie = (token, maxAge) => `${sessionCookieName}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${config.production ? '; Secure' : ''}`;
+  const deviceCookie = (token, maxAge) => `${deviceCookieName}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${config.production ? '; Secure' : ''}`;
+  const loginCookie = (token, maxAge) => `${loginCookieName}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${config.production ? '; Secure' : ''}`;
   const cleanup = async () => {
     await pool.query(`
       DELETE FROM login_codes WHERE expires_at < NOW();
+      DELETE FROM login_challenges WHERE expires_at < NOW();
       DELETE FROM registration_tokens WHERE expires_at < NOW();
       DELETE FROM sessions WHERE expires_at < NOW();
       DELETE FROM device_links WHERE expires_at < NOW();
+      DELETE FROM auth_rate_limits WHERE window_started_at < NOW()-INTERVAL '1 day';
+      DELETE FROM device_prekey_requests WHERE last_consumed_at < NOW()-INTERVAL '1 day';
+      -- Revocation is permanent: keep the row as a tombstone so the same
+      -- device_id and identity keys can never be re-registered, and only drop
+      -- the key material it no longer needs.
+      UPDATE user_devices SET bundle='{}'::jsonb, used_opks='[]'::jsonb
+        WHERE revoked_at < NOW()-INTERVAL '90 days' AND bundle <> '{}'::jsonb;
+      DELETE FROM device_tokens d WHERE d.last_seen_at < NOW()-INTERVAL '90 days'
+        AND NOT EXISTS(SELECT 1 FROM sessions s WHERE s.device_hash=d.token_hash AND s.expires_at>NOW());
     `);
     const cutoff = Date.now() - 10 * 60 * 1000;
     for (const [ip, requests] of codeRequests) {
@@ -189,19 +241,35 @@ export async function createAuth(config) {
   const one = async (sql, params = []) => (await pool.query(sql, params)).rows[0] || null;
   const requestIp = (req) => {
     const forwarded = config.trustProxy ? req.headers['x-forwarded-for'] : '';
-    return ((typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : '') || req.socket.remoteAddress || '').slice(0, 80);
+    const chain = typeof forwarded === 'string' ? forwarded.split(',').map((part) => part.trim()).filter(Boolean) : [];
+    return ((chain.at(-1) || req.socket.remoteAddress || '')).slice(0, 80);
   };
   const sessionFromRequest = async (req) => {
-    const token = parseCookies(req)[COOKIE]; if (!token) return null;
+    const token = parseCookies(req)[sessionCookieName]; if (!token) return null;
     return one(`SELECT users.*, sessions.id AS session_id, sessions.created_at AS session_created_at,
       sessions.last_seen_at AS session_last_seen_at FROM sessions JOIN users ON users.id=sessions.user_id
       WHERE sessions.token_hash=$1 AND sessions.expires_at>NOW()`, [hash(token)]);
   };
   const userFromRequest = sessionFromRequest;
-  const deviceForRequest = (req) => {
-    const existing = parseCookies(req)[DEVICE_COOKIE];
-    const token = existing && existing.length >= 32 ? existing : randomBytes(32).toString('base64url');
-    return { token, hash: hash(token), fresh: token !== existing };
+  const deviceForRequest = async (req) => {
+    const existing = parseCookies(req)[deviceCookieName];
+    if (existing && existing.length >= 32) {
+      const tokenHash = hash(existing);
+      const known = await one('UPDATE device_tokens SET last_seen_at=NOW() WHERE token_hash=$1 RETURNING token_hash', [tokenHash]);
+      if (known) return { token: existing, hash: tokenHash, fresh: false };
+    }
+    const token = randomBytes(32).toString('base64url');
+    const tokenHash = hash(token);
+    await pool.query('INSERT INTO device_tokens(token_hash) VALUES($1)', [tokenHash]);
+    return { token, hash: tokenHash, fresh: true };
+  };
+  const hitRateLimit = async (bucket, limit, windowMs) => {
+    const row = await one(`INSERT INTO auth_rate_limits(bucket,attempts,window_started_at) VALUES($1,1,NOW())
+      ON CONFLICT(bucket) DO UPDATE SET
+        attempts=CASE WHEN auth_rate_limits.window_started_at < NOW()-($2::text)::interval THEN 1 ELSE auth_rate_limits.attempts+1 END,
+        window_started_at=CASE WHEN auth_rate_limits.window_started_at < NOW()-($2::text)::interval THEN NOW() ELSE auth_rate_limits.window_started_at END
+      RETURNING attempts`, [bucket, `${windowMs} milliseconds`]);
+    return Number(row?.attempts || 0) >= limit;
   };
   const createSession = async (userId, req, deviceHash = '') => {
     const token = randomBytes(32).toString('base64url');
@@ -215,6 +283,95 @@ export async function createAuth(config) {
     if (Buffer.byteLength(avatar.slice(avatar.indexOf(',') + 1), 'base64') > config.authMaxAvatarBytes) throw Object.assign(new Error('AVATAR_TOO_LARGE'), { status: 413 });
     return avatar;
   };
+  const validPublicKey = (value) => Array.isArray(value) && value.length >= 32 && value.length <= 160
+    && value.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255);
+  const pinDeviceBundle = async (userId, deviceId, bundle) => {
+    if (!/^[0-9a-f-]{36}$/i.test(String(deviceId || '')) || !bundle || typeof bundle !== 'object'
+      || !validPublicKey(bundle.idDh) || !validPublicKey(bundle.idSign)
+      || !validPublicKey(bundle.spk) || !validPublicKey(bundle.spkSig)) throw Object.assign(new Error('DEVICE_BUNDLE_INVALID'), { status: 400 });
+    const safeBundle = {
+      deviceId: String(deviceId),
+      idDh: bundle.idDh, idSign: bundle.idSign, spk: bundle.spk, spkSig: bundle.spkSig,
+      opks: Array.isArray(bundle.opks) ? bundle.opks.slice(0, 32).filter((item) => item && typeof item.id === 'string' && validPublicKey(item.key)) : [],
+    };
+    const connection = await pool.connect();
+    try {
+      await connection.query('BEGIN');
+      await connection.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [userId]);
+      const pinned = (await connection.query('SELECT id_dh,id_sign,bundle,revoked_at FROM user_devices WHERE user_id=$1 AND device_id=$2', [userId, deviceId])).rows[0];
+      if (pinned?.revoked_at) throw Object.assign(new Error('DEVICE_REVOKED'), { status:409 });
+      if (pinned && (JSON.stringify(pinned.id_dh) !== JSON.stringify(bundle.idDh)
+        || JSON.stringify(pinned.id_sign) !== JSON.stringify(bundle.idSign))) {
+        throw Object.assign(new Error('DEVICE_IDENTITY_CHANGED'), { status: 409 });
+      }
+      if (!pinned) {
+        const count = Number((await connection.query('SELECT COUNT(*)::int AS count FROM user_devices WHERE user_id=$1 AND revoked_at IS NULL', [userId])).rows[0]?.count || 0);
+        if (count >= 5) throw Object.assign(new Error('DEVICE_LIMIT'), { status: 409 });
+        await connection.query(`INSERT INTO user_devices(user_id,device_id,id_dh,id_sign,bundle)
+          VALUES($1,$2,$3::jsonb,$4::jsonb,$5::jsonb)`,
+        [userId, deviceId, JSON.stringify(bundle.idDh), JSON.stringify(bundle.idSign), JSON.stringify(safeBundle)]);
+      } else {
+        // Identity keys are immutable. Signed prekeys may rotate, while one-time
+        // prekeys are replenished only through the dedicated authenticated path.
+        const updated = { ...pinned.bundle, spk: safeBundle.spk, spkSig: safeBundle.spkSig };
+        await connection.query('UPDATE user_devices SET bundle=$3::jsonb,last_seen_at=NOW() WHERE user_id=$1 AND device_id=$2', [userId, deviceId, JSON.stringify(updated)]);
+      }
+      await connection.query('COMMIT');
+      return (await one('SELECT bundle FROM user_devices WHERE user_id=$1 AND device_id=$2', [userId, deviceId]))?.bundle;
+    } catch (error) {
+      await connection.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally { connection.release(); }
+  };
+  const replenishDevicePreKeys = async (userId, deviceId, opks) => {
+    if (!/^[0-9a-f-]{36}$/i.test(String(deviceId || '')) || !Array.isArray(opks)) throw Object.assign(new Error('DEVICE_BUNDLE_INVALID'), { status: 400 });
+    const fresh = opks.slice(0, 32).filter((item) => item && typeof item.id === 'string' && item.id.length <= 80 && validPublicKey(item.key));
+    const connection = await pool.connect();
+    try {
+      await connection.query('BEGIN');
+      const row = (await connection.query('SELECT bundle,used_opks,revoked_at FROM user_devices WHERE user_id=$1 AND device_id=$2 FOR UPDATE', [userId, deviceId])).rows[0];
+      if (!row || row.revoked_at) throw Object.assign(new Error(row?.revoked_at ? 'DEVICE_REVOKED' : 'DEVICE_NOT_FOUND'), { status: row?.revoked_at ? 409 : 404 });
+      const current = Array.isArray(row.bundle?.opks) ? row.bundle.opks : [];
+      const used = new Set(Array.isArray(row.used_opks) ? row.used_opks : []);
+      const merged = [...current];
+      const ids = new Set(current.map((item) => item.id));
+      for (const item of fresh) if (!used.has(item.id) && !ids.has(item.id) && merged.length < 32) { ids.add(item.id); merged.push(item); }
+      const bundle = { ...row.bundle, opks: merged };
+      await connection.query('UPDATE user_devices SET bundle=$3::jsonb,last_seen_at=NOW() WHERE user_id=$1 AND device_id=$2', [userId, deviceId, JSON.stringify(bundle)]);
+      await connection.query('COMMIT');
+      return { count: merged.length, ids: merged.map((item) => item.id) };
+    } catch (error) {
+      await connection.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally { connection.release(); }
+  };
+  const consumeDevicePreKey = async (requesterId, userId, deviceId) => {
+    const connection = await pool.connect();
+    try {
+      await connection.query('BEGIN');
+      const recent = (await connection.query(`SELECT 1 FROM device_prekey_requests
+        WHERE requester_id=$1 AND target_id=$2 AND target_device_id=$3
+          AND last_consumed_at>NOW()-INTERVAL '30 minutes' FOR UPDATE`, [requesterId, userId, deviceId])).rows[0];
+      if (recent) { await connection.query('COMMIT'); return null; }
+      const row = (await connection.query('SELECT bundle,used_opks,revoked_at FROM user_devices WHERE user_id=$1 AND device_id=$2 FOR UPDATE', [userId, deviceId])).rows[0];
+      if (row?.revoked_at) { await connection.query('COMMIT'); return null; }
+      const bundle = row?.bundle && typeof row.bundle === 'object' ? row.bundle : null;
+      const opks = Array.isArray(bundle?.opks) ? [...bundle.opks] : [];
+      const opk = opks.shift() || null;
+      if (bundle) {
+        const used = [...new Set([...(Array.isArray(row.used_opks) ? row.used_opks : []), ...(opk ? [opk.id] : [])])].slice(-1024);
+        await connection.query('UPDATE user_devices SET bundle=$3::jsonb,used_opks=$4::jsonb,last_seen_at=NOW() WHERE user_id=$1 AND device_id=$2', [userId, deviceId, JSON.stringify({ ...bundle, opks }), JSON.stringify(used)]);
+      }
+      if (opk) await connection.query(`INSERT INTO device_prekey_requests(requester_id,target_id,target_device_id,last_consumed_at)
+        VALUES($1,$2,$3,NOW()) ON CONFLICT(requester_id,target_id,target_device_id)
+        DO UPDATE SET last_consumed_at=NOW()`, [requesterId, userId, deviceId]);
+      await connection.query('COMMIT');
+      return opk;
+    } catch (error) {
+      await connection.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally { connection.release(); }
+  };
 
   const handle = async (req, res) => {
     const url = new URL(req.url, 'http://segment.local');
@@ -227,10 +384,17 @@ export async function createAuth(config) {
         if (!origin || !allowed.has(origin)) return json(res, 403, { error: 'ORIGIN_FORBIDDEN' });
       }
       if (req.method === 'GET' && url.pathname.startsWith('/api/auth/avatar/')) {
-        if (!await userFromRequest(req)) return json(res, 401, { error: 'UNAUTHORIZED' });
+        const viewer = await userFromRequest(req);
+        if (!viewer) return json(res, 401, { error: 'UNAUTHORIZED' });
         const id = url.pathname.slice('/api/auth/avatar/'.length);
         if (!/^[0-9a-f-]{36}$/i.test(id)) return json(res, 404, { error: 'NOT_FOUND' });
-        const row = await one('SELECT avatar FROM users WHERE id=$1', [id]);
+        const row = await one('SELECT avatar,privacy FROM users WHERE id=$1', [id]);
+        const scope = row?.privacy?.avatar || 'everyone';
+        const shared = id === viewer.id || scope === 'everyone' || (scope === 'members' && Boolean(await one(
+          `SELECT 1 FROM room_members mine JOIN room_members other ON other.room_id=mine.room_id
+           WHERE mine.user_id=$1 AND other.user_id=$2 LIMIT 1`, [viewer.id, id],
+        )));
+        if (!shared) return json(res, 404, { error: 'NOT_FOUND' });
         if (!row?.avatar) { res.writeHead(404, { 'Cache-Control': 'private, max-age=60' }); res.end(); return true; }
         const match = row.avatar.match(/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/i);
         if (!match) { res.writeHead(404); res.end(); return true; }
@@ -258,7 +422,7 @@ export async function createAuth(config) {
       }
       if (req.method === 'GET' && url.pathname === '/api/auth/device-accounts') {
         const current = await sessionFromRequest(req);
-        const device = deviceForRequest(req);
+        const device = await deviceForRequest(req);
         if (!current) return json(res, 401, { error: 'UNAUTHORIZED' });
         await pool.query('UPDATE sessions SET device_hash=$1,last_seen_at=NOW() WHERE id=$2', [device.hash,current.session_id]);
         const accounts = (await pool.query(`SELECT DISTINCT ON (u.id) u.* FROM sessions s
@@ -268,7 +432,7 @@ export async function createAuth(config) {
       }
       if (req.method === 'POST' && url.pathname === '/api/auth/switch-account') {
         const current = await sessionFromRequest(req);
-        const device = deviceForRequest(req);
+        const device = await deviceForRequest(req);
         if (!current) return json(res, 401, { error: 'UNAUTHORIZED' });
         const body = await readJson(req, 4096); const userId = String(body.userId || '');
         const target = await one(`SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id
@@ -279,11 +443,28 @@ export async function createAuth(config) {
       }
       if (req.method === 'DELETE' && url.pathname.startsWith('/api/auth/device-accounts/')) {
         const current = await sessionFromRequest(req);
-        const device = deviceForRequest(req);
+        const device = await deviceForRequest(req);
         if (!current) return json(res, 401, { error:'UNAUTHORIZED' });
         const userId = url.pathname.slice('/api/auth/device-accounts/'.length);
         if (userId === current.id) return json(res, 400, { error:'CURRENT_ACCOUNT' });
         await pool.query('DELETE FROM sessions WHERE device_hash=$1 AND user_id=$2', [device.hash,userId]);
+        return json(res, 200, { ok:true });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/auth/devices') {
+        const current = await sessionFromRequest(req);
+        if (!current) return json(res, 401, { error:'UNAUTHORIZED' });
+        const devices = (await pool.query(`SELECT device_id,created_at,last_seen_at
+          FROM user_devices WHERE user_id=$1 AND revoked_at IS NULL ORDER BY last_seen_at DESC`, [current.id])).rows;
+        return json(res, 200, { devices:devices.map((device)=>({ deviceId:device.device_id, createdAt:device.created_at, lastSeenAt:device.last_seen_at })) });
+      }
+      if (req.method === 'DELETE' && url.pathname.startsWith('/api/auth/devices/')) {
+        const current = await sessionFromRequest(req);
+        if (!current) return json(res, 401, { error:'UNAUTHORIZED' });
+        const deviceId = url.pathname.slice('/api/auth/devices/'.length);
+        if (!/^[0-9a-f-]{36}$/i.test(deviceId)) return json(res, 404, { error:'NOT_FOUND' });
+        const removed = await pool.query('UPDATE user_devices SET revoked_at=NOW(),bundle=jsonb_set(bundle,\'{opks}\',\'[]\'::jsonb) WHERE user_id=$1 AND device_id=$2 AND revoked_at IS NULL RETURNING device_id', [current.id,deviceId]);
+        if (!removed.rowCount) return json(res, 404, { error:'NOT_FOUND' });
+        for (const listener of deviceRemovalListeners) { try { listener({ userId:current.id, deviceId }); } catch {} }
         return json(res, 200, { ok:true });
       }
       if (req.method === 'GET' && url.pathname === '/api/auth/sessions') {
@@ -322,24 +503,33 @@ export async function createAuth(config) {
         if (!link) return json(res, 400, { error: 'DEVICE_LINK_INVALID' });
         return json(res, 200, { payload: link.payload });
       }
+      if (req.method === 'POST' && url.pathname === '/api/auth/device-prekeys') {
+        const current = await sessionFromRequest(req);
+        if (!current) return json(res, 401, { error: 'UNAUTHORIZED' });
+        const body = await readJson(req, 64 * 1024);
+        const result = await replenishDevicePreKeys(current.id, String(body.deviceId || ''), body.opks);
+        return json(res, 200, result);
+      }
       if (req.method === 'POST' && url.pathname === '/api/auth/request-code') {
         const { email: rawEmail } = await readJson(req, 16384); const email = String(rawEmail || '').trim().toLowerCase();
         if (!EMAIL_RE.test(email) || email.length > 254) return json(res, 400, { error: 'EMAIL_INVALID' });
-        const forwarded = config.trustProxy ? req.headers['x-forwarded-for'] : '';
-        const ip = (typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : '') || req.socket.remoteAddress || 'unknown';
+        const ip = requestIp(req) || 'unknown';
+        if (await hitRateLimit(`request:${ip}`, 10, 10 * 60 * 1000)) return json(res, 429, { error: 'TOO_MANY_REQUESTS' });
         const recent = (codeRequests.get(ip) || []).filter((time) => Date.now() - time < 10 * 60 * 1000);
         if (recent.length >= 10) return json(res, 429, { error: 'TOO_MANY_REQUESTS' });
         recent.push(Date.now()); codeRequests.set(ip, recent);
-        const previous = await one('SELECT requested_at FROM login_codes WHERE email=$1', [email]);
-        if (previous && Date.now() - new Date(previous.requested_at).getTime() < 60000) return json(res, 429, { error: 'TOO_MANY_REQUESTS' });
+        // Cap how often one source may mail one address. Keyed by (email, ip) on
+        // purpose: a plain per-email cap would let a stranger burn the quota and
+        // lock the owner out, which is the failure this challenge flow removed.
+        if (await hitRateLimit(`send:${hash(email)}:${ip}`, 5, 60 * 60 * 1000)) return json(res, 429, { error: 'TOO_MANY_REQUESTS' });
         if (!mailer) return json(res, 503, { error: 'EMAIL_NOT_CONFIGURED' });
         const code = String(randomInt(100000, 1000000));
-        await pool.query(`INSERT INTO login_codes(email,code_hash,expires_at,attempts,requested_at)
-          VALUES($1,$2,NOW()+($3::text)::interval,0,NOW()) ON CONFLICT(email) DO UPDATE SET
-          code_hash=EXCLUDED.code_hash,expires_at=EXCLUDED.expires_at,attempts=0,requested_at=NOW()`, [email, sign(`${email}:${code}`), `${config.authCodeTtlMs} milliseconds`]);
+        const challenge = randomBytes(32).toString('base64url');
+        await pool.query(`INSERT INTO login_challenges(token_hash,email,code_hash,expires_at)
+          VALUES($1,$2,$3,NOW()+($4::text)::interval)`, [hash(challenge), email, sign(`${email}:${code}`), `${config.authCodeTtlMs} milliseconds`]);
         try {
           const minutes = Math.max(1, Math.round(config.authCodeTtlMs / 60000));
-          const logoUrl = `${(config.publicUrl || 'https://web.segmnt.org').replace(/\/+$/, '')}/logo.png?rev=20260716`;
+          const logoUrl = `${(config.publicUrl || 'https://web.segmnt.org').replace(/\/+$/, '')}/logo.png?rev=20260721`;
           const spaced = code.split('').join(' ');
           await mailer.sendMail({ from: config.smtp.from, to: email, subject: `${code} — код входа в Segment`,
             text: `Ваш код входа в Segment:\n\n${code}\n\nКод действует ${minutes} минут и может быть использован только один раз.\nНикому не сообщайте этот код: мы никогда не спросим его по телефону или в письме.\n\nВы получили это письмо, потому что для вашего аккаунта Segment запросили код входа. Если это были не вы, просто проигнорируйте письмо.`,
@@ -364,37 +554,43 @@ export async function createAuth(config) {
   </td></tr>
 </table>` });
         } catch (error) {
-          await pool.query('DELETE FROM login_codes WHERE email=$1', [email]);
+          await pool.query('DELETE FROM login_challenges WHERE token_hash=$1', [hash(challenge)]);
           console.error(JSON.stringify({ level: 'error', event: 'auth.email_failed', message: error.message }));
           return json(res, 502, { error: 'EMAIL_SEND_FAILED' });
         }
-        return json(res, 200, { ok: true, ...(!config.production && config.smtp.test ? { devCode: code } : {}) });
+        return json(res, 200, { ok: true, ...(!config.production && config.smtp.test ? { devCode: code } : {}) }, { 'Set-Cookie':loginCookie(challenge, Math.ceil(config.authCodeTtlMs / 1000)) });
       }
       if (req.method === 'POST' && url.pathname === '/api/auth/verify-code') {
         const body = await readJson(req, 16384); const email = String(body.email || '').trim().toLowerCase(); const code = String(body.code || '').trim();
-        const row = await one('SELECT * FROM login_codes WHERE email=$1', [email]);
+        if (await hitRateLimit(`verify:${requestIp(req) || 'unknown'}`, 30, 10 * 60 * 1000)) return json(res, 429, { error: 'TOO_MANY_REQUESTS' });
+        const challenge = parseCookies(req)[loginCookieName] || '';
+        const challengeHash = hash(challenge);
+        const row = challenge ? await one('SELECT * FROM login_challenges WHERE token_hash=$1 AND email=$2', [challengeHash,email]) : null;
+        // The challenge belongs to this browser, so burning its attempts can only
+        // ever cost the requester their own code — never the address owner theirs.
         if (!row || new Date(row.expires_at).getTime() < Date.now() || row.attempts >= 5 || !equal(row.code_hash, sign(`${email}:${code}`))) {
-          if (row) await pool.query('UPDATE login_codes SET attempts=attempts+1 WHERE email=$1', [email]);
-          return json(res, 400, { error: 'CODE_INVALID' });
+          if (row) await pool.query('UPDATE login_challenges SET attempts=attempts+1 WHERE token_hash=$1', [challengeHash]);
+          const slowed = await hitRateLimit(`verify-email:${hash(email)}`, 10, 10 * 60 * 1000);
+          return json(res, slowed ? 429 : 400, { error: slowed ? 'TOO_MANY_ATTEMPTS' : 'CODE_INVALID' });
         }
-        await pool.query('DELETE FROM login_codes WHERE email=$1', [email]);
+        await pool.query('DELETE FROM login_challenges WHERE token_hash=$1', [challengeHash]);
         const user = await one('SELECT * FROM users WHERE email=$1', [email]);
         if (user) {
-          const device = deviceForRequest(req);
+          const device = await deviceForRequest(req);
           const count = Number((await one('SELECT COUNT(DISTINCT user_id)::int AS count FROM sessions WHERE device_hash=$1 AND expires_at>NOW()', [device.hash]))?.count || 0);
           if (count >= 5 && !await one('SELECT 1 FROM sessions WHERE device_hash=$1 AND user_id=$2 AND expires_at>NOW()', [device.hash,user.id])) return json(res, 409, { error:'DEVICE_ACCOUNT_LIMIT' });
           const token = await createSession(user.id, req, device.hash);
-          return json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': [cookie(token, Math.floor(config.authSessionTtlMs / 1000)), deviceCookie(device.token, Math.floor(config.authSessionTtlMs / 1000))] });
+          return json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': [cookie(token, Math.floor(config.authSessionTtlMs / 1000)), deviceCookie(device.token, Math.floor(config.authSessionTtlMs / 1000)), loginCookie('', 0)] });
         }
         const registrationToken = randomBytes(32).toString('base64url');
         await pool.query('INSERT INTO registration_tokens(token_hash,email,expires_at) VALUES($1,$2,NOW()+INTERVAL \'15 minutes\')', [hash(registrationToken), email]);
-        return json(res, 200, { registrationToken, needsProfile: true });
+        return json(res, 200, { registrationToken, needsProfile: true }, { 'Set-Cookie':loginCookie('', 0) });
       }
       if (req.method === 'POST' && url.pathname === '/api/auth/register') {
         const body = await readJson(req, config.authMaxAvatarBytes * 2); const tokenHash = hash(String(body.registrationToken || ''));
         const ticket = await one('SELECT * FROM registration_tokens WHERE token_hash=$1 AND expires_at>NOW()', [tokenHash]);
         if (!ticket) return json(res, 400, { error: 'REGISTRATION_EXPIRED' });
-        const device = deviceForRequest(req);
+        const device = await deviceForRequest(req);
         const deviceAccountCount = Number((await one('SELECT COUNT(DISTINCT user_id)::int AS count FROM sessions WHERE device_hash=$1 AND expires_at>NOW()', [device.hash]))?.count || 0);
         if (deviceAccountCount >= 5) return json(res, 409, { error:'DEVICE_ACCOUNT_LIMIT' });
         const username = String(body.username || '').trim().toLowerCase(); const name = String(body.name || '').trim().slice(0, 40);
@@ -463,16 +659,18 @@ export async function createAuth(config) {
         return json(res, 200, { settings: publicUser(user).settings });
       }
       if (req.method === 'POST' && url.pathname === '/api/auth/logout') {
-        const token = parseCookies(req)[COOKIE]; if (token) await pool.query('DELETE FROM sessions WHERE token_hash=$1', [hash(token)]);
+        const token = parseCookies(req)[sessionCookieName]; if (token) await pool.query('DELETE FROM sessions WHERE token_hash=$1', [hash(token)]);
         return json(res, 200, { ok: true }, { 'Set-Cookie': cookie('', 0) });
       }
       return json(res, 404, { error: 'NOT_FOUND' });
     } catch (error) {
       console.error(JSON.stringify({ level: 'error', event: 'auth.request_failed', message: error.message }));
-      return json(res, error.status || 500, { error: error.code === '23505' ? 'USERNAME_TAKEN' : (error.message || 'INTERNAL_ERROR') });
+      const safe = error.code === '23505' ? 'USERNAME_TAKEN' : (error.status && /^[A-Z0-9_]+$/.test(error.message || '') ? error.message : 'INTERNAL_ERROR');
+      return json(res, error.status || 500, { error: safe });
     }
   };
   const ready = async () => { await pool.query('SELECT 1'); return true; };
   const close = async () => { clearInterval(cleanupTimer); await pool.end(); };
-  return { handle, userFromRequest, publicUser, pool, ready, close, smtpReady };
+  return { handle, userFromRequest, publicUser, pinDeviceBundle, replenishDevicePreKeys, consumeDevicePreKey, pool, ready, close, smtpReady,
+    onDeviceRemoved(listener) { deviceRemovalListeners.add(listener); return () => deviceRemovalListeners.delete(listener); } };
 }

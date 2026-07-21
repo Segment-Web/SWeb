@@ -1,4 +1,5 @@
 import { renderFeed, renderMessage, renderSystem } from '../ui.js';
+import { esc } from '../util.js';
 
 let seq = 0;
 
@@ -41,9 +42,9 @@ export function chatViewPanel(client, chat) {
       body.innerHTML = `
         <div class="room">
           <header class="room-head" data-el="head">
-            <div class="room-avatar" data-el="avatar">${chat.icon}</div>
+            <div class="room-avatar" data-el="avatar">${esc(chat.icon || chat.name?.[0] || '')}</div>
             <div class="room-headinfo">
-              <div class="room-title" data-el="title">${chat.name}</div>
+              <div class="room-title" data-el="title">${esc(chat.name)}</div>
               <div class="room-status" data-el="status"></div>
             </div>
           </header>
@@ -243,8 +244,8 @@ export function chatViewPanel(client, chat) {
         const typeText = { saved: 'Избранное', dm: 'Личный чат', chat: 'Группа', channel: 'Канал' }[c.type] || 'Чат';
         sheet.innerHTML = `
           <div class="sheet-head">
-            <div class="room-avatar">${c.icon}</div>
-            <div><b>${c.name}</b><span>${subtitle || typeText}</span></div>
+            <div class="room-avatar">${esc(c.icon || '')}</div>
+            <div><b>${esc(c.name)}</b><span>${esc(subtitle || typeText)}</span></div>
             <button data-act="close">×</button>
           </div>
           <div class="sheet-stats">

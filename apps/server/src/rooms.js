@@ -33,6 +33,10 @@ const readJson = (req, limit = 64 * 1024) => new Promise((resolve, reject) => {
 });
 
 const publicRoom = (row) => ({ id: row.id, type: row.type, slug: row.slug || '', title: row.title, icon: row.icon || '', isPublic: row.is_public, ownerId: row.owner_id, historyKey: row.is_public ? (row.history_key || '') : '', historyVisibility: row.history_visibility || 'joined', membershipEpoch: Number(row.membership_epoch || 1) });
+const profileFieldVisible = (privacy, field, self, shared) => {
+  const scope = privacy && typeof privacy === 'object' ? (privacy[field] || 'everyone') : 'everyone';
+  return self || scope === 'everyone' || (scope === 'members' && shared);
+};
 
 export async function createRooms(config, auth) {
   const pool = auth.pool;
@@ -70,12 +74,21 @@ export async function createRooms(config, auth) {
     CREATE INDEX IF NOT EXISTS room_members_user_idx ON room_members(user_id);
     CREATE TABLE IF NOT EXISTS room_invites (
       token_hash TEXT PRIMARY KEY,
+      id TEXT NOT NULL,
       room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
       created_by UUID REFERENCES users(id) ON DELETE SET NULL,
       expires_at TIMESTAMPTZ NOT NULL,
       max_uses INTEGER NOT NULL DEFAULT 0,
-      uses INTEGER NOT NULL DEFAULT 0
+      uses INTEGER NOT NULL DEFAULT 0,
+      revoked_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE room_invites ADD COLUMN IF NOT EXISTS id TEXT;
+    UPDATE room_invites SET id=token_hash WHERE id IS NULL;
+    ALTER TABLE room_invites ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;
+    ALTER TABLE room_invites ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    UPDATE room_invites SET max_uses=20 WHERE max_uses=0 AND expires_at>NOW();
+    CREATE UNIQUE INDEX IF NOT EXISTS room_invites_id_idx ON room_invites(id);
     CREATE INDEX IF NOT EXISTS room_invites_expires_at_idx ON room_invites(expires_at);
     -- Encrypted history envelopes. The server stores opaque ciphertext (encrypted
     -- to the room's history key, which it never holds) plus a monotonic per-room
@@ -211,15 +224,27 @@ export async function createRooms(config, auth) {
   };
 
   const createInvite = async (user, roomId) => {
-    if (!canAccess(user.id, roomId)) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
+    if (owners.get(roomId) !== user.id) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
     const token = randomBytes(24).toString('base64url');
     const ttlMs = config.roomInviteTtlMs ?? 7 * 24 * 60 * 60 * 1000;
-    await pool.query(
-      `INSERT INTO room_invites(token_hash,room_id,created_by,expires_at,max_uses)
-       VALUES($1,$2,$3,NOW()+($4::text)::interval,$5)`,
-      [hashToken(token), roomId, user.id, `${ttlMs} milliseconds`, 0],
+    const created = await one(
+      `INSERT INTO room_invites(token_hash,id,room_id,created_by,expires_at,max_uses)
+       VALUES($1,$2,$3,$4,NOW()+($5::text)::interval,$6) RETURNING id,expires_at,max_uses`,
+      [hashToken(token), randomUUID(), roomId, user.id, `${ttlMs} milliseconds`, 20],
     );
-    return { token };
+    return { token, id: created.id, expiresAt: created.expires_at, maxUses: created.max_uses };
+  };
+  const listInvites = async (user, roomId) => {
+    if (owners.get(roomId) !== user.id) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
+    return (await pool.query(`SELECT id,expires_at,max_uses,uses,created_at FROM room_invites
+      WHERE room_id=$1 AND revoked_at IS NULL AND expires_at>NOW() AND (max_uses=0 OR uses<max_uses)
+      ORDER BY created_at DESC`, [roomId])).rows;
+  };
+  const revokeInvite = async (user, roomId, inviteId) => {
+    if (owners.get(roomId) !== user.id) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
+    const revoked = await pool.query('UPDATE room_invites SET revoked_at=NOW() WHERE id=$1 AND room_id=$2 AND revoked_at IS NULL RETURNING id', [inviteId, roomId]);
+    if (!revoked.rowCount) throw Object.assign(new Error('NOT_FOUND'), { status: 404 });
+    return { ok: true };
   };
 
   const claimPublicHistoryKey = async (user, roomId, key) => {
@@ -238,7 +263,7 @@ export async function createRooms(config, auth) {
     try {
       await connection.query('BEGIN');
       invite = (await connection.query(
-        'SELECT * FROM room_invites WHERE token_hash=$1 AND expires_at>NOW() FOR UPDATE',
+        'SELECT * FROM room_invites WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at>NOW() FOR UPDATE',
         [tokenHash],
       )).rows[0] || null;
       if (!invite) throw Object.assign(new Error('INVITE_INVALID'), { status: 400 });
@@ -311,11 +336,23 @@ export async function createRooms(config, auth) {
     const floor = Math.max(joinFloor, Number(member?.cleared_seq || 0));
     const lower = Math.max(Number(after) || 0, floor);
     const cap = Math.min(Math.max(Number(limit) || 100, 1), 200);
+    const sharedIds = new Set((await pool.query(
+      `SELECT other.user_id FROM room_members mine JOIN room_members other ON other.room_id=mine.room_id
+       WHERE mine.user_id=$1`, [user.id],
+    )).rows.map((row) => row.user_id));
     const rows = (await pool.query(
-      'SELECT seq, sender_id, iv, ct, key_id FROM room_history WHERE room_id=$1 AND seq>$2 ORDER BY seq LIMIT $3',
+      `SELECT h.seq,h.sender_id,h.iv,h.ct,h.key_id,u.name AS sender_name,u.username AS sender_username,
+              u.avatar AS sender_avatar,u.color AS sender_color,u.privacy AS sender_privacy
+       FROM room_history h LEFT JOIN users u ON u.id=h.sender_id
+       WHERE h.room_id=$1 AND h.seq>$2 ORDER BY h.seq LIMIT $3`,
       [roomId, lower, cap],
     )).rows;
-    return rows.map((r) => ({ seq: Number(r.seq), senderId: r.sender_id, keyId: r.key_id || '', iv: r.iv, ct: r.ct }));
+    return rows.map((r) => ({
+      seq: Number(r.seq), senderId: r.sender_id, keyId: r.key_id || '', iv: r.iv, ct: r.ct,
+      senderName: r.sender_name || '', senderUsername: r.sender_username || '',
+      senderAvatar: r.sender_avatar && profileFieldVisible(r.sender_privacy, 'avatar', r.sender_id === user.id, sharedIds.has(r.sender_id))
+        ? `/api/auth/avatar/${r.sender_id}` : '', senderColor: r.sender_color || '',
+    }));
   };
 
   // Removing a room means two different things, so say which one happened:
@@ -403,7 +440,7 @@ export async function createRooms(config, auth) {
         [viewerId, user.id],
       ));
       const privacy = user.privacy && typeof user.privacy === 'object' ? user.privacy : {};
-      const visible = (field) => { const scope = privacy[field] || 'everyone'; return self || scope === 'everyone' || (scope === 'members' && shared); };
+      const visible = (field) => profileFieldVisible(privacy, field, self, shared);
       const profile = user.profile_meta && typeof user.profile_meta === 'object' ? { ...user.profile_meta } : {};
       if (!self) delete profile.publicationArchive;
       return { type: 'profile', user: {
@@ -463,6 +500,14 @@ export async function createRooms(config, auth) {
         if (!exists(String(body.roomId))) return json(res, 404, { error: 'NOT_FOUND' });
         return json(res, 201, await appendHistory(user, String(body.roomId), body.epoch, body.eventId, body.iv, body.ct, body.keyId));
       }
+      if (req.method === 'GET' && url.pathname === '/api/rooms/invites') {
+        const roomId = String(url.searchParams.get('roomId') || '');
+        return json(res, 200, { invites: await listInvites(user, roomId) });
+      }
+      if (req.method === 'DELETE' && url.pathname === '/api/rooms/invite') {
+        const body = await readJson(req);
+        return json(res, 200, await revokeInvite(user, String(body.roomId || ''), String(body.inviteId || '')));
+      }
       if (req.method === 'POST' && url.pathname === '/api/rooms/history/public-key') {
         const body = await readJson(req);
         return json(res, 200, { room: await claimPublicHistoryKey(user, String(body.roomId), body.key) });
@@ -496,9 +541,10 @@ export async function createRooms(config, auth) {
       return json(res, 404, { error: 'NOT_FOUND' });
     } catch (error) {
       console.error(JSON.stringify({ level: 'error', event: 'rooms.request_failed', message: error.message }));
-      return json(res, error.status || 500, { error: error.code === '23505' ? 'SLUG_TAKEN' : (error.message || 'INTERNAL_ERROR') });
+      const safe = error.code === '23505' ? 'SLUG_TAKEN' : (error.status && /^[A-Z0-9_]+$/.test(error.message || '') ? error.message : 'INTERNAL_ERROR');
+      return json(res, error.status || 500, { error: safe });
     }
   };
 
-  return { handle, exists, canAccess, epoch: roomEpoch, epochsFor, ownerId: (roomId) => owners.get(roomId) || '', listForUser, rehydrate: hydrate, onMembershipChange(listener) { membershipListeners.add(listener); return () => membershipListeners.delete(listener); } };
+  return { handle, exists, canAccess, isPublic: (roomId) => publicRooms.has(roomId), epoch: roomEpoch, epochsFor, ownerId: (roomId) => owners.get(roomId) || '', listForUser, rehydrate: hydrate, onMembershipChange(listener) { membershipListeners.add(listener); return () => membershipListeners.delete(listener); } };
 }

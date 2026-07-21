@@ -1,6 +1,6 @@
 {
   "name": "@segment/core",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Platform-independent Segment client state, connection and update stream.",
   "type": "module",
   "private": true,

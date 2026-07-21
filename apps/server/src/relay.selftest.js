@@ -25,8 +25,17 @@ const USERS = {
   'a-token': { id: 'user-a', name: 'Alice', username: 'alice', color: '#111', avatar: '' },
   'b-token': { id: 'user-b', name: 'Bob', username: 'bob', color: '#222', avatar: '' },
   'c-token': { id: 'user-c', name: 'Carol', username: 'carol', color: '#333', avatar: '' },
+  'd-token': { id: 'user-d', name: 'Dana', username: 'dana', color: '#444', avatar: '' },
 };
-const auth = { userFromRequest: async (req) => USERS[String(req.headers.cookie || '').trim()] || null };
+const auth = {
+  userFromRequest: async (req) => USERS[String(req.headers.cookie || '').trim()] || null,
+  pinDeviceBundle: async (userId, _deviceId, bundle) => {
+    if (userId === 'user-c') await new Promise((resolve) => setTimeout(resolve, 80));
+    if (userId === 'user-d') throw new Error('DEVICE_LIMIT');
+    return bundle;
+  },
+  consumeDevicePreKey: async () => null,
+};
 // Alice and Bob share both rooms; Carol only has the public one.
 const privateMembers = new Set(['user-a', 'user-b']);
 let membershipListener = null;
@@ -66,18 +75,20 @@ const alice = await connect('a-token');
 const bob = await connect('b-token');
 const carol = await connect('c-token');
 for (const c of [alice, bob, carol]) c.send({ type: MessageType.Join, version: PROTOCOL_VERSION, bundle: {} });
+carol.send({ type: MessageType.Typing, room: ROOM });
 await settle();
 
 ok(firstOfType(alice.inbox, MessageType.Roster), 'joining yields a roster');
+ok(firstOfType(alice.inbox, MessageType.Typing), 'frames sent after join stay ordered while device pinning waits for the database');
 ok(firstOfType(bob.inbox, MessageType.Peer) || firstOfType(alice.inbox, MessageType.Peer), 'peers are announced');
 ok(firstOfType(alice.inbox, MessageType.Roster)?.members?.every((member) => member.userId), 'peer records include stable account ids');
 
 // Alice encrypts a real message with her sender key and relays it.
-const senderKey = SenderKey.create();
-const exported = senderKey.export();
+const senderKey = await SenderKey.create();
+const exported = await senderKey.export();
 const frame = await senderKey.encrypt(JSON.stringify({ segment: 'event', kind: 'message', message: { id: 'm1', text: 'ping' } }));
 bob.inbox.length = 0;
-alice.send({ type: MessageType.Cipher, room: ROOM, epoch: 1, n: frame.n, iv: frame.iv, ct: frame.ct });
+alice.send({ type: MessageType.Cipher, room: ROOM, epoch: 1, n: frame.n, iv: frame.iv, ct: frame.ct, sig: frame.sig });
 await settle();
 
 const relayed = firstOfType(bob.inbox, MessageType.Cipher);
@@ -87,7 +98,7 @@ ok(Boolean(relayed), 'a real encrypted frame reaches the other client');
 let decrypted = null;
 if (relayed) {
   const view = SenderKeyView.from(exported);
-  try { decrypted = await view.decrypt({ n: relayed.n, iv: relayed.iv, ct: relayed.ct }); } catch { /* stays null */ }
+  try { decrypted = await view.decrypt({ n: relayed.n, iv: relayed.iv, ct: relayed.ct, sig: relayed.sig }); } catch { /* stays null */ }
 }
 ok(decrypted && JSON.parse(decrypted).message.text === 'ping', 'the relayed frame decrypts to the original message');
 
@@ -101,7 +112,7 @@ ok(!firstOfType(bob.inbox, MessageType.Cipher), 'string-encoded frames are rejec
 carol.inbox.length = 0;
 bob.inbox.length = 0;
 const priv = await senderKey.encrypt('secret');
-alice.send({ type: MessageType.Cipher, room: PRIVATE, epoch: privateEpoch, n: priv.n, iv: priv.iv, ct: priv.ct });
+alice.send({ type: MessageType.Cipher, room: PRIVATE, epoch: privateEpoch, n: priv.n, iv: priv.iv, ct: priv.ct, sig: priv.sig });
 await settle();
 ok(firstOfType(bob.inbox, MessageType.Cipher), 'private-room frame reaches a member');
 ok(!firstOfType(carol.inbox, MessageType.Cipher), 'private-room frame does not reach a non-member');
@@ -139,6 +150,10 @@ alice.inbox.length = 0;
 bob.send({ type: MessageType.HistoryKeyShare, to: keyRequest.from, room: PRIVATE, epoch: privateEpoch, box: { ct: [7, 8] } });
 await settle();
 ok(Boolean(firstOfType(alice.inbox, MessageType.HistoryKeyShare)), 'encrypted history-key share reaches the requesting member');
+alice.inbox.length = 0;
+bob.send({ type: MessageType.HistoryKeyShare, to: keyRequest.from, room: PRIVATE, epoch: privateEpoch, rotate: true, box: { ct: [9, 9] } });
+await settle();
+ok(!firstOfType(alice.inbox, MessageType.HistoryKeyShare), 'non-owner cannot announce a history-key rotation');
 
 // A membership epoch is a server-enforced cryptographic boundary. Once Bob is
 // removed, neither an old-epoch ciphertext nor a fresh key share can reach him.
@@ -149,10 +164,16 @@ membershipListener?.({ roomId: PRIVATE, userId: 'user-b', action: 'left', epoch:
 await settle();
 ok(Boolean(firstOfType(bob.inbox, MessageType.RoomAccessRevoked)), 'removed member is told to erase room key state');
 const stale = await senderKey.encrypt('stale-after-removal');
-alice.send({ type: MessageType.Cipher, room: PRIVATE, epoch: privateEpoch - 1, n: stale.n, iv: stale.iv, ct: stale.ct });
+alice.send({ type: MessageType.Cipher, room: PRIVATE, epoch: privateEpoch - 1, n: stale.n, iv: stale.iv, ct: stale.ct, sig: stale.sig });
 alice.send({ type: MessageType.SenderKeyShare, to: bobId, room: PRIVATE, epoch: privateEpoch, box: { ct: [9] } });
 await settle();
 ok(!firstOfType(bob.inbox, MessageType.Cipher) && !firstOfType(bob.inbox, MessageType.SenderKeyShare), 'removed member receives neither future ciphertext nor rotated keys');
+
+const dana=await connect('d-token');
+const rejected=new Promise((resolve)=>dana.ws.once('close',(code,reason)=>resolve({code,reason:reason.toString()})));
+dana.send({type:MessageType.Join,version:PROTOCOL_VERSION,bundle:{}});
+const rejectedClose=await rejected;
+ok(rejectedClose.code===1008&&rejectedClose.reason==='DEVICE_LIMIT','permanent device rejection has a stable reason for stopping reconnects');
 
 for (const c of [alice, bob, carol]) c.ws.close();
 gateway.stop();

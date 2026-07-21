@@ -4,27 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Segment</title>
-<meta property="og:image" content="https://web.segmnt.org/logo.png?rev=20260716">
+<meta property="og:image" content="https://web.segmnt.org/logo.png?rev=20260721">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:image" content="https://web.segmnt.org/logo.png?rev=20260716">
-<link rel="icon" type="image/png" href="/logo.png?rev=20260716">
-<link rel="apple-touch-icon" href="/logo.png?rev=20260716">
-<link rel="stylesheet" href="./styles.css?v=0.0.3">
+<meta name="twitter:image" content="https://web.segmnt.org/logo.png?rev=20260721">
+<link rel="icon" type="image/png" href="/logo.png?rev=20260721">
+<link rel="apple-touch-icon" href="/logo.png?rev=20260721">
+<link rel="stylesheet" href="./styles.css?v=0.0.4">
 
-<script type="importmap">
-{
-  "imports": {
-    "@segment/protocol": "/shared/protocol/index.js",
-    "@segment/core": "/shared/core/index.js",
-    "@segment/crypto": "/shared/crypto/index.js"
-  }
-}
-</script>
 </head>
 <body class="auth-pending">
 <div class="desktop-only-gate" id="desktopOnlyGate" aria-labelledby="desktopOnlyTitle">
   <div class="desktop-only-card">
-    <div class="logo" aria-hidden="true"><img src="/logo.png?rev=20260716" alt="" onerror="this.replaceWith(document.createTextNode('S'))"></div>
+    <div class="logo" aria-hidden="true"><img src="/logo.png?rev=20260721" alt=""></div>
     <h1 id="desktopOnlyTitle">Segment пока доступен только на ПК</h1>
     <p>Мобильная версия ещё разрабатывается. Откройте Segment на компьютере или ноутбуке.</p>
   </div>
@@ -32,7 +23,7 @@
 
 <div class="gate" id="gate">
   <div class="card auth-card">
-    <div class="logo"><img src="/logo.png?rev=20260716" alt="Segment" onerror="this.replaceWith(document.createTextNode('S'))"></div>
+    <div class="logo"><img src="/logo.png?rev=20260721" alt="Segment"></div>
     <h1>Segment</h1>
     <div class="auth-progress" aria-hidden="true"><span data-progress="1"></span><span data-progress="2"></span><span data-progress="3"></span></div>
     <small class="auth-kicker" data-auth="kicker">Шаг 1 из 3</small>
@@ -65,15 +56,6 @@
   </div>
 </div>
 
-<script type="module">
-  const desktop = matchMedia('(min-width: 1024px) and (hover: hover) and (pointer: fine)').matches;
-  document.body.classList.toggle('desktop-required', !desktop);
-  if (desktop) {
-    document.getElementById('desktopOnlyGate')?.remove();
-    import('./app.js?v=0.0.3');
-  } else {
-    document.getElementById('gate')?.remove();
-  }
-</script>
+<script type="module" src="/bootstrap.js?rev=20260721"></script>
 </body>
 </html>

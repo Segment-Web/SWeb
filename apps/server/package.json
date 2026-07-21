@@ -1,6 +1,6 @@
 {
   "name": "@segment/server",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Segment real-time server, web client host and WebSocket relay.",
   "type": "module",
   "private": true,

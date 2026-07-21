@@ -4,9 +4,11 @@
 // Run: node apps/server/src/files.selftest.js
 
 import { PassThrough, Readable } from 'node:stream';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { newDb } from 'pg-mem';
 import { createFiles } from './files.js';
 
 const dir = await mkdtemp(join(tmpdir(), 'segment-files-'));
@@ -39,13 +41,14 @@ const user = { id: 'u1' };
 const anon = await call('POST', '/api/files', { body: 'hello' });
 ok(anon.status === 401, 'unauthenticated upload -> 401');
 
-// Upload returns a content-addressed id.
+// Upload returns a random bearer capability, not the physical content hash.
 const up = await call('POST', '/api/files', { user, body: 'encrypted-blob-A' });
-ok(up.status === 201 && /^[0-9a-f]{64}$/.test(up.data.id) && up.data.size === 16, 'upload -> 201 with sha256 id');
+ok(up.status === 201 && /^[A-Za-z0-9_-]{43}$/.test(up.data.id) && up.data.size === 16, 'upload -> 201 with random capability id');
 
-// Identical bytes dedup to the same id.
+// Identical bytes dedup physically but receive unlinkable capabilities.
 const up2 = await call('POST', '/api/files', { user, body: 'encrypted-blob-A' });
-ok(up2.data.id === up.data.id, 'identical upload dedups to same id');
+const physicalAfterDedup = (await readdir(dir)).filter((name)=>/^[0-9a-f]{64}$/.test(name));
+ok(up2.data.id !== up.data.id && physicalAfterDedup.length===1, 'identical upload dedups without reusing its capability');
 
 // Different bytes get a different id.
 const up3 = await call('POST', '/api/files', { user, body: 'encrypted-blob-B' });
@@ -114,5 +117,54 @@ ok(limited.status === 429, 'per-user upload rate limit -> 429');
 
 files.close();
 await rm(dir, { recursive: true, force: true });
+
+// Database-backed authorization: a blob reference belongs to a room, current
+// membership is required to read it, and releasing the final reference removes
+// the orphaned ciphertext from disk.
+const secureDir = await mkdtemp(join(tmpdir(), 'segment-files-secure-'));
+const db = newDb(); const { Pool } = db.adapters.createPg(); const pool = new Pool();
+await pool.query('CREATE TABLE users(id UUID PRIMARY KEY); CREATE TABLE rooms(id TEXT PRIMARY KEY);');
+const alice = { id:'00000000-0000-4000-8000-000000000001' };
+const bob = { id:'00000000-0000-4000-8000-000000000002' };
+await pool.query('INSERT INTO users(id) VALUES($1),($2); INSERT INTO rooms(id) VALUES($3),($4);', [alice.id,bob.id,'room-a','room-b']);
+const access = new Map([['room-a',new Set([alice.id,bob.id])],['room-b',new Set([alice.id])]]);
+const secureAuth = { pool, userFromRequest:async(req)=>req._user??null };
+const secureRooms = { canAccess:(userId,roomId)=>Boolean(access.get(roomId)?.has(userId)), ownerId:()=>alice.id, isPublic:(roomId)=>roomId==='room-b' };
+const legacyBytes = Buffer.from('legacy-encrypted-blob');
+const legacyId = createHash('sha256').update(legacyBytes).digest('hex');
+await writeFile(join(secureDir, legacyId), legacyBytes);
+const secureFiles = await createFiles({ ...config, fileDir:secureDir, fileUploadsPerMinute:60 }, secureAuth, secureRooms);
+await secureFiles.migration;
+const secureCall = async (method, url, { user=null, body, headers={} }={}) => {
+  const req=Readable.from(body===undefined?[]:[Buffer.isBuffer(body)?body:Buffer.from(body)]); req.method=method; req.url=url; req.headers={ origin:'', ...headers }; req._user=user;
+  let status=0; let responseHeaders={}; const parts=[]; let jsonMode=true;
+  const res={ writeHead(code,nextHeaders){status=code;responseHeaders=nextHeaders||{};if(nextHeaders?.['Content-Type']==='application/octet-stream')jsonMode=false;return res;}, write(chunk){if(chunk)parts.push(Buffer.from(chunk));return true;}, end(chunk){if(chunk)parts.push(Buffer.from(chunk));} };
+  await secureFiles.handle(req,res); const bytes=Buffer.concat(parts);
+  return { status, headers:responseHeaders, data:jsonMode&&bytes.length?JSON.parse(bytes.toString()):null, bytes };
+};
+const legacyImported = await pool.query('SELECT 1 FROM file_blobs WHERE file_id=$1', [legacyId]);
+const memberClaim = await secureCall('POST','/api/files/refs/claim',{user:bob,body:JSON.stringify({roomId:'room-a',fileIds:[legacyId]})});
+const publicClaim = await secureCall('POST','/api/files/refs/claim',{user:alice,body:JSON.stringify({roomId:'room-b',fileIds:[legacyId]})});
+const legacyClaim = await secureCall('POST','/api/files/refs/claim',{user:alice,body:JSON.stringify({roomId:'room-a',fileIds:[legacyId]})});
+const legacyRead = await secureCall('GET',`/api/files/${legacyId}?roomId=room-a`,{user:bob});
+ok(legacyImported.rowCount===1&&memberClaim.status===403&&publicClaim.status===403&&legacyClaim.data.claimed===1&&legacyRead.bytes.equals(legacyBytes),'legacy claim is temporary, private and owner-only');
+const scopedUpload = await secureCall('POST','/api/files?roomId=room-a',{user:alice,body:'room-secret'});
+const scopedRead = await secureCall('GET',`/api/files/${scopedUpload.data.id}`,{user:bob});
+const guessedHash = createHash('sha256').update('room-secret').digest('hex');
+const hashOracle = await secureCall('GET',`/api/files/${guessedHash}?roomId=room-a`,{user:bob});
+const forbiddenUpload = await secureCall('POST','/api/files?roomId=room-b',{user:bob,body:'denied'});
+ok(scopedUpload.status===201&&/^[A-Za-z0-9_-]{43}$/.test(scopedUpload.data.id)&&scopedRead.bytes.toString()==='room-secret','capability holder reads an encrypted blob');
+ok(hashOracle.status===404&&forbiddenUpload.status===403,'physical hashes are not capabilities for new blobs');
+// A removed member keeps every capability their decrypted history carried, so
+// membership has to be re-checked on each fetch, not only when it was handed out.
+access.get('room-a').delete(bob.id);
+const revokedRead = await secureCall('GET',`/api/files/${scopedUpload.data.id}`,{user:bob});
+access.get('room-a').add(bob.id);
+ok(revokedRead.status===403,'a removed member cannot fetch attachments with a retained capability');
+await secureCall('DELETE','/api/files/refs',{user:alice,body:JSON.stringify({roomId:'room-a',fileIds:[scopedUpload.data.id]})});
+const afterRelease = await secureCall('GET',`/api/files/${scopedUpload.data.id}`,{user:alice});
+ok(afterRelease.status===404,'released file reference no longer authorizes a download');
+ok(!(await readdir(secureDir)).includes(guessedHash),'releasing the final capability removes the orphan');
+secureFiles.close(); await pool.end(); await rm(secureDir,{recursive:true,force:true});
 console.log(`\n${pass} ok, ${fail} fail`);
 if (fail) process.exit(1);

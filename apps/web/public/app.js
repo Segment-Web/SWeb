@@ -4,9 +4,9 @@
 
 
 
-import { SegmentClient } from '@segment/core';
+import { SegmentClient } from '/shared/core/index.js';
 import { webStorage } from './js/storage.js';
-import { $ } from './js/util.js';
+import { $, esc } from './js/util.js';
 import { createRegistry } from './js/panels/registry.js';
 import { profilePanel, openProfileSurface } from './js/panels/profile.js';
 import { chatListPanel } from './js/panels/chat-list.js';
@@ -42,31 +42,96 @@ window.Segment = segmentApi;
 // so right-click behaves consistently across messages, media and empty areas.
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
-// Mouse Back/Forward buttons mirror Ctrl+Z / Ctrl+Y inside the last active
-// editor. Capturing pointerdown keeps Chromium from turning them into browser
-// navigation before the composer can consume the action.
-let lastEditable = null;
-const isEditable = (element) => Boolean(element && (element.isContentEditable || /^(INPUT|TEXTAREA)$/.test(element.tagName)) && !element.disabled && !element.readOnly);
-document.addEventListener('focusin', (event) => { if (isEditable(event.target)) lastEditable = event.target; }, true);
-const runMouseHistory = (event) => {
-  if (event.button !== 3 && event.button !== 4) return false;
+// Keep an in-app navigation timeline for chats and overlay surfaces. Mouse
+// XButton1/XButton2 use this timeline instead of leaving the web application.
+const navigationHistory = (() => {
+  const entries = [{ kind: 'room', roomId: null }];
+  let index = 0;
+  let applying = false;
+
+  const sameEntry = (left, right) => left?.kind === right?.kind
+    && left?.roomId === right?.roomId
+    && (left?.kind !== 'surface' || left?.options?.id === right?.options?.id);
+  const record = (entry) => {
+    if (applying || sameEntry(entries[index], entry)) return;
+    entries.splice(index + 1);
+    entries.push(entry);
+    if (entries.length > 100) entries.shift();
+    index = entries.length - 1;
+  };
+  const apply = (entry) => {
+    if (!entry) return false;
+    applying = true;
+    try {
+      if (entry.roomId && client.chatById(entry.roomId)) client.openRoom(entry.roomId);
+      else client.closeRoom();
+      if (entry.kind === 'surface' && workspace) workspace.openSurface(entry.options);
+      else workspace?.closeSurface();
+    } finally {
+      applying = false;
+    }
+    return true;
+  };
+  const back = () => index > 0 && apply(entries[--index]);
+  const forward = () => index < entries.length - 1 && apply(entries[++index]);
+
+  const originalOpenRoom = client.openRoom.bind(client);
+  client.openRoom = (roomId) => {
+    const before = client.currentRoom;
+    const result = originalOpenRoom(roomId);
+    if (client.currentRoom !== before) record({ kind: 'room', roomId: client.currentRoom || null });
+    return result;
+  };
+  const originalCloseRoom = client.closeRoom.bind(client);
+  client.closeRoom = () => {
+    const before = client.currentRoom;
+    const result = originalCloseRoom();
+    if (before && !client.currentRoom) record({ kind: 'room', roomId: null });
+    return result;
+  };
+
+  const attachWorkspace = (target) => {
+    const originalOpenSurface = target.openSurface.bind(target);
+    target.openSurface = (options) => {
+      if (applying) return originalOpenSurface(options);
+      applying = true;
+      let result;
+      try { result = originalOpenSurface(options); }
+      finally { applying = false; }
+      if (result) record({ kind: 'surface', roomId: client.currentRoom || null, options });
+      return result;
+    };
+    const originalCloseSurface = target.closeSurface.bind(target);
+    target.closeSurface = (id = null) => {
+      if (applying) return originalCloseSurface(id);
+      const closed = originalCloseSurface(id);
+      if (closed) record({ kind: 'room', roomId: client.currentRoom || null });
+      return closed;
+    };
+  };
+
+  return { back, forward, attachWorkspace };
+})();
+segmentApi.navigation = navigationHistory;
+
+// Chromium may emit several mouse events for one side-button press. Execute
+// the navigation once and consume every related event so browser history does
+// not race the application's own timeline.
+let lastSideButton = -1;
+let lastSideButtonAt = 0;
+const handleSideButton = (event) => {
+  if (event.button !== 3 && event.button !== 4) return;
   event.preventDefault();
   event.stopImmediatePropagation();
-  const editor = isEditable(document.activeElement) ? document.activeElement : (lastEditable?.isConnected ? lastEditable : null);
-  if (!editor) return true;
-  editor.focus({ preventScroll: true });
-  const command = event.button === 3 ? 'undo' : 'redo';
-  document.execCommand(command);
-  editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: `history${command[0].toUpperCase()}${command.slice(1)}` }));
-  return true;
+  const now = performance.now();
+  if (lastSideButton === event.button && now - lastSideButtonAt < 180) return;
+  lastSideButton = event.button;
+  lastSideButtonAt = now;
+  if (event.button === 3) navigationHistory.back();
+  else navigationHistory.forward();
 };
-window.addEventListener('pointerdown', runMouseHistory, true);
-for (const eventName of ['pointerup', 'mousedown', 'mouseup', 'auxclick']) {
-  window.addEventListener(eventName, (event) => {
-    if (event.button !== 3 && event.button !== 4) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-  }, true);
+for (const eventName of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'auxclick']) {
+  window.addEventListener(eventName, handleSideButton, { capture: true, passive: false });
 }
 
 const scrollSurfaceSelector = '.feed,.chat-list,.info-body,.fwd-list,.autocomplete,.attach-draft,.ctx-menu,.workspace-surface-body,.pinned-manager-list,.composer-input,.emoji-menu,.react-picker';
@@ -107,6 +172,7 @@ const mountWorkspace = () => {
   root.id = 'workspace';
   document.body.appendChild(root);
   workspace = new Workspace(root, registry.list());
+  navigationHistory.attachWorkspace(workspace);
   segmentApi.workspace = workspace;
 };
 
@@ -166,7 +232,7 @@ let toastTimer;
 
 segmentApi.toast = (text, actionText = '', action = null) => {
   clearTimeout(toastTimer);
-  toast.innerHTML = `<span>${text}</span>${actionText ? `<button type="button">${actionText}</button>` : ''}`;
+  toast.innerHTML = `<span>${esc(text)}</span>${actionText ? `<button type="button">${esc(actionText)}</button>` : ''}`;
   toast.classList.remove('hidden');
   const btn = toast.querySelector('button');
   if (btn) btn.onclick = action;
@@ -212,9 +278,9 @@ const fwdRender = () => {
   const q = fwdSearch.value.trim().toLowerCase();
   const chats = client.chats.filter((c) => !q || c.name.toLowerCase().includes(q));
   fwdList.innerHTML = chats.map((c) => `
-    <label class="fwd-item ${fwdSelected.has(c.id) ? 'checked' : ''}" data-id="${c.id}">
-      <span class="fwd-ava" style="background:${avatarColor(c.id)}">${c.icon || c.name[0].toUpperCase()}</span>
-      <span class="fwd-name">${c.name}</span>
+    <label class="fwd-item ${fwdSelected.has(c.id) ? 'checked' : ''}" data-id="${esc(c.id)}">
+      <span class="fwd-ava" style="background:${avatarColor(c.id)}">${esc(c.icon || c.name[0].toUpperCase())}</span>
+      <span class="fwd-name">${esc(c.name)}</span>
       <span class="fwd-check">✓</span>
     </label>`).join('') || '<div class="fwd-empty">Ничего не найдено</div>';
   for (const item of fwdList.querySelectorAll('.fwd-item')) {
@@ -727,6 +793,20 @@ segmentApi.demo = async () => {
 client.on('chats', () => {
   const total = client.chats.reduce((n, c) => n + (client.muted.has(c.id) ? 0 : (client.unread[c.id] || 0)), 0);
   document.title = total > 0 ? `(${total}) Segment` : 'Segment';
+});
+const SECURITY_MESSAGES = {
+  DEVICE_LIMIT: 'Достигнут лимит устройств. Удалите старое устройство в настройках.',
+  DEVICE_IDENTITY_CHANGED: 'Ключи этого устройства изменились. Удалите старую запись устройства вручную, если это ожидаемо.',
+  DEVICE_REVOKED: 'Это устройство отозвано. Для повторного входа очистите локальные данные и добавьте его как новое.',
+  DEVICE_REJECTED: 'Сервер отклонил ключи этого устройства. Соединение остановлено.',
+  RATE_LIMIT: 'Слишком много сообщений. Соединение восстановится через минуту.',
+};
+client.on('security', ({ code, name }) => {
+  if (code === 'IDENTITY_KEY_CHANGED') return segmentApi.toast?.(`Ключ шифрования ${name || 'собеседника'} изменился. Соединение заблокировано.`);
+  if (code === 'NEW_DEVICE_ADDED') return segmentApi.toast?.(`У ${name || 'собеседника'} появилось новое устройство. Проверьте номер безопасности.`);
+  // Never fail silently: an unmapped code still has to reach the user, otherwise
+  // a terminated socket looks like the app simply froze.
+  segmentApi.toast?.(SECURITY_MESSAGES[code] || `Соединение остановлено (${code || 'неизвестная причина'}).`);
 });
 
 

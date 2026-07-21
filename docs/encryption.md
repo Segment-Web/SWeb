@@ -23,11 +23,11 @@ No custom cryptographic primitive is implemented.
 
 ## Direct sessions
 
-Each account publishes an identity key, a signed prekey and one-time prekeys. The initiator verifies the signed prekey, consumes a one-time prekey and derives an X3DH-style shared secret. Direct peer sessions then use root and chain keys. Every message advances its sending chain, direction changes mix in a new ECDH result, and skipped keys support limited out-of-order delivery.
+Each device creates a persistent, non-extractable WebCrypto identity key, a signed prekey and one-time prekeys. The authenticated service pins a device's first identity bundle, limits an account to five active devices and refuses silent replacement for the same device identifier. Users can list and revoke cryptographic devices; revocation closes an active relay connection and prevents that device identifier from registering again. One-time prekeys are reconciled and replenished by the owning device after reconnect, including when consumption happened while it was offline, and their issue is rate-limited per requester/target pair. Clients keep encrypted first-seen device sets per account, refuse an unexpected key replacement and warn when a known account presents a new device. The initiator verifies the signed prekey and the responder rejects an X3DH identity that does not match the pinned peer bundle. Direct peer sessions then use root and chain keys. Every message advances its sending chain, direction changes mix in a new ECDH result, and skipped keys support bounded out-of-order delivery.
 
 ## Live room messages
 
-Each sending device owns a distinct sender-key chain for every room and membership epoch. A sender key is delivered over an encrypted direct session only to peers that the server currently recognizes as members of that room. The encrypted payload binds the room identifier and epoch, and the receiver verifies both against the outer relay frame.
+Each sending device owns a distinct sender-key chain and ECDSA signing key for every room and membership epoch. A sender key is delivered over an encrypted direct session only to peers that the server currently recognizes as members of that room. Every ciphertext signs and authenticates the room identifier, epoch, sender identifier, message counter, nonce and ciphertext. The same context is AES-GCM additional authenticated data, so transplanting ciphertext between rooms or epochs fails in the cryptographic layer.
 
 Adding or removing a member advances a persisted room epoch. Every remaining online sender replaces that room's chain; the relay rejects stale-epoch ciphertext and key shares. A removed member is also instructed to erase its local room keys. Sender-key receivers reject replays and excessive counter gaps.
 
@@ -41,7 +41,7 @@ Public channels intentionally expose a durable public history key so any visitor
 
 ## Attachments
 
-Clients encrypt files before upload and store only opaque ciphertext in the server file store. The message envelope contains the encrypted file reference and key material needed by authorized clients. The server can observe blob sizes and access timing but not plaintext file contents.
+Clients encrypt files before upload and store only opaque ciphertext in the server file store. A new upload receives a random 256-bit bearer capability which is carried, together with the file key, only inside the encrypted message envelope. Physical SHA-256 identifiers remain private storage details and cannot download a new blob. Deleting an attachment revokes its capability; blobs with no remaining capabilities are collected. Uploads count against a per-account storage quota. A temporary, rate-limited legacy migration path accepts old hash references only from the owner of a private room during the migration grace period. The server can observe blob sizes and access timing but not plaintext file contents.
 
 ## Server visibility
 
@@ -50,8 +50,8 @@ The server observes accounts, public prekeys, room identifiers, membership, IP a
 ## Current limitations
 
 - No independent security audit.
-- No user-facing key verification or safety-number interface.
-- No key-transparency service. Until identity verification exists, the design does not protect against an actively malicious service substituting public identity bundles.
+- A basic per-device safety-number view is available from a peer profile, but there is no verified-contact state or key-transparency log yet.
+- No key-transparency service. TOFU does not protect first contact from an actively malicious service substituting public identity bundles.
 - No offline encrypted key backup or recovery flow.
 - No complete multi-device account key-management model.
 - This is not an implementation of MLS (RFC 9420), and it does not claim MLS security guarantees.

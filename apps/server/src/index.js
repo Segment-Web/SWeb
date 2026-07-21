@@ -11,10 +11,15 @@ import { createFiles } from './files.js';
 const config = loadConfig();
 const auth = await createAuth(config);
 const rooms = await createRooms(config, auth);
-const files = await createFiles(config, auth);
+const files = await createFiles(config, auth, rooms);
 let gateway;
 
 const server = createServer(async (req, res) => {
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'same-origin');
   if (req.url?.split('?')[0] === '/healthz') {
     const body = JSON.stringify({ ok: true, service: 'segment', connections: gateway?.stats().connections || 0 });
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });

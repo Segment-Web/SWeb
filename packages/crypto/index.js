@@ -43,7 +43,7 @@ async function importVerify(raw) {
 
 
 export async function generateIdentity() {
-  return subtle.generateKey(ECDH, true, ['deriveBits']);
+  return subtle.generateKey(ECDH, false, ['deriveBits']);
 }
 
 export async function exportPublic(publicKey) {
@@ -92,16 +92,20 @@ async function aesKey(raw) {
 }
 
 
-export async function seal(keyRaw, plaintext) {
+export async function seal(keyRaw, plaintext, additionalData = null) {
   const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
   const key = await aesKey(keyRaw);
-  const ct = new Uint8Array(await subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(plaintext)));
+  const params = { name: 'AES-GCM', iv };
+  if (additionalData) params.additionalData = typeof additionalData === 'string' ? enc.encode(additionalData) : additionalData;
+  const ct = new Uint8Array(await subtle.encrypt(params, key, enc.encode(plaintext)));
   return { iv: b2a(iv), ct: b2a(ct) };
 }
 
-export async function open(keyRaw, box) {
+export async function open(keyRaw, box, additionalData = null) {
   const key = await aesKey(keyRaw);
-  const pt = await subtle.decrypt({ name: 'AES-GCM', iv: a2b(box.iv) }, key, a2b(box.ct));
+  const params = { name: 'AES-GCM', iv: a2b(box.iv) };
+  if (additionalData) params.additionalData = typeof additionalData === 'string' ? enc.encode(additionalData) : additionalData;
+  const pt = await subtle.decrypt(params, key, a2b(box.ct));
   return dec.decode(pt);
 }
 
@@ -136,85 +140,59 @@ async function ratchetStep(chain) {
 
 
 
-export class Session {
-
-
-  static async establish(sharedSecret, initiator) {
-    const root = await hkdf(sharedSecret, 'segment-root');
-    const a2bChain = await hkdf(root, 'segment-a2b');
-    const b2aChain = await hkdf(root, 'segment-b2a');
-    const s = new Session();
-    s._send = initiator ? a2bChain : b2aChain;
-    s._recv = initiator ? b2aChain : a2bChain;
-    s._sendN = 0;
-    s._recvN = 0;
-    return s;
-  }
-
-
-  static async fromKeys(myPrivate, theirPublic, initiator) {
-    return Session.establish(await ecdh(myPrivate, theirPublic), initiator);
-  }
-
-  async encrypt(text) {
-    const { messageKey, nextChain } = await ratchetStep(this._send);
-    this._send = nextChain;
-    const box = await seal(messageKey, text);
-    return { n: this._sendN++, ...box };
-  }
-
-  async decrypt(msg) {
-
-    while (this._recvN < msg.n) {
-      this._recv = (await ratchetStep(this._recv)).nextChain;
-      this._recvN++;
-    }
-    const { messageKey, nextChain } = await ratchetStep(this._recv);
-    this._recv = nextChain;
-    this._recvN++;
-    return open(messageKey, msg);
-  }
-}
-
-
-//
-
-
+const senderContext = (context, n) => `${String(context?.roomId || '')}\u0000${Number(context?.epoch) || 0}\u0000${String(context?.senderId || '')}\u0000${n}`;
+const senderSignatureBytes = (context, n, iv, ct) => enc.encode(JSON.stringify([senderContext(context, n), iv, ct]));
 
 export class SenderKey {
-  static create() {
+  static async create() {
     const s = new SenderKey();
     s._chain = globalThis.crypto.getRandomValues(new Uint8Array(32));
     s._n = 0;
+    s._signature = await subtle.generateKey(SIGN, false, ['sign', 'verify']);
     return s;
   }
 
-
-  export() {
-    return { chain: b2a(this._chain), n: this._n };
+  async export() {
+    return { chain: b2a(this._chain), n: this._n, sigPub: await exportRaw(this._signature.publicKey) };
   }
 
-  async encrypt(text) {
+  async encrypt(text, context = {}) {
+    const n = this._n++;
     const { messageKey, nextChain } = await ratchetStep(this._chain);
     this._chain = nextChain;
-    const box = await seal(messageKey, text);
-    return { n: this._n++, ...box };
+    const aad = senderContext(context, n);
+    const box = await seal(messageKey, text, aad);
+    const sig = new Uint8Array(await subtle.sign(
+      { name: 'ECDSA', hash: 'SHA-256' }, this._signature.privateKey,
+      senderSignatureBytes(context, n, box.iv, box.ct),
+    ));
+    return { n, ...box, sig: b2a(sig) };
   }
 }
 
 export class SenderKeyView {
   static from(state) {
     if (!state || !Array.isArray(state.chain) || state.chain.length !== 32
-      || !Number.isSafeInteger(state.n) || state.n < 0) throw new Error('INVALID_SENDER_KEY');
+      || !Number.isSafeInteger(state.n) || state.n < 0
+      || !Array.isArray(state.sigPub) || state.sigPub.length < 32) throw new Error('INVALID_SENDER_KEY');
     const v = new SenderKeyView();
     v._chain = a2b(state.chain);
     v._n = state.n;
+    v._signature = null;
+    v._signatureRaw = [...state.sigPub];
     return v;
   }
 
-  async decrypt(msg) {
+  async decrypt(msg, context = {}) {
     if (!msg || !Number.isSafeInteger(msg.n) || msg.n < this._n) throw new Error('REPLAYED_SENDER_MESSAGE');
     if (msg.n - this._n > MAX_SKIP) throw new Error('SENDER_SKIP_LIMIT');
+    if (!Array.isArray(msg.sig)) throw new Error('MISSING_SENDER_SIGNATURE');
+    this._signature ||= await importVerify(this._signatureRaw);
+    const valid = await subtle.verify(
+      { name: 'ECDSA', hash: 'SHA-256' }, this._signature, a2b(msg.sig),
+      senderSignatureBytes(context, msg.n, msg.iv, msg.ct),
+    );
+    if (!valid) throw new Error('INVALID_SENDER_SIGNATURE');
     while (this._n < msg.n) {
       this._chain = (await ratchetStep(this._chain)).nextChain;
       this._n++;
@@ -222,7 +200,7 @@ export class SenderKeyView {
     const { messageKey, nextChain } = await ratchetStep(this._chain);
     this._chain = nextChain;
     this._n++;
-    return open(messageKey, msg);
+    return open(messageKey, msg, senderContext(context, msg.n));
   }
 }
 
@@ -233,12 +211,14 @@ export class SenderKeyView {
 
 
 const MAX_SKIP = 256;
+const MAX_SKIPPED_KEYS = 1000;
+const MAX_SKIPPED_AGE_MS = 5 * 60 * 1000;
 
 export class DoubleRatchet {
 
   static async initInitiator(sk, theirSignedPreKeyPub) {
     const r = new DoubleRatchet();
-    r.DHs = await subtle.generateKey(ECDH, true, ['deriveBits']);
+    r.DHs = await subtle.generateKey(ECDH, false, ['deriveBits']);
     r.DHr = theirSignedPreKeyPub;
     const [rk, cks] = await kdfRoot(sk, await ecdh(r.DHs.privateKey, r.DHr));
     r.RK = rk; r.CKs = cks; r.CKr = null;
@@ -261,18 +241,28 @@ export class DoubleRatchet {
     this.CKs = cks;
     const header = { dh: await exportRaw(this.DHs.publicKey), pn: this.PN, n: this.Ns };
     this.Ns++;
-    const box = await seal(mk, plaintext);
+    const box = await seal(mk, plaintext, JSON.stringify(header));
     return { header, iv: box.iv, ct: box.ct };
   }
 
   async decrypt(msg) {
+    const snapshot = {
+      RK: this.RK, CKs: this.CKs, CKr: this.CKr, DHs: this.DHs, DHr: this.DHr,
+      Ns: this.Ns, Nr: this.Nr, PN: this.PN, skipped: new Map(this.skipped),
+    };
+    try { return await this._decryptInternal(msg); }
+    catch (error) { Object.assign(this, snapshot); throw error; }
+  }
+
+  async _decryptInternal(msg) {
     const h = msg.header;
     const dhKey = h.dh.join(',');
     const skipKey = `${dhKey}|${h.n}`;
     if (this.skipped.has(skipKey)) {
-      const mk = this.skipped.get(skipKey);
+      const entry = this.skipped.get(skipKey);
       this.skipped.delete(skipKey);
-      return open(mk, msg);
+      if (!entry || Date.now() - entry.at > MAX_SKIPPED_AGE_MS) throw new Error('expired skipped message key');
+      return open(entry.mk, msg, JSON.stringify(h));
     }
     const curDhr = this.DHr ? (await exportRaw(this.DHr)).join(',') : null;
     if (curDhr !== dhKey) {
@@ -283,17 +273,20 @@ export class DoubleRatchet {
     const [ckr, mk] = await kdfChain(this.CKr);
     this.CKr = ckr;
     this.Nr++;
-    return open(mk, msg);
+    return open(mk, msg, JSON.stringify(h));
   }
 
   async _skip(until) {
     if (this.CKr == null) return;
     if (until - this.Nr > MAX_SKIP) throw new Error('too many skipped messages');
     const dhKey = (await exportRaw(this.DHr)).join(',');
+    const cutoff = Date.now() - MAX_SKIPPED_AGE_MS;
+    for (const [key, entry] of this.skipped) if (entry.at < cutoff) this.skipped.delete(key);
     while (this.Nr < until) {
       const [ckr, mk] = await kdfChain(this.CKr);
       this.CKr = ckr;
-      this.skipped.set(`${dhKey}|${this.Nr}`, mk);
+      this.skipped.set(`${dhKey}|${this.Nr}`, { mk, at: Date.now() });
+      while (this.skipped.size > MAX_SKIPPED_KEYS) this.skipped.delete(this.skipped.keys().next().value);
       this.Nr++;
     }
   }
@@ -304,7 +297,7 @@ export class DoubleRatchet {
     this.Nr = 0;
     this.DHr = await importPublic(h.dh);
     [this.RK, this.CKr] = await kdfRoot(this.RK, await ecdh(this.DHs.privateKey, this.DHr));
-    this.DHs = await subtle.generateKey(ECDH, true, ['deriveBits']);
+    this.DHs = await subtle.generateKey(ECDH, false, ['deriveBits']);
     [this.RK, this.CKs] = await kdfRoot(this.RK, await ecdh(this.DHs.privateKey, this.DHr));
   }
 }
@@ -318,17 +311,24 @@ export class DoubleRatchet {
 
 
 
+export async function createOneTimePreKeys(count = 8) {
+  const secret = [];
+  for (let i = 0; i < Math.max(0, Math.min(Number(count) || 0, 32)); i++) {
+    secret.push({ id: globalThis.crypto.randomUUID(), pair: await subtle.generateKey(ECDH, false, ['deriveBits']) });
+  }
+  const bundle = await Promise.all(secret.map(async (item) => ({ id: item.id, key: await exportRaw(item.pair.publicKey) })));
+  return { secret, bundle };
+}
+
 export async function createPreKeyBundle(oneTime = 8, kem = null) {
-  const idDh = await subtle.generateKey(ECDH, true, ['deriveBits']);
-  const idSign = await subtle.generateKey(SIGN, true, ['sign', 'verify']);
-  const spk = await subtle.generateKey(ECDH, true, ['deriveBits']);
+  const idDh = await subtle.generateKey(ECDH, false, ['deriveBits']);
+  const idSign = await subtle.generateKey(SIGN, false, ['sign', 'verify']);
+  const spk = await subtle.generateKey(ECDH, false, ['deriveBits']);
   const spkRaw = new Uint8Array(await subtle.exportKey('raw', spk.publicKey));
   const spkSig = new Uint8Array(await subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, idSign.privateKey, spkRaw));
 
-  const opks = [];
-  for (let i = 0; i < oneTime; i++) {
-    opks.push({ id: globalThis.crypto.randomUUID(), pair: await subtle.generateKey(ECDH, true, ['deriveBits']) });
-  }
+  const generated = await createOneTimePreKeys(oneTime);
+  const opks = generated.secret;
 
   const secret = { idDh, idSign, spk, opks };
   const bundle = {
@@ -336,7 +336,7 @@ export async function createPreKeyBundle(oneTime = 8, kem = null) {
     idSign: await exportRaw(idSign.publicKey),
     spk: b2a(spkRaw),
     spkSig: b2a(spkSig),
-    opks: await Promise.all(opks.map(async (o) => ({ id: o.id, key: await exportRaw(o.pair.publicKey) }))),
+    opks: generated.bundle,
   };
 
 

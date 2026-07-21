@@ -4,6 +4,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { MessageType, PROTOCOL_VERSION, isCipherFrame } from '@segment/protocol';
 
 const publicBundle = (bundle) => bundle && typeof bundle === 'object' ? {
+  deviceId: bundle.deviceId,
   idDh: bundle.idDh,
   idSign: bundle.idSign,
   spk: bundle.spk,
@@ -22,7 +23,10 @@ export function attachGateway(server, config, auth, rooms) {
   const clientIp = (request) => {
     if (config.trustProxy) {
       const forwarded = request.headers['x-forwarded-for'];
-      if (typeof forwarded === 'string') return forwarded.split(',')[0].trim();
+      if (typeof forwarded === 'string') {
+        const chain = forwarded.split(',').map((part) => part.trim()).filter(Boolean);
+        if (chain.length) return chain.at(-1);
+      }
     }
     return request.socket.remoteAddress || 'unknown';
   };
@@ -32,7 +36,7 @@ export function attachGateway(server, config, auth, rooms) {
     maxPayload: config.maxWsPayload,
     perMessageDeflate: false,
     verifyClient: async ({ origin, req }, done) => {
-      const originAllowed = !config.production || allowedOrigins.size === 0 || allowedOrigins.has(origin);
+      const originAllowed = !config.production || (allowedOrigins.size > 0 && allowedOrigins.has(origin));
       const ip = clientIp(req);
       const capacityAvailable = wss.clients.size < config.maxConnections
         && (ipCounts.get(ip) || 0) < config.maxConnectionsPerIp;
@@ -112,6 +116,11 @@ export function attachGateway(server, config, auth, rooms) {
       }
     }
   });
+  const offDeviceRemoved = auth.onDeviceRemoved?.(({ userId, deviceId }) => {
+    for (const [ws, client] of clients) {
+      if (client.userId === userId && client.bundle?.deviceId === deviceId) ws.close(1008, 'DEVICE_REVOKED');
+    }
+  });
 
   wss.on('connection', (ws, request) => {
     const ip = clientIp(request);
@@ -127,6 +136,7 @@ export function attachGateway(server, config, auth, rooms) {
       username: request.segmentUser.username,
       avatar: request.segmentUser.avatar || '',
       color: request.segmentUser.color,
+      queue: Promise.resolve(),
     };
     clients.set(ws, client);
     clientsById.set(client.id, { ws, client });
@@ -134,6 +144,8 @@ export function attachGateway(server, config, auth, rooms) {
     ws.on('pong', () => { client.isAlive = true; });
 
     ws.on('message', (raw) => {
+      client.queue = client.queue.then(async () => {
+      try {
       const now = Date.now();
       if (now - client.windowStartedAt >= 60000) {
         client.windowStartedAt = now;
@@ -141,7 +153,9 @@ export function attachGateway(server, config, auth, rooms) {
       }
       client.messagesInWindow += 1;
       if (client.messagesInWindow > config.messagesPerMinute) {
-        ws.close(1008, 'Rate limit exceeded');
+        // Transient overload, not a policy decision: close with "try again later"
+        // so the client backs off and reconnects instead of staying dead.
+        ws.close(1013, 'RATE_LIMIT');
         return;
       }
 
@@ -155,8 +169,13 @@ export function attachGateway(server, config, auth, rooms) {
           ws.close(1002, 'Protocol upgrade required');
           return;
         }
+        try {
+          client.bundle = await auth.pinDeviceBundle(client.userId, message.bundle?.deviceId, message.bundle);
+        } catch (error) {
+          ws.close(1008, ['DEVICE_LIMIT','DEVICE_IDENTITY_CHANGED'].includes(error.message) ? error.message : 'DEVICE_REJECTED');
+          return;
+        }
         client.joined = true;
-        client.bundle = message.bundle && typeof message.bundle === 'object' ? message.bundle : null;
         const members = [...clients.values()].filter((other) => other.joined && other !== client).map(publicOf);
         const roomEpochs = rooms.epochsFor?.(client.userId) || {};
         const historyRecoveryRooms = Object.keys(roomEpochs).filter((roomId) => {
@@ -176,7 +195,9 @@ export function attachGateway(server, config, auth, rooms) {
       if (!client.joined) return;
       if (message.type === MessageType.PreKeyRequest) {
         const target = clientById(message.to);
-        const opk = target?.bundle?.opks?.length ? target.bundle.opks.shift() : null;
+        const opk = target ? await auth.consumeDevicePreKey(client.userId, target.userId, target.bundle?.deviceId) : null;
+        if (opk && target?.bundle?.opks?.length) target.bundle.opks.shift();
+        if (opk && target) sendTo(target.id, { type: MessageType.PreKeyConsumed, opkId: opk.id });
         send(ws, { type: MessageType.PreKey, from: message.to, opk });
         return;
       }
@@ -200,9 +221,10 @@ export function attachGateway(server, config, auth, rooms) {
       }
       if (message.type === MessageType.HistoryKeyShare && typeof message.to === 'string' && message.box && typeof message.box === 'object'
         && rooms.exists(message.room) && validRoomEpoch(message.room, message.epoch) && rooms.canAccess(client.userId, message.room)) {
+        if (message.rotate === true && rooms.ownerId?.(message.room) !== client.userId) return;
         const target = clientById(message.to);
         if (target && rooms.canAccess(target.userId, message.room)) {
-          sendTo(message.to, { type: MessageType.HistoryKeyShare, from: client.id, room: message.room, epoch: message.epoch, box: message.box });
+          sendTo(message.to, { type: MessageType.HistoryKeyShare, from: client.id, room: message.room, epoch: message.epoch, rotate: message.rotate === true, box: message.box });
         }
         return;
       }
@@ -211,13 +233,17 @@ export function attachGateway(server, config, auth, rooms) {
         && rooms.canAccess(client.userId, message.room)
         && isCipherFrame(message, config.maxWsPayload)) {
         const eventId = typeof message.eventId === 'string' && message.eventId.length <= 96 ? message.eventId : '';
-        broadcastRoom(message.room, { type: MessageType.Cipher, from: client.id, room: message.room, epoch: message.epoch, eventId, n: message.n, iv: message.iv, ct: message.ct }, ws);
+        broadcastRoom(message.room, { type: MessageType.Cipher, from: client.id, room: message.room, epoch: message.epoch, eventId, n: message.n, iv: message.iv, ct: message.ct, sig: message.sig }, ws);
         if (eventId) send(ws, { type: MessageType.Ack, eventId });
         return;
       }
       if (message.type === MessageType.Typing && rooms.exists(message.room) && rooms.canAccess(client.userId, message.room)) {
         broadcastRoom(message.room, { type: MessageType.Typing, name: client.name, room: message.room }, ws);
       }
+      } catch (error) {
+        console.error(JSON.stringify({ level: 'error', event: 'gateway.message_failed', message: error.message }));
+      }
+      }).catch(() => {});
     });
 
     ws.on('close', () => {
@@ -246,6 +272,7 @@ export function attachGateway(server, config, auth, rooms) {
     stats: () => ({ connections: clients.size, joined: [...clients.values()].filter((client) => client.joined).length }),
     stop: () => {
       offMembership?.();
+      offDeviceRemoved?.();
       clearInterval(heartbeat);
       if (presenceTimer) clearTimeout(presenceTimer);
       for (const ws of wss.clients) ws.close(1001, 'Server restarting');
