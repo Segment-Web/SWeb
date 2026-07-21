@@ -48,6 +48,7 @@ export function applyAppearancePrefs(prefs = {}) {
   const selected = prefs.themeId === 'custom'
     ? (() => { try { return normalizeThemePack(prefs.customTheme); } catch { return null; } })()
     : THEME_PRESETS.find((theme) => theme.id === prefs.themeId);
+  root.dataset.theme = prefs.themeId === 'custom' ? 'custom' : (selected?.id || 'night');
   for (const [key, value] of Object.entries(selected?.tokens || {})) root.style.setProperty(THEME_TOKEN_MAP[key], value);
   root.classList.toggle('high-contrast', prefs.highContrast === true);
   const activeFeatures = new Set((prefs.installedMods || []).filter((mod) => mod.enabled).flatMap((mod) => mod.features || []));
