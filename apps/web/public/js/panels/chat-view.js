@@ -1,5 +1,5 @@
 import { renderFeed, renderMessage, renderSystem } from '../ui.js';
-import { esc } from '../util.js';
+import { esc, placeFloatingMenu } from '../util.js';
 
 let seq = 0;
 
@@ -203,9 +203,7 @@ export function chatViewPanel(client, chat) {
           ${mine && !message.deleted ? '<button class="ctx-item" data-act="edit">Редактировать</button>' : ''}
           ${mine && !message.deleted ? '<button class="ctx-item danger" data-act="delete">Удалить</button>' : ''}`;
         msgMenu.classList.remove('hidden');
-        const rp = roomEl.getBoundingClientRect();
-        msgMenu.style.left = `${Math.min(Math.max(8, x - rp.left), Math.max(8, rp.width - 220))}px`;
-        msgMenu.style.top = `${Math.min(Math.max(8, y - rp.top), Math.max(8, rp.height - 230))}px`;
+        placeFloatingMenu(msgMenu, x, y, roomEl);
         for (const btn of msgMenu.querySelectorAll('.react-btn')) {
           btn.onclick = () => { client.toggleReaction(chat.id, mid, btn.dataset.emoji); hideMenu(); };
         }

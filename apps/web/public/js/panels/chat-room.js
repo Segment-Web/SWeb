@@ -1,5 +1,5 @@
 import { renderFeed, renderMessage, renderSystem, showTyping, scrollFeedToBottom } from '../ui.js';
-import { esc, attachLabel, fmtSize } from '../util.js';
+import { esc, attachLabel, fmtSize, placeFloatingMenu } from '../util.js';
 import { ICONS } from '../icons.js';
 import { chatViewPanel } from './chat-view.js';
 import { openRoomSettings } from '../room-surfaces.js';
@@ -42,25 +42,6 @@ const SLASH = [
   { cmd: 'unflip', desc: 'вернуть стол', insert: '┬─┬ ノ( ゜-゜ノ)' },
   { cmd: 'lenny', desc: 'Lenny', insert: '( ͡° ͜ʖ ͡°)' },
 ];
-
-/**
-  *
-  *
- */
-function placeFloating(el, x, y, bounds) {
-  const b = bounds.getBoundingClientRect();
-  el.style.left = '0px';
-  el.style.top = '0px';
-  const w = el.offsetWidth;
-  const h = el.offsetHeight;
-  const pad = 8;
-  let left = x - b.left;
-  let top = y - b.top;
-  if (left + w > b.width - pad) left = Math.max(pad, (x - b.left) - w);
-  if (top + h > b.height - pad) top = Math.max(pad, (y - b.top) - h);
-  el.style.left = `${Math.max(pad, Math.min(left, b.width - w - pad))}px`;
-  el.style.top = `${Math.max(pad, Math.min(top, b.height - h - pad))}px`;
-}
 
 function stableNumber(seed, min, max) {
   let hash = 0;
@@ -1078,13 +1059,13 @@ export function chatRoomPanel(client) {
           </div>`;
         hideMenus();
         msgMenu.classList.remove('hidden');
-        placeFloating(msgMenu, x, y, roomEl);
+        placeFloatingMenu(msgMenu, x, y, roomEl);
         const picker = msgMenu.querySelector('.react-picker');
         for (const btn of msgMenu.querySelectorAll('.react-btn')) {
           btn.onclick = () => {
             if (btn.dataset.more != null) {
               picker.classList.toggle('hidden');
-              placeFloating(msgMenu, x, y, roomEl);
+              placeFloatingMenu(msgMenu, x, y, roomEl);
               return;
             }
             client.toggleReaction(currentChat.id, id, btn.dataset.emoji);
@@ -1545,7 +1526,7 @@ export function chatRoomPanel(client) {
         emojiMenu.classList.toggle('hidden', !wasHidden);
         if (wasHidden) {
           const r = emojiBtn.getBoundingClientRect();
-          placeFloating(emojiMenu, r.left, r.top, roomEl);
+          placeFloatingMenu(emojiMenu, r.left, r.top, roomEl);
         }
         for (const btn of emojiMenu.querySelectorAll('button')) {
           btn.onclick = () => {

@@ -6,7 +6,7 @@
 import { renderChatList } from '../ui.js';
 import { ICONS } from '../icons.js';
 import { chatViewPanel } from './chat-view.js';
-import { esc } from '../util.js';
+import { esc, placeFloatingMenu } from '../util.js';
 import { openRoomCreator, openRoomSettings } from '../room-surfaces.js';
 
 export function chatListPanel(client) {
@@ -131,10 +131,7 @@ export function chatListPanel(client) {
           : `<button class="ctx-item ${r.danger ? 'danger' : ''}" data-act="${r.act}"${r.disabled ? ' disabled' : ''}>${r.icon}<span>${r.label}</span></button>`)).join('');
         hideAll();
         ctx.classList.remove('hidden');
-        const cw = ctx.offsetWidth || 180;
-        const ch = ctx.offsetHeight || 120;
-        ctx.style.left = `${Math.max(6, Math.min(x, window.innerWidth - cw - 6))}px`;
-        ctx.style.top = `${Math.max(6, Math.min(y, window.innerHeight - ch - 6))}px`;
+        placeFloatingMenu(ctx, x, y);
 
         for (const btn of ctx.querySelectorAll('.ctx-item')) {
           btn.onclick = () => {
