@@ -212,7 +212,11 @@ export class Workspace {
     element.setAttribute('role', 'dialog');
     element.setAttribute('aria-modal', 'true');
     element.innerHTML = `
-      <button class="workspace-surface-close" type="button" aria-label="Закрыть"></button>
+      <div class="workspace-surface-bars">
+        <button class="workspace-surface-back" type="button" aria-label="Назад"><i></i></button>
+        <button class="workspace-surface-move" type="button" aria-label="Переместить блок"><i></i></button>
+        <button class="workspace-surface-close" type="button" aria-label="Закрыть"><i></i></button>
+      </div>
       <div class="workspace-surface-body"></div>
       <div class="workspace-surface-resizer" aria-hidden="true"></div>`;
     document.body.appendChild(element);
@@ -248,6 +252,15 @@ export class Workspace {
     width = clamp(this._resizePanelWidth(sourceId, width), effectiveMinWidth(), widthLimit());
     place();
 
+    const surfaceBody = element.querySelector('.workspace-surface-body');
+    element.querySelector('.workspace-surface-back').addEventListener('click', () => {
+      const event = new CustomEvent('surfaceback', { cancelable: true });
+      surfaceBody.dispatchEvent(event);
+      if (!event.defaultPrevented) this.closeSurface(id);
+    });
+    element.querySelector('.workspace-surface-move').addEventListener('pointerdown', (event) => {
+      this._drag(event, sourceId, this.isDocked(sourceId));
+    });
     element.querySelector('.workspace-surface-close').addEventListener('click', () => this.closeSurface(id));
     element.querySelector('.workspace-surface-resizer').addEventListener('pointerdown', (event) => {
       if (event.button !== 0) return;

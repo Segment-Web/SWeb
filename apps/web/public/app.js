@@ -42,9 +42,19 @@ window.Segment = segmentApi;
 // so right-click behaves consistently across messages, media and empty areas.
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
+const transientUiSelector = '.ctx-menu,.msg-menu,.send-menu,.emoji-menu,.attach-menu,.chat-preview,.fab-menu';
+const dismissTransientUi = () => {
+  document.querySelectorAll(transientUiSelector).forEach((element) => element.classList.add('hidden'));
+};
+document.addEventListener('pointerdown', (event) => {
+  if (!event.target.closest?.(transientUiSelector)) dismissTransientUi();
+}, true);
+segmentApi.dismissTransientUi = dismissTransientUi;
+
 // Keep an in-app navigation timeline for chats and overlay surfaces. Mouse
 // XButton1/XButton2 use this timeline instead of leaving the web application.
 const navigationHistory = (() => {
+  const MAX_BACK_STEPS = 5;
   const entries = [{ kind: 'room', roomId: null }];
   let index = 0;
   let applying = false;
@@ -56,7 +66,7 @@ const navigationHistory = (() => {
     if (applying || sameEntry(entries[index], entry)) return;
     entries.splice(index + 1);
     entries.push(entry);
-    if (entries.length > 100) entries.shift();
+    if (entries.length > MAX_BACK_STEPS + 1) entries.shift();
     index = entries.length - 1;
   };
   const apply = (entry) => {
@@ -72,11 +82,26 @@ const navigationHistory = (() => {
     }
     return true;
   };
-  const back = () => index > 0 && apply(entries[--index]);
+  const back = () => {
+    dismissTransientUi();
+    if (index > 0) return apply(entries[--index]);
+    if (!client.currentRoom && !workspace?._surface) return false;
+    applying = true;
+    try {
+      workspace?.closeSurface();
+      client.closeRoom();
+      entries.splice(0, entries.length, { kind: 'room', roomId: null });
+      index = 0;
+    } finally {
+      applying = false;
+    }
+    return true;
+  };
   const forward = () => index < entries.length - 1 && apply(entries[++index]);
 
   const originalOpenRoom = client.openRoom.bind(client);
   client.openRoom = (roomId) => {
+    dismissTransientUi();
     const before = client.currentRoom;
     const result = originalOpenRoom(roomId);
     if (client.currentRoom !== before) record({ kind: 'room', roomId: client.currentRoom || null });

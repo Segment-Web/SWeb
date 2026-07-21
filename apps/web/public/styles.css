@@ -2356,20 +2356,30 @@ body.media-open { overflow: hidden; }
 }
 .workspace-surface.is-open { opacity: 1; transform: translateX(0) scale(1); clip-path: inset(0 round var(--radius-md)); }
 .workspace-surface.is-closing { pointer-events: none; }
-.workspace-surface-close {
-  position: relative; flex: 0 0 24px; width: 100%; padding: 0; border: 0; border-radius: 0;
-  background: transparent; cursor: pointer;
+.workspace-surface-bars { position:relative; flex:0 0 28px; z-index:4; }
+.workspace-surface-bars button {
+  position:absolute; top:0; width:92px; height:28px; padding:0; border:0; outline:0;
+  color:inherit; background:transparent; cursor:pointer; touch-action:none;
 }
-.workspace-surface-close::after {
-  content: ''; position: absolute; left: 50%; top: 10px; width: 68px; height: 4px;
-  border-radius: 999px; background: color-mix(in srgb, var(--danger) 86%, #ff8b84);
-  box-shadow: 0 2px 9px color-mix(in srgb, var(--danger) 32%, transparent);
-  transform: translateX(-50%); transition: width .18s var(--ease-out), background .14s, transform .12s;
+.workspace-surface-bars button i {
+  position:absolute; top:10px; left:50%; width:48px; height:4px; border-radius:999px;
+  background:var(--grip); transform:translateX(-50%);
+  transition:width .17s var(--ease-out),background .14s,transform .12s,opacity .14s;
 }
-.workspace-surface-close:hover::after,
-.workspace-surface-close:focus-visible::after { width:88px; background:var(--danger); }
-.workspace-surface-close:focus-visible { outline: none; }
-.workspace-surface-close:active::after { transform: translateX(-50%) scaleX(.94); }
+.workspace-surface-back { left:0; display:none; }
+.workspace-surface.has-back .workspace-surface-back { display:block; }
+.workspace-surface-back i { width:38px!important; background:color-mix(in srgb,var(--accent) 78%,var(--grip))!important; }
+.workspace-surface-back:hover i { width:46px!important; background:var(--accent)!important; }
+.workspace-surface-move { left:50%; cursor:grab!important; transform:translateX(-50%); }
+.workspace-surface-move:active { cursor:grabbing!important; }
+.workspace-surface-move:hover i { width:60px; background:var(--muted); }
+.workspace-surface-close { right:0; }
+.workspace-surface-close i {
+  width:40px!important; background:color-mix(in srgb,var(--danger) 86%,#ff8b84)!important;
+  box-shadow:0 2px 9px color-mix(in srgb,var(--danger) 28%,transparent);
+}
+.workspace-surface-close:hover i { width:48px!important; background:var(--danger)!important; }
+.workspace-surface-bars button:active i { transform:translateX(-50%) scaleX(.94); }
 .workspace-surface-body { flex: 1; min-height: 0; padding: 18px; overflow: auto; }
 .workspace-surface-resizer {
   position: absolute; inset-block: 0; z-index: 2; width: 10px; cursor: col-resize;
@@ -2619,6 +2629,8 @@ body.is-resizing-surface { cursor: col-resize; user-select: none; }
 .settings-cover-editor > * { position:relative; z-index:1; }
 .settings-cover-editor > span { margin-right:auto; color:#fff; font-weight:600; text-shadow:0 1px 5px rgba(0,0,0,.5); }
 .settings-cover-editor > button { padding:9px 11px; border:0; border-radius:9px; color:#fff; background:rgba(16,25,34,.72); cursor:pointer; }
+.settings-banner-action { margin-right:auto; color:#fff; background:rgba(14,24,34,.82); box-shadow:0 5px 18px rgba(0,0,0,.2); }
+.settings-banner-action:hover { background:color-mix(in srgb,var(--accent) 72%,rgba(14,24,34,.82)); }
 .settings-badge-grid { display:grid; gap:7px; }
 .settings-badge-grid label > input { position:absolute; opacity:0; pointer-events:none; }
 .settings-badge-grid label > span { display:grid; grid-template-columns:34px 1fr; column-gap:9px; padding:10px; border:1px solid transparent; border-radius:11px; background:var(--surface2); cursor:pointer; }
@@ -3135,4 +3147,21 @@ body {
 @container panel (max-width: 310px) {
   .room-head { min-height: 66px; }
   .selection-bar { min-height: 56px; padding-inline: 8px; }
+}
+
+/* Keep the profile summary controls anchored while its panel is resized. */
+.profile {
+  display:block;
+  min-height:66px;
+  padding:12px 14px!important;
+}
+.profile-avatar { position:absolute; top:12px; left:14px; }
+.profile-info { min-width:0; margin:1px 48px 0 54px; }
+.profile-settings { position:absolute; top:16px; right:14px; }
+@container profile (max-width: 235px) {
+  .profile { padding:12px 14px!important; }
+  .profile-info { display:none; }
+}
+@container profile (max-width: 175px) {
+  .profile-settings { display:none; }
 }

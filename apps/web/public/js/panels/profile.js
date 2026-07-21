@@ -201,7 +201,7 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
     root.innerHTML = `<div class="profile-card-view ${own ? 'is-own' : ''}"><div class="profile-card-inner">
       <div class="profile-card-cover" style="${cover ? `background-image:linear-gradient(180deg,rgba(8,12,18,.08),rgba(8,12,18,.22)),url('${esc(cover)}')` : `--profile-color:${safeColor(user.color)}`}">
         <button class="profile-cover-code" type="button" aria-label="Ссылка профиля">${ICONS.qr}</button>
-        <button class="profile-cover-menu" type="button" aria-label="${own ? 'Изменить обложку' : 'Меню'}">${own ? ICONS.image : ICONS.more}</button>
+        <button class="profile-cover-menu" type="button" aria-label="${own ? 'Изменить баннер' : 'Меню'}">${own ? ICONS.image : ICONS.more}</button>
       </div>
       <div class="profile-card-identity ${user.status && !own ? 'has-status' : ''}">
         ${pinnedBadge ? `<button class="profile-chip profile-achievements" type="button"><span>${pinnedBadge.icon}</span><b>${esc(pinnedBadge.title)}</b></button>` : ''}
@@ -238,8 +238,8 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
     });
     coverInput?.addEventListener('change',async () => {
       const file=coverInput.files?.[0]; if(!file)return;
-      try { applyProfileUpdate(await profileApi({profile:{cover:await resizeProfileImage(file,{width:1200,height:400,quality:.82})}})); window.Segment?.toast?.('Обложка обновлена'); }
-      catch { window.Segment?.toast?.('Не удалось обновить обложку'); }
+      try { applyProfileUpdate(await profileApi({profile:{cover:await resizeProfileImage(file,{width:1200,height:400,quality:.82})}})); window.Segment?.toast?.('Баннер обновлён'); }
+      catch { window.Segment?.toast?.('Не удалось обновить баннер'); }
     });
     root.querySelector('.profile-cover-menu').onclick = own ? () => coverInput?.click() : () => {
       const popover = root.querySelector('.profile-detail-popover');

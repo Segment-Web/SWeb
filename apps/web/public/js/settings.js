@@ -91,8 +91,18 @@ const openDevicePayload = async (payload, secretText) => {
 
 export function mountSettings(root, close, client, renderIdentity, initialPage = 'home') {
   let page = initialPage;
+  let leavePage = null;
+  const surface = root.closest('.workspace-surface');
+  const setBackVisible = (visible) => surface?.classList.toggle('has-back', visible);
+  const flushPage = async () => {
+    const flush = leavePage;
+    leavePage = null;
+    if (flush) await flush();
+  };
   const prefs = () => window.Segment?.uiPrefs || {};
   const home = () => {
+    setBackVisible(false);
+    leavePage = null;
     const self = client.self;
     root.innerHTML = `<div class="settings-shell">
       <div class="settings-hero"><div class="settings-hero-avatar">${safeProfileImage(self.avatar) ? `<img src="${escapeHtml(self.avatar)}" alt="">` : escapeHtml(self.name?.[0]?.toUpperCase() || 'S')}</div><div><h2>${escapeHtml(self.name)}</h2><p>@${escapeHtml(self.username || '')}</p></div></div>
@@ -104,37 +114,42 @@ export function mountSettings(root, close, client, renderIdentity, initialPage =
     root.querySelector('[data-action="logout"]').onclick = async () => { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {}); client.logout(); location.reload(); };
   };
   const shell = (title, subtitle, body) => {
-    root.innerHTML = `<div class="settings-shell settings-page"><header><button data-back aria-label="Назад">‹</button><div><h2>${title}</h2>${subtitle ? `<p>${subtitle}</p>` : ''}</div></header>${body}</div>`;
-    root.querySelector('[data-back]').onclick = () => show('home');
+    setBackVisible(true);
+    root.innerHTML = `<div class="settings-shell settings-page"><header><div><h2>${title}</h2>${subtitle ? `<p>${subtitle}</p>` : ''}</div></header>${body}</div>`;
   };
   const profile = () => {
     const self = client.self; const links = [...(self.links || []), {}, {}, {}].slice(0, 3); const meta = self.profile || {};
     const safeAvatar = safeProfileImage(self.avatar); const safeCover = safeProfileImage(meta.cover);
     const rooms = client.chats.filter((chat) => chat.type !== 'saved' && !chat.local);
     shell('Профиль', 'Эти данные будут видны другим пользователям', `<form class="settings-stack" data-profile>
-      <div class="settings-cover-editor" style="${safeCover ? `background-image:url('${safeCover}')` : ''}"><span>Обложка профиля</span><label class="settings-file">Выбрать обложку<input data-cover-file type="file" accept="image/*"></label>${safeCover ? '<button type="button" data-cover-remove>Убрать</button>' : ''}</div>
+      <div class="settings-cover-editor" style="${safeCover ? `background-image:url('${safeCover}')` : ''}"><label class="settings-file settings-banner-action">Выбрать баннер<input data-cover-file type="file" accept="image/*"></label>${safeCover ? '<button type="button" data-cover-remove>Убрать</button>' : ''}</div>
       <div class="settings-avatar-editor"><div class="settings-avatar-preview">${safeAvatar ? `<img src="${safeAvatar}" alt="">` : escapeHtml(self.name?.[0] || 'S')}</div><label class="settings-file">Изменить фото<input type="file" accept="image/*"></label></div>
-      ${field('Имя','name',self.name,'maxlength="40"')}${field('Username','username',self.username,'maxlength="24"')}${field('О себе','bio',self.bio,'maxlength="160"')}${field('Статус','status',self.status,'maxlength="80"')}
+      ${field('Имя','name',self.name,'maxlength="40"')}${field('Username','username',self.username,'maxlength="24"')}${field('О себе','bio',self.bio,'maxlength="160"')}
       <div class="settings-card"><b>Закреплённое сообщество</b><p>В профиле будет показано одно сообщество, участником которого вы являетесь.</p><select name="pinnedCommunity"><option value="">Не показывать</option>${rooms.map((chat) => `<option value="${escapeHtml(chat.id)}" ${meta.pinnedCommunity?.id === chat.id ? 'selected' : ''}>${escapeHtml(chat.icon || '💬')} ${escapeHtml(chat.name)}</option>`).join('')}</select></div>
       <div class="settings-card"><b>Закреплённое достижение</b><p>Выберите одно достижение, которое будет показано в профиле.</p><div class="settings-badge-grid">${Object.entries(PROFILE_BADGES).map(([id,badge]) => `<label><input type="radio" name="badge" value="${id}" ${(meta.pinnedBadges || [])[0] === id ? 'checked' : ''}><span><i>${badge.icon}</i><b>${badge.title}</b><small>${badge.text}</small></span></label>`).join('')}</div></div>
       <div class="settings-card"><b>Ссылки</b>${links.map((link, index) => `<div class="settings-link-row"><input name="linkLabel${index}" placeholder="Название" value="${escapeHtml(link.label)}"><input name="linkUrl${index}" placeholder="https://" value="${escapeHtml(link.url)}"></div>`).join('')}</div>
       <div class="settings-card settings-integrations"><b>Интеграции активности</b><div><span>Spotify</span><small>Подключение появится после настройки OAuth</small><button type="button" disabled>Скоро</button></div><div><span>Steam</span><small>Игровая активность будет показываться здесь</small><button type="button" disabled>Скоро</button></div></div>
-      <div class="settings-card"><b>Цвет профиля</b><div class="settings-colors">${PALETTE.map((color) => `<button type="button" class="settings-color${color === self.color ? ' active' : ''}" data-color="${color}" style="background:${color}"></button>`).join('')}</div></div>
-      <button class="settings-primary" type="submit">Сохранить</button></form>`);
-    const form = root.querySelector('[data-profile]'); let avatar = safeAvatar; let cover = safeCover; let color = self.color;
-    form.querySelector('.settings-avatar-editor input[type=file]').onchange = async (event) => { try { avatar = await resizeAvatar(event.target.files[0]); form.querySelector('.settings-avatar-preview').innerHTML = `<img src="${avatar}" alt="">`; } catch { toast('Не удалось обработать фото'); } };
-    form.querySelector('[data-cover-file]').onchange = async (event) => { try { cover = await resizeCover(event.target.files[0]); const editor=form.querySelector('.settings-cover-editor'); editor.style.backgroundImage=`url('${cover}')`; } catch { toast('Не удалось обработать обложку'); } };
-    form.querySelector('[data-cover-remove]')?.addEventListener('click',()=>{cover='';form.querySelector('.settings-cover-editor').style.backgroundImage='';});
-    form.querySelectorAll('[data-color]').forEach((button) => { button.onclick = () => { color = button.dataset.color; form.querySelectorAll('[data-color]').forEach((item) => item.classList.toggle('active', item === button)); }; });
-    form.onsubmit = async (event) => { event.preventDefault(); const data = new FormData(form); const links = [0,1,2].map((i) => ({ label: data.get(`linkLabel${i}`), url: data.get(`linkUrl${i}`) })).filter((item) => item.url.trim());
-      try { const result = await api('/api/auth/profile', { method:'PATCH', body:JSON.stringify({ name:data.get('name'), username:data.get('username'), bio:data.get('bio'), status:data.get('status'), avatar, color, links, profile:{cover,pinnedBadges:data.getAll('badge'),pinnedCommunityId:data.get('pinnedCommunity')} }) }); client.self = { ...client.self, ...result.user }; client.storage.setName(result.user.name); client.storage.setUsername?.(result.user.username); client.storage.setAvatar?.(result.user.avatar); client.storage.setColor(result.user.color); client._emit('identity', { name: result.user.name, user: result.user }); renderIdentity(); toast('Профиль сохранён'); show('home'); } catch (error) { toast(error.message === 'USERNAME_TAKEN' ? 'Username уже занят' : 'Не удалось сохранить профиль'); }
+      <div class="settings-card"><b>Цвет профиля</b><div class="settings-colors">${PALETTE.map((color) => `<button type="button" class="settings-color${color === self.color ? ' active' : ''}" data-color="${color}" style="background:${color}"></button>`).join('')}</div></div></form>`);
+    const form = root.querySelector('[data-profile]'); let avatar = safeAvatar; let cover = safeCover; let color = self.color; let dirty = false;
+    form.querySelectorAll('input,select').forEach((control) => { control.addEventListener('input', () => { dirty = true; }); control.addEventListener('change', () => { dirty = true; }); });
+    form.querySelector('.settings-avatar-editor input[type=file]').onchange = async (event) => { try { avatar = await resizeAvatar(event.target.files[0]); dirty = true; form.querySelector('.settings-avatar-preview').innerHTML = `<img src="${avatar}" alt="">`; } catch { toast('Не удалось обработать фото'); } };
+    form.querySelector('[data-cover-file]').onchange = async (event) => { try { cover = await resizeCover(event.target.files[0]); dirty = true; const editor=form.querySelector('.settings-cover-editor'); editor.style.backgroundImage=`url('${cover}')`; } catch { toast('Не удалось обработать баннер'); } };
+    form.querySelector('[data-cover-remove]')?.addEventListener('click',()=>{cover='';dirty=true;form.querySelector('.settings-cover-editor').style.backgroundImage='';});
+    form.querySelectorAll('[data-color]').forEach((button) => { button.onclick = () => { color = button.dataset.color; dirty = true; form.querySelectorAll('[data-color]').forEach((item) => item.classList.toggle('active', item === button)); }; });
+    form.onsubmit = (event) => { event.preventDefault(); void show('home'); };
+    leavePage = async () => {
+      if (!dirty) return;
+      const data = new FormData(form); const links = [0,1,2].map((i) => ({ label: data.get(`linkLabel${i}`), url: data.get(`linkUrl${i}`) })).filter((item) => item.url.trim());
+      try { const result = await api('/api/auth/profile', { method:'PATCH', body:JSON.stringify({ name:data.get('name'), username:data.get('username'), bio:data.get('bio'), avatar, color, links, profile:{cover,pinnedBadges:data.getAll('badge'),pinnedCommunityId:data.get('pinnedCommunity')} }) }); client.self = { ...client.self, ...result.user }; client.storage.setName(result.user.name); client.storage.setUsername?.(result.user.username); client.storage.setAvatar?.(result.user.avatar); client.storage.setColor(result.user.color); client._emit('identity', { name: result.user.name, user: result.user }); renderIdentity(); toast('Изменения сохранены'); } catch (error) { toast(error.message === 'USERNAME_TAKEN' ? 'Username уже занят' : 'Не удалось сохранить профиль'); }
     };
   };
   const privacy = () => {
     const value = client.self.privacy || {}; const options = '<option value="everyone">Все</option><option value="members">Общие чаты</option><option value="nobody">Никто</option>';
-    shell('Конфиденциальность', 'Управляйте видимостью данных профиля', `<form class="settings-stack" data-privacy>${[['avatar','Фото профиля'],['bio','О себе'],['status','Статус'],['links','Ссылки']].map(([key,label]) => `<label class="settings-select-row"><span>${label}</span><select name="${key}">${options}</select></label>`).join('')}<div class="settings-note">Ваши имя и username всегда видны — по ним другие пользователи могут найти профиль.</div><button class="settings-primary">Сохранить</button></form>`);
-    const form = root.querySelector('[data-privacy]'); Object.entries(value).forEach(([key, val]) => { if (form.elements[key]) form.elements[key].value = val; });
-    form.onsubmit = async (event) => { event.preventDefault(); const data = new FormData(form); try { const result = await api('/api/auth/profile',{method:'PATCH',body:JSON.stringify({privacy:Object.fromEntries(['avatar','bio','status','links'].map((key)=>[key,data.get(key)]))})}); client.self={...client.self,...result.user}; toast('Настройки сохранены'); } catch { toast('Не удалось сохранить настройки'); } };
+    shell('Конфиденциальность', 'Управляйте видимостью данных профиля', `<form class="settings-stack" data-privacy>${[['avatar','Фото профиля'],['bio','О себе'],['links','Ссылки']].map(([key,label]) => `<label class="settings-select-row"><span>${label}</span><select name="${key}">${options}</select></label>`).join('')}<div class="settings-note">Ваши имя и username всегда видны — по ним другие пользователи могут найти профиль.</div></form>`);
+    const form = root.querySelector('[data-privacy]'); let dirty = false; Object.entries(value).forEach(([key, val]) => { if (form.elements[key]) form.elements[key].value = val; });
+    form.querySelectorAll('select').forEach((select) => { select.onchange = () => { dirty = true; }; });
+    form.onsubmit = (event) => { event.preventDefault(); void show('home'); };
+    leavePage = async () => { if (!dirty) return; const data = new FormData(form); try { const result = await api('/api/auth/profile',{method:'PATCH',body:JSON.stringify({privacy:Object.fromEntries(['avatar','bio','links'].map((key)=>[key,data.get(key)]))})}); client.self={...client.self,...result.user}; toast('Изменения сохранены'); } catch { toast('Не удалось сохранить настройки'); } };
   };
   const appearance = () => {
     const p = prefs(); shell('Оформление', 'Встроенные темы и собственная палитра', `<div class="settings-stack"><div class="theme-grid">${THEME_PRESETS.map((theme) => `<button class="theme-card${(p.themeId || 'night') === theme.id ? ' active' : ''}" data-theme="${theme.id}"><span class="theme-preview" style="--preview-bg:${theme.tokens.bg || '#0b1320'};--preview-surface:${theme.tokens.surface || '#172433'};--preview-accent:${theme.tokens.accent || '#58a8e8'}"></span><b>${theme.name}</b><small>${theme.description}</small></button>`).join('')}</div><div class="settings-card"><b>Своя тема</b><p>Импортируйте безопасный JSON-файл палитры без скриптов.</p><textarea data-theme-json rows="6" spellcheck="false" placeholder='{"schema":1,"name":"My theme","tokens":{...}}'></textarea><div class="settings-inline"><button class="settings-secondary" data-import-theme>Импортировать</button><button class="settings-secondary" data-export-theme>Экспортировать</button></div></div>${toggle('reduceMotion','Меньше анимаций',!!p.reduceMotion)}<label class="settings-range-row"><span>Масштаб текста <b data-scale-value>${Math.round((p.scale || 1)*100)}%</b></span><input data-scale type="range" min="0.85" max="1.2" step="0.05" value="${p.scale || 1}"></label></div>`);
@@ -160,7 +175,9 @@ export function mountSettings(root, close, client, renderIdentity, initialPage =
   const language = () => { const p=prefs(); shell('Язык и доступность','Параметры чтения интерфейса',`<div class="settings-stack"><label class="settings-select-row"><span>Язык</span><select disabled><option>Русский</option></select></label>${toggle('highContrast','Повышенный контраст',!!p.highContrast)}${toggle('reduceMotion','Меньше анимаций',!!p.reduceMotion)}</div>`);root.querySelectorAll('input').forEach((input)=>input.onchange=()=>savePrefs({[input.name]:input.checked})); };
   const mods = () => { const installed=prefs().installedMods||[]; shell('Модификации','Только декларативные изменения интерфейса',`<div class="settings-stack"><div class="settings-note">Модификации Segment не запускают JavaScript и не получают доступ к сообщениям. Поддерживаются только заранее разрешённые визуальные функции.</div><div data-mod-list>${installed.map((mod)=>`<div class="mod-card"><span><b>${escapeHtml(mod.name)}</b><small>v${escapeHtml(mod.version)} · ${(mod.features||[]).map((f)=>FEATURES[f]).join(', ')}</small></span><label><input type="checkbox" data-mod="${escapeHtml(mod.id)}" ${mod.enabled?'checked':''}></label><button data-remove="${escapeHtml(mod.id)}">×</button></div>`).join('')||'<div class="settings-empty">Модификаций пока нет</div>'}</div><div class="settings-card"><b>Установить манифест</b><textarea data-mod-json rows="6" spellcheck="false" placeholder='{"schema":1,"type":"declarative","id":"compact","name":"Compact","version":"1.0.0","features":["compact-bubbles"]}'></textarea><button class="settings-primary" data-install-mod>Установить</button></div></div>`);root.querySelectorAll('[data-mod]').forEach((input)=>input.onchange=()=>{savePrefs({installedMods:installed.map((mod)=>mod.id===input.dataset.mod?{...mod,enabled:input.checked}:mod)});});root.querySelectorAll('[data-remove]').forEach((button)=>button.onclick=()=>{savePrefs({installedMods:installed.filter((mod)=>mod.id!==button.dataset.remove)});mods();});root.querySelector('[data-install-mod]').onclick=()=>{try{const mod=normalizeMod(JSON.parse(root.querySelector('[data-mod-json]').value));savePrefs({installedMods:[...installed.filter((item)=>item.id!==mod.id),mod]});toast('Модификация установлена');mods();}catch{toast('Манифест не поддерживается');}}; };
   const pages={home,profile,privacy,appearance,chats,devices,storage,language,mods};
-  const show=(next)=>{page=next;pages[page]();};
-  show(page);
-  return () => {};
+  const show=async(next)=>{if(root.firstElementChild&&next===page)return;await flushPage();page=next;pages[page]();};
+  const onSurfaceBack=(event)=>{event.preventDefault();void show('home');};
+  root.addEventListener('surfaceback',onSurfaceBack);
+  pages[page]();
+  return () => { root.removeEventListener('surfaceback',onSurfaceBack); setBackVisible(false); void flushPage(); };
 }
