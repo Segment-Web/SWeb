@@ -84,6 +84,21 @@ export function chatViewPanel(client, chat) {
       const emojiBtn = q('emoji');
       const fileInput = q('file');
       let replyTo = null;
+      const drafts = client.storage.getDrafts?.() || {};
+      let draftSaveTimer = null;
+      const saveDraft = () => {
+        const text = input.value;
+        if (!text && !replyTo) delete drafts[chat.id];
+        else drafts[chat.id] = { text, replyTo, updatedAt: Date.now() };
+        clearTimeout(draftSaveTimer);
+        draftSaveTimer = setTimeout(() => {
+          client.storage.setDrafts?.(drafts);
+          client._emit('chats');
+        }, 120);
+      };
+      const storedDraft = drafts[chat.id];
+      input.value = typeof storedDraft === 'string' ? storedDraft : (storedDraft?.text || '');
+      replyTo = typeof storedDraft === 'object' ? (storedDraft.replyTo || null) : null;
       const selected = new Set();
       const canPublish = chat.type !== 'channel' || !chat.ownerId || chat.ownerId === client.self.id;
       input.disabled = !canPublish;
@@ -130,6 +145,7 @@ export function chatViewPanel(client, chat) {
           replyDraft.querySelector('b').textContent = quotes.length > 1 ? `${quotes.length} цитаты` : (replyTo.name || '');
           replyDraft.querySelector('span').textContent = quotes.map((q) => q.text || '').join(' · ');
         }
+        saveDraft();
         input.focus();
       };
 
@@ -309,6 +325,10 @@ export function chatViewPanel(client, chat) {
           setReply(null);
         } else client.sendTo(chat.id, input.value);
         input.value = '';
+        replyTo = null;
+        replyDraft.classList.add('hidden');
+        delete drafts[chat.id];
+        saveDraft();
         input.focus();
       };
 
@@ -329,18 +349,26 @@ export function chatViewPanel(client, chat) {
         for (const btn of emojiMenu.querySelectorAll('button')) {
           btn.onclick = () => {
             input.value += btn.dataset.emoji;
+            saveDraft();
             emojiMenu.classList.add('hidden');
             input.focus();
           };
         }
       };
+      input.addEventListener('input', saveDraft);
       input.onkeydown = (e) => { if (e.key === 'Enter') submit(); };
       roomEl.addEventListener('pointerdown', (e) => {
         if (!msgMenu.contains(e.target) && !sheet.contains(e.target) && !emojiMenu.contains(e.target) && !head.contains(e.target) && !emojiBtn.contains(e.target)) hideMenu();
       });
 
       draw();
-      return () => offs.forEach((off) => off());
+      if (replyTo) setReply(replyTo);
+      return () => {
+        saveDraft();
+        clearTimeout(draftSaveTimer);
+        client.storage.setDrafts?.(drafts);
+        offs.forEach((off) => off());
+      };
     },
   };
 }

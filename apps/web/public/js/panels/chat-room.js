@@ -348,7 +348,10 @@ export function chatRoomPanel(client) {
       let draftSaveTimer = null;
       const persistDrafts = () => {
         clearTimeout(draftSaveTimer);
-        draftSaveTimer = setTimeout(() => client.storage.setDrafts?.(drafts), 120);
+        draftSaveTimer = setTimeout(() => {
+          client.storage.setDrafts?.(drafts);
+          client._emit('chats');
+        }, 120);
       };
       const saveCurrentDraft = () => {
         if (!currentChat) return;

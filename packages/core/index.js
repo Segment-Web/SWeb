@@ -110,6 +110,7 @@ export class SegmentClient {
       unreadDot: this.unreadDot,
       firstUnread: this.firstUnread,
       typing: this.typing,
+      drafts: this.storage.getDrafts?.() || {},
       currentRoom: this.currentRoom,
       self: this.self,
       online: this.online,

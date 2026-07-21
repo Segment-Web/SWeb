@@ -81,6 +81,12 @@ async function makeProfileQrPng(user, options) {
 
 function openProfileQrModal(user, root) {
   if (!user.username) return;
+  const profileHost = root.closest('.workspace-surface') || root.closest('.panel') || root;
+  const profileRect = profileHost.getBoundingClientRect();
+  const initialCenter = {
+    left: profileRect.left + profileRect.width / 2,
+    top: profileRect.top + profileRect.height / 2,
+  };
   const host = document.body;
   host.querySelector('.profile-qr-modal')?.remove();
   const modal = document.createElement('div');
@@ -108,7 +114,7 @@ function openProfileQrModal(user, root) {
   let finishMove = () => {};
   const close = () => { finishMove(); observer.disconnect(); window.removeEventListener('resize',place); document.removeEventListener('keydown',onKey); modal.remove(); };
   const onKey = (event) => { if(event.key==='Escape')close(); };
-  const place = (left = Number.parseFloat(dialog.style.left) || modal.clientWidth / 2, top = Number.parseFloat(dialog.style.top) || modal.clientHeight / 2) => {
+  const place = (left = Number.parseFloat(dialog.style.left) || initialCenter.left, top = Number.parseFloat(dialog.style.top) || initialCenter.top) => {
     const halfWidth = dialog.offsetWidth / 2;
     const halfHeight = dialog.offsetHeight / 2;
     dialog.style.left = `${Math.max(halfWidth + 8, Math.min(left, modal.clientWidth - halfWidth - 8))}px`;

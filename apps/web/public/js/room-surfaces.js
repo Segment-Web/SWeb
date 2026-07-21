@@ -14,7 +14,7 @@ const roomAvatar = (chat, className = 'room-surface-avatar') => `<div class="${c
 export function openRoomCreator(client, sourceId = 'chat-list', initialType = 'chat') {
   let type = ROOM_TYPES[initialType] ? initialType : 'chat';
   return window.Segment?.workspace?.openSurface({
-    id: 'room-create', sourceId, minWidth: 390, maxWidth: 620, className: 'room-manager-surface',
+    id: 'room-create', sourceId, minWidth: 390, maxWidth: Number.POSITIVE_INFINITY, className: 'room-manager-surface',
     mount(root, close) {
       const render = () => {
         const preset = ROOM_TYPES[type];
@@ -62,7 +62,7 @@ export function openRoomSettings(client, roomId, sourceId = 'chat-room') {
   const chat = client.chatById(roomId);
   if (!chat) return null;
   return window.Segment?.workspace?.openSurface({
-    id: `room-settings:${roomId}`, sourceId, minWidth: 390, maxWidth: 680, className: 'room-manager-surface',
+    id: `room-settings:${roomId}`, sourceId, minWidth: 390, maxWidth: Number.POSITIVE_INFINITY, className: 'room-manager-surface',
     mount(root, close) {
       let disposed = false;
       let membersLoading = false;

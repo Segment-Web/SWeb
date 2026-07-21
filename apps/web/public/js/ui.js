@@ -594,13 +594,18 @@ function previewBody(m) {
 function chatItemHtml(c, state, selected = false) {
   const list = state.messages[c.id];
   const lastMsg = list.length ? list.at(-1) : null;
+  const draft = state.drafts?.[c.id];
+  const draftText = String(typeof draft === 'string' ? draft : (draft?.text || '')).trim();
+  const hasDraft = Boolean(draftText);
   const myName = state.self?.name;
-  const outgoing = !!(lastMsg && !lastMsg.system && !lastMsg.channelName && myName && lastMsg.name === myName);
+  const outgoing = !!(!hasDraft && lastMsg && !lastMsg.system && !lastMsg.channelName && myName && lastMsg.name === myName);
 
 
   let lastHtml;
   const typer = state.typing?.[c.id];
-  if (typer) {
+  if (hasDraft) {
+    lastHtml = `<span class="chat-draft-label">Черновик:</span> ${formatText(draftText)}`;
+  } else if (typer) {
     lastHtml = `<span class="chat-typing">${c.type === 'dm' ? 'печатает…' : `${esc(typer)} печатает…`}</span>`;
   } else if (!lastMsg) {
     lastHtml = esc(c.local ? '' : (c.hint || 'пока пусто'));
@@ -613,8 +618,8 @@ function chatItemHtml(c, state, selected = false) {
     lastHtml = from + previewBody(lastMsg);
   }
 
-  const hasTime = lastMsg && Number.isFinite(new Date(lastMsg.ts).getTime());
-  const time = hasTime ? chatDate(lastMsg.ts) : '';
+  const previewTs = hasDraft ? Number(draft?.updatedAt || 0) : Number(lastMsg?.ts || 0);
+  const time = previewTs ? chatDate(previewTs) : '';
   const check = outgoing ? `<span class="chat-check">${CHECK_GLYPH}</span>` : '';
   const unread = state.unread[c.id];
   const pinned = state.pinned?.has(c.id);
@@ -697,7 +702,13 @@ export function renderChatList(el, state, opts = {}) {
   const pinnedOrder = [...(state.pinned || [])];
   const archived = state.archived || new Set();
 
-  const lastTs = (c) => { const l = state.messages[c.id]; return l && l.length ? (l[l.length - 1].ts || 0) : 0; };
+  const lastTs = (c) => {
+    const draft = state.drafts?.[c.id];
+    const draftText = String(typeof draft === 'string' ? draft : (draft?.text || '')).trim();
+    if (draftText) return Number(draft?.updatedAt || Date.now());
+    const list = state.messages[c.id];
+    return list && list.length ? (list[list.length - 1].ts || 0) : 0;
+  };
   const folder = state.folders?.find((f) => f.id === folderId);
   const visible = state.chats.filter((c) => (showArchived ? archived.has(c.id) : !archived.has(c.id)) && (!folder || folder.chats.includes(c.id)));
   const chats = visible
