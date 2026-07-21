@@ -70,6 +70,7 @@ export function chatRoomPanel(client) {
       };
       body.innerHTML = `
         <div class="room">
+          <div class="room-top-overlay">
           <header class="room-head" data-el="head">
             <div class="room-avatar" data-el="avatar">💬</div>
             <div class="room-headinfo">
@@ -89,11 +90,13 @@ export function chatRoomPanel(client) {
           </div>
           <button class="pinned-bar hidden" data-el="pinnedBar"></button>
           <div class="selection-bar hidden" data-el="selectionBar"></div>
+          </div>
           <main class="feed" data-el="feed"></main>
           <button class="scroll-down hidden" data-el="scrollDown" aria-label="Вниз">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>
             <span class="sd-badge hidden" data-el="scrollBadge"></span>
           </button>
+          <div class="room-bottom-overlay">
           <div class="typing" data-el="typing"></div>
           <footer class="composer">
             <div class="upload-progress hidden" data-el="uploadProgress"><span><i></i></span><b>Загрузка…</b><button aria-label="Отменить">×</button></div>
@@ -165,6 +168,7 @@ export function chatRoomPanel(client) {
             <div class="rec-bar hidden" data-el="recBar"></div>
             <div class="circle-rec hidden" data-el="circleRec"></div>
           </footer>
+          </div>
           <div class="msg-menu hidden" data-el="msgMenu"></div>
           <div class="emoji-menu hidden" data-el="emojiMenu"></div>
           <div class="chat-sheet hidden" data-el="sheet"></div>

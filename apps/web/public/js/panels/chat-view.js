@@ -35,6 +35,7 @@ export function chatViewPanel(client, chat) {
     mount(body) {
       body.innerHTML = `
         <div class="room">
+          <div class="room-top-overlay">
           <header class="room-head" data-el="head">
             <div class="room-avatar" data-el="avatar">${esc(chat.icon || chat.name?.[0] || '')}</div>
             <div class="room-headinfo">
@@ -42,8 +43,10 @@ export function chatViewPanel(client, chat) {
               <div class="room-status" data-el="status"></div>
             </div>
           </header>
-          <main class="feed" data-el="feed"></main>
           <div class="selection-bar hidden" data-el="selectionBar"></div>
+          </div>
+          <main class="feed" data-el="feed"></main>
+          <div class="room-bottom-overlay">
           <footer class="composer">
             <div class="reply-draft hidden" data-el="replyDraft"><b></b><span></span><button data-el="replyCancel" aria-label="Отменить">×</button></div>
             <div class="composer-field">
@@ -62,6 +65,7 @@ export function chatViewPanel(client, chat) {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>
             </button>
           </footer>
+          </div>
           <div class="msg-menu hidden" data-el="msgMenu"></div>
           <div class="emoji-menu hidden" data-el="emojiMenu"></div>
           <div class="chat-sheet hidden" data-el="sheet"></div>
