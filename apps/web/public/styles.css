@@ -69,7 +69,7 @@ body.authenticated .workspace { display: flex; }
    по ширине через контейнерные запросы, а не выезжает за край */
 /*
    справа — ужать сильнее (чтобы обрезать аватар) нельзя */
-.panel[data-id="profile"] { min-width: 78px; min-height: 100px; }
+.panel[data-id="profile"] { min-width: 78px; min-height: 92px; }
 .panel[data-id="chat-list"] { min-width: 78px; }
 .panel[data-id="chat-room"],
 .panel[data-id^="chatview:"] { min-width: 170px; min-height: 200px; }
@@ -3225,13 +3225,7 @@ body {
 .panel[data-id="chat-list"] .archive-head { padding-inline:10px; }
 
 @container (max-width: 130px) {
-  .panel[data-id="chat-list"] .chat-list { padding-inline:5px; }
-  .panel[data-id="chat-list"] .chat-item { justify-content:center; margin-inline:0; padding:7px 0; border-radius:15px; }
   .panel[data-id="chat-list"] .chat-info { display:none; }
-  .panel[data-id="chat-list"] .chat-select { left:calc(50% + 9px); bottom:3px; }
-}
-@container (max-width: 100px) {
-  .panel[data-id="chat-list"] .chat-item { justify-content:center; }
 }
 
 /* Flat profile settings inspired by a native account editor. */
@@ -3553,9 +3547,10 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
   box-shadow:0 2px 8px rgba(0,0,0,.28);
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .room-searchbar {
-  padding:8px 18px 14px;
+  margin-top:-8px;
+  padding:4px 18px 10px;
   border:0;
-  background:linear-gradient(180deg,color-mix(in srgb,var(--surface) 46%,transparent),transparent);
+  background:transparent;
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .room-search-field {
   border:0;
