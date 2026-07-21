@@ -29,6 +29,7 @@ const iconPaths = {
   storage: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',
   language: '<path d="M4 5h9M8.5 3v2c0 5-2 8-5 10M5 9c1.5 3 4 5 7 6M14 20l4-10 4 10M15.5 16h5"/>',
   mods: '<path d="M8 3v3M16 3v3M8 18v3M16 18v3M3 8h3M18 8h3M3 16h3M18 16h3"/><rect x="6" y="6" width="12" height="12" rx="3"/><circle cx="12" cy="12" r="2"/>',
+  camera: '<path d="M4 8.5A2.5 2.5 0 0 1 6.5 6H8l1.2-2h5.6L16 6h1.5A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5Z"/><circle cx="12" cy="12.5" r="3.2"/>',
 };
 const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPaths[name] || ''}</svg>`;
 
@@ -121,21 +122,26 @@ export function mountSettings(root, close, client, renderIdentity, initialPage =
     const self = client.self; const links = [...(self.links || []), {}, {}, {}].slice(0, 3); const meta = self.profile || {};
     const safeAvatar = safeProfileImage(self.avatar); const safeCover = safeProfileImage(meta.cover);
     const rooms = client.chats.filter((chat) => chat.type !== 'saved' && !chat.local);
-    shell('Профиль', 'Эти данные будут видны другим пользователям', `<form class="settings-stack" data-profile>
-      <div class="settings-cover-editor" style="${safeCover ? `background-image:url('${safeCover}')` : ''}"><label class="settings-file settings-banner-action">Выбрать баннер<input data-cover-file type="file" accept="image/*"></label>${safeCover ? '<button type="button" data-cover-remove>Убрать</button>' : ''}</div>
-      <div class="settings-avatar-editor"><div class="settings-avatar-preview">${safeAvatar ? `<img src="${safeAvatar}" alt="">` : escapeHtml(self.name?.[0] || 'S')}</div><label class="settings-file">Изменить фото<input type="file" accept="image/*"></label></div>
-      ${field('Имя','name',self.name,'maxlength="40"')}${field('Username','username',self.username,'maxlength="24"')}${field('О себе','bio',self.bio,'maxlength="160"')}
+    shell('Профиль', 'Эти данные будут видны другим пользователям', `<form class="settings-stack settings-profile-editor" data-profile>
+      <div class="settings-profile-media">
+        <div class="settings-cover-editor" style="${safeCover ? `background-image:url('${safeCover}')` : ''}"><label class="settings-media-camera settings-banner-camera" aria-label="Изменить баннер">${icon('camera')}<input data-cover-file type="file" accept="image/*"></label>${safeCover ? '<button class="settings-cover-remove" type="button" data-cover-remove>Убрать</button>' : ''}</div>
+        <div class="settings-avatar-editor"><div class="settings-avatar-preview">${safeAvatar ? `<img src="${safeAvatar}" alt="">` : escapeHtml(self.name?.[0] || 'S')}</div><label class="settings-media-camera settings-avatar-camera" aria-label="Изменить фото">${icon('camera')}<input data-avatar-file type="file" accept="image/*"></label></div>
+        <div class="settings-media-caption">Изменить фото и баннер</div>
+      </div>
+      <div class="settings-profile-fields">${field('Имя','name',self.name,'maxlength="40"')}${field('Имя пользователя','username',self.username,'maxlength="24"')}${field('О себе','bio',self.bio,'maxlength="160"')}</div>
       <div class="settings-card"><b>Закреплённое сообщество</b><p>В профиле будет показано одно сообщество, участником которого вы являетесь.</p><select name="pinnedCommunity"><option value="">Не показывать</option>${rooms.map((chat) => `<option value="${escapeHtml(chat.id)}" ${meta.pinnedCommunity?.id === chat.id ? 'selected' : ''}>${escapeHtml(chat.icon || '💬')} ${escapeHtml(chat.name)}</option>`).join('')}</select></div>
       <div class="settings-card"><b>Закреплённое достижение</b><p>Выберите одно достижение, которое будет показано в профиле.</p><div class="settings-badge-grid">${Object.entries(PROFILE_BADGES).map(([id,badge]) => `<label><input type="radio" name="badge" value="${id}" ${(meta.pinnedBadges || [])[0] === id ? 'checked' : ''}><span><i>${badge.icon}</i><b>${badge.title}</b><small>${badge.text}</small></span></label>`).join('')}</div></div>
       <div class="settings-card"><b>Ссылки</b>${links.map((link, index) => `<div class="settings-link-row"><input name="linkLabel${index}" placeholder="Название" value="${escapeHtml(link.label)}"><input name="linkUrl${index}" placeholder="https://" value="${escapeHtml(link.url)}"></div>`).join('')}</div>
       <div class="settings-card settings-integrations"><b>Интеграции активности</b><div><span>Spotify</span><small>Подключение появится после настройки OAuth</small><button type="button" disabled>Скоро</button></div><div><span>Steam</span><small>Игровая активность будет показываться здесь</small><button type="button" disabled>Скоро</button></div></div>
-      <div class="settings-card"><b>Цвет профиля</b><div class="settings-colors">${PALETTE.map((color) => `<button type="button" class="settings-color${color === self.color ? ' active' : ''}" data-color="${color}" style="background:${color}"></button>`).join('')}</div></div></form>`);
+      <div class="settings-card"><b>Цвет профиля</b><div class="settings-colors">${PALETTE.map((color) => `<button type="button" class="settings-color${color === self.color ? ' active' : ''}" data-color="${color}" style="background:${color}"></button>`).join('')}</div></div>
+      <button class="settings-profile-logout" data-profile-logout type="button">Выйти из аккаунта</button></form>`);
     const form = root.querySelector('[data-profile]'); let avatar = safeAvatar; let cover = safeCover; let color = self.color; let dirty = false;
     form.querySelectorAll('input,select').forEach((control) => { control.addEventListener('input', () => { dirty = true; }); control.addEventListener('change', () => { dirty = true; }); });
-    form.querySelector('.settings-avatar-editor input[type=file]').onchange = async (event) => { try { avatar = await resizeAvatar(event.target.files[0]); dirty = true; form.querySelector('.settings-avatar-preview').innerHTML = `<img src="${avatar}" alt="">`; } catch { toast('Не удалось обработать фото'); } };
+    form.querySelector('[data-avatar-file]').onchange = async (event) => { try { avatar = await resizeAvatar(event.target.files[0]); dirty = true; form.querySelector('.settings-avatar-preview').innerHTML = `<img src="${avatar}" alt="">`; } catch { toast('Не удалось обработать фото'); } };
     form.querySelector('[data-cover-file]').onchange = async (event) => { try { cover = await resizeCover(event.target.files[0]); dirty = true; const editor=form.querySelector('.settings-cover-editor'); editor.style.backgroundImage=`url('${cover}')`; } catch { toast('Не удалось обработать баннер'); } };
     form.querySelector('[data-cover-remove]')?.addEventListener('click',()=>{cover='';dirty=true;form.querySelector('.settings-cover-editor').style.backgroundImage='';});
     form.querySelectorAll('[data-color]').forEach((button) => { button.onclick = () => { color = button.dataset.color; dirty = true; form.querySelectorAll('[data-color]').forEach((item) => item.classList.toggle('active', item === button)); }; });
+    form.querySelector('[data-profile-logout]').onclick = async () => { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {}); client.logout(); location.reload(); };
     form.onsubmit = (event) => { event.preventDefault(); void show('home'); };
     leavePage = async () => {
       if (!dirty) return;

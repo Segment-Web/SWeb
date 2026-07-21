@@ -3168,3 +3168,184 @@ body {
 @container profile (max-width: 175px) {
   .profile-settings { display:none; }
 }
+
+/* Rounded chat cards with breathing room from the panel edges. */
+.panel[data-id="chat-list"] .chat-list {
+  padding: 6px 8px 12px;
+}
+.panel[data-id="chat-list"] .chat-item {
+  min-height: 68px;
+  margin: 3px 2px;
+  padding: 8px 11px;
+  gap: 11px;
+  overflow: visible;
+  border-radius: 16px;
+  background: transparent;
+  box-shadow: none;
+  transition: background-color .16s ease, transform .18s var(--ease-out), box-shadow .16s ease, opacity .18s;
+}
+.panel[data-id="chat-list"] .chat-item:hover {
+  background: color-mix(in srgb,var(--surface2) 88%,transparent);
+}
+.panel[data-id="chat-list"] .chat-item.active,
+.panel[data-id="chat-list"] .chat-item.active:hover {
+  background: color-mix(in srgb,var(--accent) 12%,var(--surface2));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--accent) 18%,transparent);
+}
+.panel[data-id="chat-list"] .chat-item.selected {
+  background: color-mix(in srgb,var(--accent) 15%,var(--surface2));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--accent) 28%,transparent);
+}
+.panel[data-id="chat-list"] .chat-item::before { border-radius: inherit; }
+.panel[data-id="chat-list"] .chat-icon { width:50px; height:50px; }
+.panel[data-id="chat-list"] .chat-name { font-size:15px; font-weight:650; }
+.panel[data-id="chat-list"] .chat-last { margin-top:1px; }
+.panel[data-id="chat-list"] .chat-select { left:45px; bottom:4px; }
+.panel[data-id="chat-list"] .list-section { padding-inline:10px; }
+.panel[data-id="chat-list"] .archive-head { padding-inline:10px; }
+
+@container (max-width: 130px) {
+  .panel[data-id="chat-list"] .chat-list { padding-inline:5px; }
+  .panel[data-id="chat-list"] .chat-item { margin-inline:0; padding:7px; border-radius:15px; }
+}
+@container (max-width: 100px) {
+  .panel[data-id="chat-list"] .chat-item { justify-content:center; }
+}
+
+/* Flat profile settings inspired by a native account editor. */
+.settings-profile-editor { gap:12px; }
+.settings-profile-media {
+  position:relative;
+  padding:0 0 14px;
+  text-align:center;
+}
+.settings-profile-editor .settings-cover-editor {
+  min-height:148px;
+  padding:0;
+  align-items:initial;
+  border:0;
+  border-radius:18px;
+  background-color:color-mix(in srgb,var(--accent) 68%,var(--surface2));
+  background-image:linear-gradient(135deg,color-mix(in srgb,var(--accent) 82%,#8b65ff),color-mix(in srgb,var(--accent) 72%,#4d2bd7));
+  box-shadow:none;
+}
+.settings-profile-editor .settings-cover-editor::after {
+  inset:0;
+  background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(0,0,0,.08));
+}
+.settings-media-camera {
+  position:absolute!important;
+  z-index:3;
+  display:grid;
+  place-items:center;
+  width:36px;
+  height:36px;
+  padding:0;
+  overflow:hidden;
+  border:1px solid color-mix(in srgb,#fff 24%,transparent);
+  border-radius:50%;
+  color:#fff;
+  background:rgba(13,18,26,.72);
+  box-shadow:0 5px 16px rgba(0,0,0,.24);
+  cursor:pointer;
+  transition:transform .15s var(--ease-out),background-color .15s ease;
+}
+.settings-media-camera:hover { transform:scale(1.06); background:rgba(13,18,26,.86); }
+.settings-media-camera svg { width:19px; height:19px; }
+.settings-media-camera input { display:none; }
+.settings-banner-camera { top:12px; right:12px; }
+.settings-profile-editor .settings-avatar-editor {
+  position:relative;
+  z-index:4;
+  justify-content:center;
+  width:max-content;
+  margin:-62px auto 0;
+  padding:0;
+}
+.settings-profile-editor .settings-avatar-preview {
+  width:104px;
+  height:104px;
+  border:5px solid var(--surface);
+  font-size:34px;
+  box-shadow:0 8px 24px rgba(0,0,0,.3);
+}
+.settings-avatar-camera { right:-2px; bottom:2px; width:34px; height:34px; }
+.settings-media-caption { margin-top:10px; color:var(--accent); font-size:14px; font-weight:600; }
+.settings-cover-remove {
+  position:absolute!important;
+  right:56px;
+  top:12px;
+  z-index:3!important;
+  min-height:36px;
+  padding:0 12px!important;
+  border:0!important;
+  border-radius:18px!important;
+  color:#fff!important;
+  background:rgba(13,18,26,.72)!important;
+}
+.settings-profile-fields {
+  overflow:hidden;
+  border-radius:16px;
+  background:color-mix(in srgb,var(--surface2) 46%,transparent);
+}
+.settings-profile-fields .settings-field {
+  gap:4px;
+  padding:12px 2px 10px;
+  margin:0 16px;
+  border-bottom:1px solid var(--hairline);
+}
+.settings-profile-fields .settings-field:last-child { border-bottom:0; }
+.settings-profile-fields .settings-field > span { font-size:12px; }
+.settings-profile-fields .settings-field input {
+  padding:2px 0 5px;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+  font-size:15px;
+}
+.settings-profile-fields .settings-field input:focus {
+  border:0;
+  background:transparent;
+  box-shadow:none;
+}
+.settings-profile-editor > .settings-card {
+  gap:8px;
+  padding:15px 16px;
+  border:0;
+  border-radius:16px;
+  background:color-mix(in srgb,var(--surface2) 46%,transparent);
+  box-shadow:none;
+}
+.settings-profile-editor > .settings-card > b { font-size:14px; }
+.settings-profile-editor > .settings-card > p { margin:0; }
+.settings-profile-editor .settings-card select,
+.settings-profile-editor .settings-link-row input,
+.settings-profile-editor .settings-card textarea {
+  background:color-mix(in srgb,var(--surface3) 62%,transparent);
+}
+.settings-profile-logout {
+  width:100%;
+  min-height:50px;
+  margin-top:4px;
+  padding:0 16px;
+  border:0;
+  border-radius:16px;
+  color:var(--danger);
+  background:color-mix(in srgb,var(--danger) 7%,transparent);
+  text-align:left;
+  font:inherit;
+  font-weight:600;
+  cursor:pointer;
+}
+.settings-profile-logout:hover { background:color-mix(in srgb,var(--danger) 12%,transparent); }
+
+/* Keep the rest of the settings pages calm and consistent with the profile editor. */
+.settings-page .settings-stack { gap:10px; }
+.settings-page :is(.settings-card,.storage-card,.settings-toggle-row,.settings-select-row,.settings-range-row,.settings-session,.settings-note,.settings-empty) {
+  border:0;
+  box-shadow:none;
+}
+.settings-page :is(.settings-card,.storage-card,.settings-toggle-row,.settings-select-row,.settings-range-row,.settings-session) {
+  background:color-mix(in srgb,var(--surface2) 46%,transparent);
+}
