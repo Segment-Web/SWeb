@@ -181,6 +181,28 @@ export async function createRooms(config, auth) {
 
   const one = async (sql, params = []) => (await pool.query(sql, params)).rows[0] || null;
 
+  // Every account owns one private Saved Messages room. It uses the same
+  // opaque encrypted history and attachment capabilities as any other private
+  // room, so notes survive sign-out and remain isolated from other accounts.
+  const ensureSavedRoom = async (userId) => {
+    const id = `saved-${userId}`;
+    const room = await one(
+      `INSERT INTO rooms(id,type,title,icon,is_public,owner_id,history_visibility)
+       VALUES($1,$2,$3,$4,FALSE,$5,'full')
+       ON CONFLICT (id) DO UPDATE SET owner_id=EXCLUDED.owner_id
+       RETURNING *`,
+      [id, ChatType.Saved, 'Избранное', '⭐', userId],
+    );
+    await pool.query(
+      `INSERT INTO room_members(room_id,user_id,role,join_seq)
+       VALUES($1,$2,'owner',0) ON CONFLICT (room_id,user_id) DO NOTHING`,
+      [id, userId],
+    );
+    indexRoom(room);
+    indexMember(id, userId);
+    return room;
+  };
+
   // Per-account sliding-window cap on durable history writes. Without it a
   // single member could pour unlimited (2 MB max) envelopes into room_history
   // and bloat the database. Keyed by user id; entries self-expire on read.
@@ -201,6 +223,7 @@ export async function createRooms(config, auth) {
   const epochsFor = (userId) => Object.fromEntries([...epochs].filter(([roomId]) => canAccess(userId, roomId)));
 
   const listForUser = async (userId) => {
+    await ensureSavedRoom(userId);
     const rows = (await pool.query(
       `SELECT r.*,m.role AS membership_role,TRUE AS joined
        FROM rooms r

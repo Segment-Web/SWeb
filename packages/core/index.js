@@ -238,6 +238,13 @@ export class SegmentClient {
   async loadRooms() {
     try {
       const { rooms } = await this._roomsApi('GET', '/api/rooms/mine');
+      const savedRoom = (rooms || []).find((room) => room.type === ChatType.Saved);
+      const legacySaved = savedRoom ? [...(this.messages[SAVED_ID] || [])] : [];
+      if (savedRoom) {
+        this.chats = this.chats.filter((chat) => chat.id !== SAVED_ID);
+        delete this.messages[SAVED_ID];
+        if (this.currentRoom === SAVED_ID) this.currentRoom = savedRoom.id;
+      }
       const roomIds = new Set((rooms || []).map((room) => room.id));
       this.chats = this.chats.filter((chat) => chat.local || roomIds.has(chat.id));
       if (this.currentRoom && !this.chatById(this.currentRoom)) this.currentRoom = SAVED_ID;
@@ -250,8 +257,23 @@ export class SegmentClient {
           && Number(this.historyKeyEpochs.get(room.id) || 0) < epoch;
         await this._advanceRoomEpoch(room.id, epoch, recoverHistory);
       }
+      if (savedRoom && legacySaved.length) {
+        const target = this.messages[savedRoom.id] ||= [];
+        for (const message of legacySaved) {
+          if (!target.some((entry) => entry.id === message.id)) target.push(message);
+        }
+      }
       this._emit('chats');
       await this.preloadRoomHistories();
+      if (savedRoom && legacySaved.length) {
+        for (const source of legacySaved) {
+          if (source.system || source.deleted) continue;
+          const message = { ...source, status: 'sending' };
+          delete message.seq;
+          await this.sendEvent(savedRoom.id, { kind: 'message', eventId: message.id, message }, false);
+        }
+        this.storage.setNotes([]);
+      }
     } catch { /* offline or unauthenticated: keep local defaults */ }
   }
 

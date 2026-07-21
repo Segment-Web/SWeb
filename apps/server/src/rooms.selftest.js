@@ -149,7 +149,7 @@ const otherMine = await call('GET', '/api/rooms/mine', { user: other });
 ok(otherMine.data.rooms.some((r) => r.id === roomId), 'redeemer /mine includes joined room');
 ok(otherMine.data.rooms.some((r) => r.id === channel.data.room.id && r.subscribers === 2), 'subscriber /mine includes joined channel and real count');
 const thirdMine = await call('GET', '/api/rooms/mine', { user: third });
-ok(thirdMine.data.rooms.length === 0, 'new account starts with no shared chats or channels');
+ok(thirdMine.data.rooms.length === 1 && thirdMine.data.rooms[0].type === 'saved', 'new account starts with only its private saved room');
 
 // Retrying the same client event is acknowledged with its original sequence
 // instead of inserting a duplicate envelope.
