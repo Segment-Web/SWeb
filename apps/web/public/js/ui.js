@@ -2,6 +2,7 @@
 
 
 import { esc, initials, previewOf, fmtSize } from './util.js';
+import { ICONS } from './icons.js';
 
 const revealedSpoilers = new Set();
 
@@ -731,13 +732,15 @@ export function renderChatList(el, state, opts = {}) {
   let html = '';
 
 
-  if (!showArchived && !q && archived.size) {
+  if (!showArchived && !q) {
     const unread = state.chats.reduce((n, c) => n + (archived.has(c.id) ? (state.unread[c.id] || 0) : 0), 0);
+    const archivePreview = state.chats.filter((c) => archived.has(c.id)).slice(0, 3).map((c) => c.name).join(', ') || 'Пусто';
     html += `
       <div class="chat-item archive-row" data-archive="1">
-        <div class="chat-icon archive-ico">📥</div>
+        <div class="chat-icon archive-ico">${ICONS.archive}</div>
         <div class="chat-info"><div class="chat-row"><div class="chat-name"><span>Архив</span></div>
-          ${unread ? `<span class="chat-meta"><span class="badge">${unread}</span></span>` : ''}</div></div>
+          ${unread ? `<span class="chat-meta"><span class="badge">${unread}</span></span>` : ''}</div>
+          <div class="chat-preview">${esc(archivePreview)}</div></div>
       </div>`;
   }
 
@@ -759,7 +762,7 @@ export function renderChatList(el, state, opts = {}) {
     if (!html) html = '<div class="chat-empty">Ничего не найдено</div>';
   } else {
     html += chats.map((c) => chatItemHtml(c, state, selected.has(c.id))).join('');
-    if (!chats.length && !(!showArchived && archived.size)) {
+    if (!chats.length && showArchived) {
       html = '<div class="chat-empty">Ничего не найдено</div>';
     }
   }

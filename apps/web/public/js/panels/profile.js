@@ -85,8 +85,11 @@ function openProfileQrModal(user, root) {
   host.querySelector('.profile-qr-modal')?.remove();
   const modal = document.createElement('div');
   modal.className = 'profile-qr-modal';
-  modal.innerHTML = `<div class="profile-qr-dialog" role="dialog" aria-modal="true" aria-label="QR-код профиля">
-    <button class="profile-qr-close" type="button" data-qr-close aria-label="Закрыть"></button>
+  modal.innerHTML = `<div class="profile-qr-dialog" role="dialog" aria-label="QR-код профиля">
+    <div class="profile-qr-bars">
+      <button class="profile-qr-move" type="button" data-qr-move aria-label="Переместить"><i></i></button>
+      <button class="profile-qr-close" type="button" data-qr-close aria-label="Закрыть"><i></i></button>
+    </div>
     <header><div><b>QR-код профиля</b><span>@${esc(user.username)}</span></div></header>
     <div class="profile-qr-preview"><img data-qr-image alt="QR-код профиля"><span class="profile-qr-avatar">${user.avatar ? `<img src="${esc(user.avatar)}" alt="">` : esc(user.name?.trim()[0]?.toUpperCase() || 'S')}</span></div>
     <div class="profile-qr-actions">
@@ -95,20 +98,38 @@ function openProfileQrModal(user, root) {
     </div>
   </div>`;
   host.appendChild(modal);
+  const dialog = modal.querySelector('.profile-qr-dialog');
   const image = modal.querySelector('[data-qr-image]');
   const avatar = modal.querySelector('.profile-qr-avatar');
   const color = modal.querySelector('[data-qr-color]');
   const colorDot = modal.querySelector('.profile-qr-color-dot');
   const options = () => ({ dark:color.value, avatar:Boolean(user.avatar) });
   const refresh = () => { const state=options(); image.src=profileQrUrl(user,state); avatar.classList.toggle('hidden',!state.avatar); colorDot.style.setProperty('--qr-color',state.dark); };
-  const close = () => { document.removeEventListener('keydown',onKey); modal.remove(); };
+  let finishMove = () => {};
+  const close = () => { finishMove(); observer.disconnect(); window.removeEventListener('resize',place); document.removeEventListener('keydown',onKey); modal.remove(); };
   const onKey = (event) => { if(event.key==='Escape')close(); };
+  const place = (left = Number.parseFloat(dialog.style.left) || modal.clientWidth / 2, top = Number.parseFloat(dialog.style.top) || modal.clientHeight / 2) => {
+    const halfWidth = dialog.offsetWidth / 2;
+    const halfHeight = dialog.offsetHeight / 2;
+    dialog.style.left = `${Math.max(halfWidth + 8, Math.min(left, modal.clientWidth - halfWidth - 8))}px`;
+    dialog.style.top = `${Math.max(halfHeight + 8, Math.min(top, modal.clientHeight - halfHeight - 8))}px`;
+  };
+  const observer = new ResizeObserver(() => place());
+  observer.observe(modal); observer.observe(dialog);
+  modal.querySelector('[data-qr-move]').addEventListener('pointerdown',(event)=>{
+    if(event.button>0)return;
+    event.preventDefault();
+    const startX=event.clientX; const startY=event.clientY;
+    const initialLeft=Number.parseFloat(dialog.style.left); const initialTop=Number.parseFloat(dialog.style.top);
+    const move=(next)=>place(initialLeft+next.clientX-startX,initialTop+next.clientY-startY);
+    finishMove=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',finishMove);window.removeEventListener('pointercancel',finishMove);finishMove=()=>{};};
+    window.addEventListener('pointermove',move);window.addEventListener('pointerup',finishMove);window.addEventListener('pointercancel',finishMove);
+  });
   color.oninput=refresh;
   modal.querySelector('[data-qr-close]').onclick=close;
-  modal.onclick=(event)=>{if(event.target===modal)close();};
   modal.querySelector('[data-qr-download]').onclick=async()=>{try{const blob=await makeProfileQrPng(user,options());const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=`${user.username}-qr.png`;link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);}catch{window.Segment?.toast?.('Не удалось создать QR-код');}};
   document.addEventListener('keydown',onKey);
-  requestAnimationFrame(()=>modal.classList.add('is-open'));
+  requestAnimationFrame(()=>{place();modal.classList.add('is-open');});
   refresh();
 }
 

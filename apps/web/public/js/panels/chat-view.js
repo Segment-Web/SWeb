@@ -1,5 +1,6 @@
 import { renderFeed, renderMessage, renderSystem } from '../ui.js';
 import { esc, placeFloatingMenu } from '../util.js';
+import { ICONS } from '../icons.js';
 
 let seq = 0;
 
@@ -147,13 +148,20 @@ export function chatViewPanel(client, chat) {
           return;
         }
         const ownOnly = messages.every((m) => m.name === client.self.name);
+        const pinnedIds = client.messages[chat.id]?.pinnedIds || (client.messages[chat.id]?.pinnedId ? [client.messages[chat.id].pinnedId] : []);
+        const onePinned = messages.length === 1 && pinnedIds.includes(messages[0].id);
+        const plural = messages.length === 1 ? 'сообщение' : 'сообщения';
+        const action = (name, label, icon, className = '') =>
+          `<button class="sel-btn ${className}" data-act="${name}" aria-label="${label}">${icon}</button>`;
         selectionBar.innerHTML = `
-          <span>${messages.length} выбрано</span>
-          <button data-act="copy">Копировать</button>
-          <button data-act="forward">Переслать</button>
-          <button data-act="pin">Закрепить</button>
-          ${ownOnly ? '<button data-act="delete" class="danger">Удалить</button>' : ''}
-          <button data-act="clear">Снять</button>`;
+          <button class="sel-close" data-act="clear" aria-label="Снять выделение">${ICONS.close}</button>
+          <span class="sel-count">${messages.length} ${plural}</span>
+          <div class="sel-actions">
+            ${action('copy', 'Копировать', ICONS.copy)}
+            ${action('forward', 'Переслать', ICONS.forward)}
+            ${messages.length === 1 ? action('pin', onePinned ? 'Открепить' : 'Закрепить', ICONS.pin) : ''}
+            ${ownOnly ? action('delete', 'Удалить', ICONS.trash, 'danger') : ''}
+          </div>`;
         for (const btn of selectionBar.querySelectorAll('button')) {
           btn.onclick = async () => {
             const act = btn.dataset.act;

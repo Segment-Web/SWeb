@@ -27,7 +27,15 @@ export function chatListPanel(client) {
           <button class="chat-filter" data-filter="channels">Каналы</button>
           <button class="folder-add">+ Папка</button>
         </div>
-        <div class="selection-bar hidden"><b class="selection-count">0</b><button data-batch="read">Прочитать</button><button data-batch="archive">В архив</button><button data-batch="delete">Удалить</button><button data-batch="cancel">Отмена</button></div>
+        <div class="selection-bar chat-selection-bar hidden">
+          <b class="selection-count">0</b>
+          <div class="chat-selection-actions">
+            <button data-batch="read" aria-label="Прочитать">${ICONS.markRead}</button>
+            <button data-batch="archive" aria-label="Архивировать">${ICONS.archive}</button>
+            <button data-batch="delete" aria-label="Удалить">${ICONS.trash}</button>
+          </div>
+          <button class="chat-selection-cancel" data-batch="cancel" aria-label="Отмена">${ICONS.close}</button>
+        </div>
         <div class="archive-head hidden">
           <button class="archive-back" aria-label="Назад">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
@@ -95,7 +103,6 @@ export function chatListPanel(client) {
         if (!chat) return;
         const pinned = client.pinned.has(id);
         const muted = client.isMuted(id);
-        const editable = client.canEditChat(id);
         const hasUnread = !!client.unread[id] || client.unreadDot.has(id);
         const isCurrent = client.currentRoom === id;
         const hasHistory = (client.messages[id] || []).length > 0;
@@ -105,25 +112,17 @@ export function chatListPanel(client) {
         const openBlocks = views.filter((p) => ws.isOpen(p.id)).length;
         const alreadyOpen = views.some((p) => p.id.startsWith(`chatview:${id}:`));
         const rows = [
-          { act: 'open', label: 'Открыть чат', icon: ICONS.open },
           { act: 'newblock', label: 'Открыть в новом блоке', icon: ICONS.newBlock, disabled: alreadyOpen || openBlocks >= 3 },
-          { act: 'info', label: 'Информация о чате', icon: ICONS.info },
-          { act: 'select', label: 'Выбрать', icon: ICONS.markRead },
-          ...client.folders.map((f) => ({ act: `folder:${f.id}`, label: `${f.chats.includes(id) ? 'Убрать из' : 'В папку'} «${f.name}»`, icon: ICONS.open })),
           { sep: true },
-          hasUnread
-            ? { act: 'read', label: 'Отметить прочитанным', icon: ICONS.markRead }
-            : { act: 'unread', label: 'Отметить непрочитанным', icon: ICONS.markUnread, disabled: isCurrent },
+          chat.type !== 'saved' && { act: 'archive', label: client.isArchived(id) ? 'Вернуть из архива' : 'Архивировать', icon: ICONS.archive },
           { act: 'pin', label: pinned ? 'Открепить' : 'Закрепить', icon: pinned ? ICONS.unpin : ICONS.pin },
-          { act: 'mute', label: muted ? 'Включить уведомления' : 'Выключить уведомления', icon: muted ? ICONS.bell : ICONS.bellOff },
-          chat.type !== 'saved' && { act: 'archive', label: client.isArchived(id) ? 'Вернуть из архива' : 'В архив', icon: ICONS.archive },
-          editable && { act: 'rename', label: 'Переименовать', icon: ICONS.rename },
-          chat.ownerId && { act: 'invite', label: 'Пригласить (скопировать ссылку)', icon: ICONS.open },
-          (chat.ownerId && chat.ownerId === client.self.id && (chat.type === 'chat' || chat.type === 'channel') && chat.historyVisibility !== 'full')
-            && { act: 'fullhistory', label: 'Показать всю историю', icon: ICONS.info },
-          { sep: true },
-          { act: 'clear', label: 'Очистить историю', icon: ICONS.broom, disabled: !hasHistory, danger: true },
-          editable && { act: 'remove', label: removeLabel, icon: ICONS.logout, danger: true },
+          { act: 'mute', label: muted ? 'Включить уведомления' : 'Отключить уведомления', icon: muted ? ICONS.bell : ICONS.bellOff },
+          hasUnread
+            ? { act: 'read', label: 'Пометить прочитанным', icon: ICONS.markRead }
+            : { act: 'unread', label: 'Пометить непрочитанным', icon: ICONS.markUnread, disabled: isCurrent },
+          { act: 'select', label: 'Выбрать', icon: ICONS.markRead },
+          { act: 'clear', label: 'Очистить историю', icon: ICONS.broom, disabled: !hasHistory },
+          chat.type !== 'saved' && { act: 'remove', label: removeLabel, icon: ICONS.logout, danger: true },
         ].filter(Boolean);
 
         ctx.innerHTML = rows.map((r) => (r.sep
