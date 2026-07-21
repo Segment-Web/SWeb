@@ -361,8 +361,8 @@ body.is-dragging-panel { cursor: grabbing; user-select: none; }
 .account-dialog-move:active { cursor:grabbing!important; }
 .account-dialog-move i { background:var(--grip); }
 .account-dialog-move:hover i { width:68px; background:var(--muted); }
-.account-dialog-close i { background:color-mix(in srgb,var(--danger) 86%,#ff8b84); box-shadow:0 2px 9px color-mix(in srgb,var(--danger) 28%,transparent); }
-.account-dialog-close:hover i { width:68px; background:var(--danger); }
+.account-dialog-close i { width:48px; background:color-mix(in srgb,var(--danger) 86%,#ff8b84); box-shadow:0 2px 9px color-mix(in srgb,var(--danger) 28%,transparent); }
+.account-dialog-close:hover i { width:60px; background:var(--danger); }
 .account-add-dialog h3 { margin:0; text-align:center; }
 .account-add-dialog > p { margin:0; color:var(--muted); font-size:12px; line-height:1.45; text-align:center; }
 .account-add-dialog label { display:grid; gap:6px; color:var(--muted); font-size:12px; }
@@ -2560,8 +2560,8 @@ body.is-resizing-surface { cursor: col-resize; user-select: none; }
 .profile-qr-move:active { cursor:grabbing!important; }
 .profile-qr-move i { background:var(--grip); }
 .profile-qr-move:hover i { width:68px; background:var(--muted); }
-.profile-qr-close i { background:color-mix(in srgb,var(--danger) 86%,#ff8b84); box-shadow:0 2px 9px color-mix(in srgb,var(--danger) 28%,transparent); }
-.profile-qr-close:hover i { width:68px; background:var(--danger); }
+.profile-qr-close i { width:48px; background:color-mix(in srgb,var(--danger) 86%,#ff8b84); box-shadow:0 2px 9px color-mix(in srgb,var(--danger) 28%,transparent); }
+.profile-qr-close:hover i { width:60px; background:var(--danger); }
 .profile-qr-dialog header { display:flex; align-items:center; justify-content:center; gap:12px; text-align:center; }
 .profile-qr-dialog header div { display:grid; gap:2px; }
 .profile-qr-dialog header b { font-size:18px; }
