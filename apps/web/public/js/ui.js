@@ -207,28 +207,11 @@ function dateLabel(ts) {
 }
 
 
-let reactTip;
-function showReactTip(chip) {
-  if (!reactTip) {
-    reactTip = document.createElement('div');
-    reactTip.className = 'react-tip';
-    document.body.appendChild(reactTip);
-  }
-  const names = (chip.dataset.names || '').split('|').filter(Boolean);
-  const emoji = chip.dataset.reaction || '';
-  reactTip.innerHTML = `<span class="react-tip-emoji">${esc(emoji)}</span>${names.map((n) => esc(n)).join(', ')}`;
-  reactTip.classList.add('show');
-  const r = chip.getBoundingClientRect();
-  reactTip.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - reactTip.offsetWidth - 8))}px`;
-  reactTip.style.top = `${r.top - reactTip.offsetHeight - 8}px`;
-}
-function hideReactTip() { reactTip?.classList.remove('show'); }
-
 function reactionsHtml(m, myName, myId = '') {
   const entries = Object.entries(m.reactions || {}).filter(([, names]) => names?.length);
   if (!entries.length) return '';
   return `<div class="msg-reactions">${entries.map(([emoji, names]) =>
-    `<button class="reaction-chip ${names.includes(myId) || names.includes(myName) ? 'mine' : ''}" data-reaction="${esc(emoji)}" data-names="${esc(names.join('|'))}">${esc(emoji)} <span>${names.length}</span></button>`).join('')}</div>`;
+    `<button class="reaction-chip ${names.includes(myId) || names.includes(myName) ? 'mine' : ''}" data-reaction="${esc(emoji)}">${esc(emoji)} <span>${names.length}</span></button>`).join('')}</div>`;
 }
 
 
@@ -378,6 +361,11 @@ export function renderMessage(feed, m, myName, options = {}) {
   const circleOnly = (m.attachments || []).length === 1 && m.attachments[0].kind === 'circle'
     && !m.text && !m.replyTo && !forwardFrom;
   const link = m.deleted ? '' : linkCardHtml(m);
+  const reactions = reactionsHtml(m, myName, options.myId);
+  const timeHtml = `<div class="time">${edited}${time}${mine && !m.deleted ? statusGlyph(m) : ''}</div>`;
+  const messageFooter = mediaOnly && reactions
+    ? `<div class="media-message-footer">${reactions}${timeHtml}</div>`
+    : `${timeHtml}${reactions}`;
   el.innerHTML = `
     <div class="avatar" style="background:${color}">${m.channelIcon ? esc(m.channelIcon) : (m.avatar ? `<img src="${esc(m.avatar)}" alt="">` : initials(displayName))}</div>
     <div class="bubble${mediaOnly ? ' only-media' : ''}${circleOnly ? ' only-circle' : ''}${jumbo ? ' only-emoji' : ''}">
@@ -389,8 +377,7 @@ export function renderMessage(feed, m, myName, options = {}) {
       ${textHtml}
       ${link}
       ${image}
-      <div class="time">${edited}${time}${mine && !m.deleted ? statusGlyph(m) : ''}</div>
-      ${reactionsHtml(m, myName, options.myId)}
+      ${messageFooter}
     </div>`;
   if (options.onMessageClick && options.selectionMode) {
     el.addEventListener('click', (e) => {
@@ -464,8 +451,6 @@ export function renderMessage(feed, m, myName, options = {}) {
       btn.onclick = (e) => { e.stopPropagation(); options.onReaction(m.id, btn.dataset.reaction); };
     }
 
-    btn.addEventListener('mouseenter', () => showReactTip(btn));
-    btn.addEventListener('mouseleave', hideReactTip);
   }
   feed.appendChild(el);
 }
@@ -730,11 +715,12 @@ export function renderChatList(el, state, opts = {}) {
     });
 
   let html = '';
+  const archivedChats = state.chats.filter((chat) => archived.has(chat.id));
 
 
-  if (!showArchived && !q) {
-    const unread = state.chats.reduce((n, c) => n + (archived.has(c.id) ? (state.unread[c.id] || 0) : 0), 0);
-    const archivePreview = state.chats.filter((c) => archived.has(c.id)).slice(0, 3).map((c) => c.name).join(', ') || 'Пусто';
+  if (!showArchived && !q && archivedChats.length) {
+    const unread = archivedChats.reduce((n, chat) => n + (state.unread[chat.id] || 0), 0);
+    const archivePreview = archivedChats.slice(0, 3).map((chat) => chat.name).join(', ');
     html += `
       <div class="chat-item archive-row" data-archive="1">
         <div class="chat-icon archive-ico">${ICONS.archive}</div>
@@ -762,7 +748,7 @@ export function renderChatList(el, state, opts = {}) {
     if (!html) html = '<div class="chat-empty">Ничего не найдено</div>';
   } else {
     html += chats.map((c) => chatItemHtml(c, state, selected.has(c.id))).join('');
-    if (!chats.length && showArchived) {
+    if (!chats.length && !(!showArchived && archivedChats.length)) {
       html = '<div class="chat-empty">Ничего не найдено</div>';
     }
   }
