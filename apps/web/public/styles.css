@@ -70,9 +70,9 @@ body.authenticated .workspace { display: flex; }
 /*
    справа — ужать сильнее (чтобы обрезать аватар) нельзя */
 .panel[data-id="profile"] { min-width: 78px; min-height: 92px; }
-.panel[data-id="chat-list"] { min-width: 78px; }
+.panel[data-id="chat-list"] { min-width: 94px; }
 .panel[data-id="chat-room"],
-.panel[data-id^="chatview:"] { min-width: 170px; min-height: 200px; }
+.panel[data-id^="chatview:"] { min-width: 320px; min-height: 200px; }
 
 .panel.is-placeholder { background: transparent; border-style: dashed; }
 .panel.is-placeholder > * { visibility: hidden; }
