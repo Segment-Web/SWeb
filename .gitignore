@@ -17,6 +17,7 @@ Thumbs.db
 .idea/
 .vscode/
 .claude/
+.agents/
 PROJECT_CONTEXT.local.md
 
 # Local file-store blobs (interim disk backend)
