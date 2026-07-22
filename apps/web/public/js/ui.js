@@ -343,7 +343,7 @@ export function renderMessage(feed, m, myName, options = {}) {
   }
 
   const previousTs = Number(lastMsg?.dataset.ts || 0);
-  const grouped = !m.channelName && !m.system && !needDivider && lastMsg
+  const grouped = !m.system && !needDivider && lastMsg
     && lastMsg.dataset.author === authorKey
     && Math.abs(Number(m.ts) - previousTs) <= 5 * 60 * 1000;
   const el = document.createElement('div');
