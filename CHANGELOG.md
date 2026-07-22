@@ -2,6 +2,17 @@
 
 User-visible and technical changes are listed by release, newest first.
 
+## 0.0.5 — July 22, 2026
+
+- Added account-specific chats, channels, participant lists and subscriber lists.
+- Made Saved Messages persistent and added voice messages and video notes there.
+- Added drafts, archive access, view counters and improved message grouping.
+- Refined reactions, context menus, attachments, formatting and media navigation.
+- Redesigned the graphite chat interface, profiles, settings and room management.
+- Improved panel controls, resizing, navigation and compact layouts.
+- Strengthened account sessions, privacy limits, attachment handling and room history protection.
+- Added a canonical AGPL-3.0 license with a documented plugin exception.
+
 ## 0.0.4 — July 21, 2026
 
 - Strengthened encrypted rooms with independent sender keys and membership-bound key rotation.
