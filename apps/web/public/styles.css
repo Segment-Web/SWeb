@@ -3684,3 +3684,94 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
 }
 :where(.ctx-menu .ctx-item,.msg-menu .ctx-item) svg { width:18px; height:18px; }
 :where(.ctx-menu,.msg-menu) .ctx-sep { margin:4px 7px; }
+
+/* Keep recording and sending controls inside the composer capsule. */
+.panel:is([data-id="chat-room"],[data-id^="chatview:"]) .composer-main {
+  position:relative;
+  gap:0;
+}
+.panel:is([data-id="chat-room"],[data-id^="chatview:"]) .composer-field {
+  width:100%;
+  padding-right:48px;
+  border-radius:25px;
+}
+.panel:is([data-id="chat-room"],[data-id^="chatview:"]) .composer-actions {
+  position:absolute;
+  right:4px;
+  bottom:1px;
+  z-index:3;
+  gap:0;
+}
+.panel:is([data-id="chat-room"],[data-id^="chatview:"]) .composer-round {
+  width:40px;
+  height:40px;
+}
+.panel:is([data-id="chat-room"],[data-id^="chatview:"]) .composer-tool {
+  width:36px;
+  height:36px;
+}
+
+/* A single floating formatting capsule that stays clear of drafts and attachment menus. */
+html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .composer-format {
+  bottom:calc(100% + 10px);
+  min-height:44px;
+  padding:5px 7px;
+  gap:4px;
+  border-radius:18px;
+  background:var(--surface2);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--stroke) 44%,transparent),0 14px 32px rgba(0,0,0,.28);
+}
+html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .composer-format .fmt-group { gap:3px; }
+html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .composer-format .fmt-divider {
+  height:24px;
+  margin-inline:2px;
+  background:color-mix(in srgb,var(--stroke) 70%,transparent);
+}
+html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .composer-format .fmt-btn {
+  width:32px;
+  height:32px;
+  border-radius:11px;
+}
+.composer.format-open .attach-menu { bottom:calc(100% + 76px); }
+
+/* Attachment and create menus share the same compact desktop-menu language. */
+html[data-theme="graphite"] :is(.attach-menu,.fab-menu) {
+  padding:6px;
+  border:1px solid color-mix(in srgb,var(--stroke) 68%,transparent);
+  border-radius:15px;
+  background:var(--surface2);
+  box-shadow:0 18px 44px rgba(0,0,0,.4);
+}
+html[data-theme="graphite"] .attach-menu {
+  min-width:218px;
+}
+html[data-theme="graphite"] .attach-menu button {
+  min-height:40px;
+  padding:7px 9px;
+  gap:10px;
+  border-radius:10px;
+  font-size:13.5px;
+}
+html[data-theme="graphite"] .attach-menu button svg {
+  width:18px;
+  height:18px;
+}
+html[data-theme="graphite"] .fab-menu {
+  width:232px;
+  gap:2px;
+}
+html[data-theme="graphite"] .fab-item {
+  min-height:48px;
+  padding:6px 8px;
+  gap:10px;
+  border-radius:10px;
+}
+html[data-theme="graphite"] .fab-ico {
+  width:34px;
+  height:34px;
+  color:var(--muted);
+  background:var(--surface3);
+}
+html[data-theme="graphite"] .fab-item:hover .fab-ico { color:var(--text); }
+html[data-theme="graphite"] .fab-item b { font-size:13.5px; font-weight:600; }
+html[data-theme="graphite"] .fab-item small { display:block; color:var(--muted); font-size:10.5px; }

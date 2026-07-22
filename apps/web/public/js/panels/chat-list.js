@@ -46,11 +46,11 @@ export function chatListPanel(client) {
 
         <div class="fab-menu hidden">
           <button class="fab-item" data-type="channel">
-            <span class="fab-ico">📢</span>
+            <span class="fab-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13.5v-3a2 2 0 0 1 2-2h3l8-4v15l-8-4H6a2 2 0 0 1-2-2Z"/><path d="m9 15.5 1 4H7l-1-4"/><path d="M20 8a6 6 0 0 1 0 8"/></svg></span>
             <span><b>Новый канал</b><small>вещание для подписчиков</small></span>
           </button>
           <button class="fab-item" data-type="chat">
-            <span class="fab-ico">💬</span>
+            <span class="fab-ico"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20v-1.8a3.2 3.2 0 0 0-3.2-3.2H6.2A3.2 3.2 0 0 0 3 18.2V20"/><circle cx="9.5" cy="8" r="3.5"/><path d="M17 11.5a3.5 3.5 0 1 0 0-7"/><path d="M18 15a3 3 0 0 1 3 3v2"/></svg></span>
             <span><b>Новая группа</b><small>общий чат участников</small></span>
           </button>
           <button class="fab-item" data-type="dm">
