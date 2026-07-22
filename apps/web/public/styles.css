@@ -3641,7 +3641,7 @@ html[data-theme="graphite"] .date-divider span {
 .lightbox-nav:active::before { transform:translateY(-50%) scale(.96); }
 
 /* Keep message clusters compact while clearly separating authors and channel posts. */
-.msg + .msg:not(.grouped) { margin-top:9px; }
+.msg + .msg:not(.grouped) { margin-top:7px; }
 .msg.grouped { margin-top:2px; }
 .message-views {
   display:inline-flex;
@@ -3691,10 +3691,14 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
 .account-dialog-close i,
 .profile-qr-close i {
   height:4px!important;
-  background:transparent!important;
   box-shadow:none!important;
   overflow:visible;
+  transition:width .18s var(--ease-out),background-color .12s ease!important;
 }
+.workspace-surface-back i { background:color-mix(in srgb,var(--accent) 78%,var(--grip))!important; }
+.workspace-surface-close i,
+.account-dialog-close i,
+.profile-qr-close i { background:color-mix(in srgb,var(--danger) 86%,#ff8b84)!important; }
 .workspace-surface-back i::before,
 .workspace-surface-back i::after,
 .workspace-surface-close i::before,
@@ -3710,7 +3714,8 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
   height:4px;
   border-radius:999px;
   transform:translateX(-50%) rotate(0deg);
-  transition:width .18s var(--ease-out),transform .18s var(--ease-out),background-color .15s ease;
+  opacity:0;
+  transition:width .18s var(--ease-out),transform .18s var(--ease-out),background-color .15s ease,opacity .1s ease;
 }
 .workspace-surface-back i::before,
 .workspace-surface-back i::after {
@@ -3718,8 +3723,9 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
   background:color-mix(in srgb,var(--accent) 78%,var(--grip));
   transform-origin:left center;
 }
-.workspace-surface-back:hover i::before { width:27px; transform:translateX(-50%) rotate(11deg); background:var(--accent); }
-.workspace-surface-back:hover i::after { width:27px; transform:translateX(-50%) rotate(-11deg); background:var(--accent); }
+.workspace-surface-back:hover i { background:transparent!important; }
+.workspace-surface-back:hover i::before { width:27px; transform:translateX(-50%) rotate(11deg); background:var(--accent); opacity:1; }
+.workspace-surface-back:hover i::after { width:27px; transform:translateX(-50%) rotate(-11deg); background:var(--accent); opacity:1; }
 .workspace-surface-close i::before,
 .workspace-surface-close i::after,
 .account-dialog-close i::before,
@@ -3729,12 +3735,16 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
   width:40px;
   background:color-mix(in srgb,var(--danger) 86%,#ff8b84);
 }
+.workspace-surface-close:hover i,
+.account-dialog-close:hover i,
+.profile-qr-close:hover i { background:transparent!important; }
 .workspace-surface-close:hover i::before,
 .account-dialog-close:hover i::before,
 .profile-qr-close:hover i::before {
   width:36px;
   transform:translateX(-50%) rotate(8deg);
   background:var(--danger);
+  opacity:1;
 }
 .workspace-surface-close:hover i::after,
 .account-dialog-close:hover i::after,
@@ -3742,4 +3752,5 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
   width:36px;
   transform:translateX(-50%) rotate(-8deg);
   background:var(--danger);
+  opacity:1;
 }
