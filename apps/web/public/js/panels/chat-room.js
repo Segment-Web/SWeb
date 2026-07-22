@@ -1471,9 +1471,20 @@ export function chatRoomPanel(client) {
 
       let attachHideTimer = null;
       const openAttachMenu = () => { clearTimeout(attachHideTimer); attachMenu.classList.remove('hidden'); };
-      const scheduleAttachHide = () => { clearTimeout(attachHideTimer); attachHideTimer = setTimeout(() => attachMenu.classList.add('hidden'), 650); };
+      const scheduleAttachHide = () => { clearTimeout(attachHideTimer); attachHideTimer = setTimeout(() => attachMenu.classList.add('hidden'), 260); };
+      const leaveAttachZone = (event) => {
+        const wrapRect = attachWrap.getBoundingClientRect();
+        const menuRect = attachMenu.getBoundingClientRect();
+        const headingToMenu = event.clientY < wrapRect.top
+          && event.clientX >= menuRect.left - 14
+          && event.clientX <= menuRect.right + 14;
+        if (headingToMenu) return;
+        scheduleAttachHide();
+      };
       attachWrap.addEventListener('mouseenter', openAttachMenu);
-      attachWrap.addEventListener('mouseleave', scheduleAttachHide);
+      attachWrap.addEventListener('mouseleave', leaveAttachZone);
+      attachMenu.addEventListener('mouseenter', () => clearTimeout(attachHideTimer));
+      attachMenu.addEventListener('mouseleave', scheduleAttachHide);
       attachBtn.onclick = (e) => { e.stopPropagation(); attachMenu.classList.toggle('hidden'); };
       for (const b of attachMenu.querySelectorAll('[data-att]')) {
         b.onclick = (e) => {
