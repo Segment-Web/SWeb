@@ -3701,14 +3701,15 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
 }
 .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .composer-field {
   width:100%;
-  padding-right:64px;
+  padding-right:4px;
   border-radius:25px;
 }
 .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .composer-actions {
-  position:absolute;
-  right:4px;
-  bottom:1px;
+  position:relative;
+  right:auto;
+  bottom:auto;
   z-index:3;
+  flex:0 0 auto;
   gap:0;
 }
 .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .composer-round {
@@ -3741,7 +3742,7 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
   height:32px;
   border-radius:11px;
 }
-.composer.format-open .attach-menu { bottom:calc(100% + 82px); }
+.composer.format-open .attach-menu { bottom:calc(100% + 79px); }
 
 /* Attachment and create menus share the same compact desktop-menu language. */
 html[data-theme="graphite"] :is(.attach-menu,.fab-menu) {
