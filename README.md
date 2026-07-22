@@ -2,7 +2,7 @@
 
 Segment is an extensible open-source messenger with a panel-based desktop web interface and end-to-end encryption.
 
-Current release: **0.0.4** · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/Segment-Web/SWeb/releases/latest)
+Current release: **0.0.5** · [Changelog](CHANGELOG.md) · [Latest release](https://github.com/Segment-Web/SWeb/releases/latest)
 
 ## Features
 
@@ -12,6 +12,8 @@ Current release: **0.0.4** · [Changelog](CHANGELOG.md) · [Latest release](http
 - Private-room invite links and public channel links.
 - Encrypted history synchronization between authorized devices.
 - Message editing, deletion, reactions, polls, pins, replies and read states.
+- Saved Messages with voice messages and video notes.
+- Drafts, chat archive and channel view counters.
 - Rich-text formatting, spoilers and multi-message selection.
 - Photo and video albums, a full-window media viewer and custom video controls.
 - Independent panels that can be moved, resized and rearranged.
