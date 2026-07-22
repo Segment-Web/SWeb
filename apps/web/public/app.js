@@ -637,7 +637,16 @@ const lbShow = () => {
   }
   const author = item.author || item.name || 'Segment';
   lbTitle.textContent = author;
-  lbAuthorAvatar.textContent = author.trim().slice(0, 1).toUpperCase() || 'S';
+  const authorAvatar = safeMediaUrl(item.avatar);
+  lbAuthorAvatar.replaceChildren();
+  if (authorAvatar) {
+    const image = document.createElement('img');
+    image.src = authorAvatar;
+    image.alt = '';
+    lbAuthorAvatar.appendChild(image);
+  } else {
+    lbAuthorAvatar.textContent = item.avatarText || author.trim().slice(0, 1).toUpperCase() || 'S';
+  }
   lbAuthorAvatar.style.background = item.color || '#4f7cff';
   lbCounter.textContent = `${isVideo ? 'Видео' : 'Фото'} ${lbIndex + 1} из ${lbList.length}`;
   lbCaption.textContent = [item.caption || '', item.size ? `${Math.max(1, Math.round(item.size / 1024))} КБ` : ''].filter(Boolean).join(' · ');

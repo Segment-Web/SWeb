@@ -1116,7 +1116,13 @@ export function chatRoomPanel(client) {
           if (m.system) continue;
           if (m.deleted) continue;
           for (const a of m.attachments || []) {
-            if (a.kind === 'photo' || a.kind === 'video' || a.kind === 'circle') media.push({ ...a, author: m.channelName || m.name, color: m.color });
+            if (a.kind === 'photo' || a.kind === 'video' || a.kind === 'circle') media.push({
+              ...a,
+              author: m.channelName || m.name,
+              color: m.color,
+              avatar: m.channelIcon || m.avatar || '',
+              avatarText: m.channelIcon || '',
+            });
             else if (a.kind === 'file') files.push({ a, m });
           }
           const urls = (m.text || '').match(/https?:\/\/[^\s]+/g);
@@ -1205,7 +1211,7 @@ export function chatRoomPanel(client) {
           renderInfo();
           if (infoTab === 'members') client.loadRoomMembers?.(chat.id).then(renderInfo).catch(() => {});
         };
-        const mediaData = info.media.map((a) => ({ type: a.kind === 'photo' ? 'photo' : 'video', src: a.data, poster: a.poster, name: a.name, size: a.size, author: a.author, color: a.color }));
+        const mediaData = info.media.map((a) => ({ type: a.kind === 'photo' ? 'photo' : 'video', src: a.data, poster: a.poster, name: a.name, size: a.size, author: a.author, color: a.color, avatar: a.avatar, avatarText: a.avatarText }));
         for (const cell of sheet.querySelectorAll('.info-cell')) {
           cell.onclick = () => window.Segment?.openMedia?.(mediaData, Number(cell.dataset.media) || 0);
         }

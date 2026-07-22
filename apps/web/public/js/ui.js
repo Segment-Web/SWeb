@@ -342,10 +342,8 @@ export function renderMessage(feed, m, myName, options = {}) {
     feed.appendChild(d);
   }
 
-  const previousTs = Number(lastMsg?.dataset.ts || 0);
   const grouped = !m.system && !needDivider && lastMsg
-    && lastMsg.dataset.author === authorKey
-    && Math.abs(Number(m.ts) - previousTs) <= 5 * 60 * 1000;
+    && lastMsg.dataset.author === authorKey;
   const el = document.createElement('div');
   const anim = options.animate === false ? '' : ' appear';
   el.className = `msg${mine ? ' mine' : ''}${m.channelName ? ' channel-message' : ''}${grouped ? ' grouped' : ''}${m.deleted ? ' deleted' : ''}${options.isSelected?.(m.id) ? ' selected' : ''}${anim}`;
@@ -422,7 +420,12 @@ export function renderMessage(feed, m, myName, options = {}) {
   }
   const media = (m.attachments || [])
     .filter((x) => x.kind === 'photo' || x.kind === 'video')
-    .map((x) => ({ type: x.kind, src: x.data, poster: x.poster, name: x.name, size: x.size, duration: x.duration, author: m.channelName || m.name, color: m.color }));
+    .map((x) => ({
+      type: x.kind, src: x.data, poster: x.poster, name: x.name, size: x.size, duration: x.duration,
+      author: m.channelName || m.name, color: m.color,
+      avatar: safeMediaUrl(m.channelIcon) || safeMediaUrl(m.avatar),
+      avatarText: m.channelIcon || '',
+    }));
   for (const cell of el.querySelectorAll('.media-cell')) {
     cell.onclick = (e) => {
       e.stopPropagation();
