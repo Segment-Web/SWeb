@@ -76,7 +76,7 @@ The source code is licensed under [GNU AGPL-3.0-only](LICENSE).
 
 Independent modules that interact with Segment solely through its designated
 Plugin API may be released under terms of your choice, including proprietary
-ones. See the [Segment Plugin Exception](LICENSE-EXCEPTION.md). The Plugin API
+ones. See the [Segment Plugin Exception](PLUGIN-EXCEPTION.md). The Plugin API
 is not published yet, so the exception has no effect until it is.
 
 Themes and comparable data-only assets are not derivative works and need no
