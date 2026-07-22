@@ -79,7 +79,11 @@ export function chatRoomPanel(client) {
               <div class="room-status" data-el="status">подключение...</div>
             </div>
             </div>
-            <button class="room-head-action" data-el="roomSearchOpen" aria-label="Поиск в чате">${ICONS.search}</button>
+            <div class="room-head-actions">
+              <button class="room-head-action" data-el="roomSearchOpen" aria-label="Поиск в чате">${ICONS.search}</button>
+              <button class="room-head-action" data-el="roomCall" aria-label="Позвонить">${ICONS.phone}</button>
+              <button class="room-head-action" data-el="roomMore" aria-label="Ещё">${ICONS.more}</button>
+            </div>
           </header>
           <div class="room-searchbar hidden" data-el="roomSearchBar">
             <label class="room-search-field">${ICONS.search}<input data-el="roomSearchInput" placeholder="Поиск в этом чате" autocomplete="off"></label>
@@ -318,6 +322,8 @@ export function chatRoomPanel(client) {
       const circleRec = q('circleRec');
       const pinnedBar = q('pinnedBar');
       const roomSearchOpen = q('roomSearchOpen');
+      const roomCall = q('roomCall');
+      const roomMore = q('roomMore');
       const roomSearchBar = q('roomSearchBar');
       const roomSearchInput = q('roomSearchInput');
       const roomSearchCount = q('roomSearchCount');
@@ -812,6 +818,7 @@ export function chatRoomPanel(client) {
 
       const feedOptions = () => ({
         myId: client.self.id || '',
+        showViews: !!currentChat && currentChat.id !== 'saved' && currentChat.type !== 'saved' && currentChat.type !== 'dm',
         onMessageContext: openMessageMenu,
         onReaction: (id, emoji) => client.toggleReaction(currentChat.id, id, emoji),
         onQuickReaction: (id, emoji) => client.toggleReaction(currentChat.id, id, emoji),
@@ -1420,7 +1427,13 @@ export function chatRoomPanel(client) {
       scrollDown.onclick = () => { awayCount = 0; scrollFeedToBottom(feed); updateScrollDown(); };
       replyCancel.onclick = () => setReply(null);
       head.onclick = openChatSheet;
-      roomSearchOpen.onclick = (e) => { e.stopPropagation(); openRoomSearch(); };
+      roomSearchOpen.onclick = (e) => {
+        e.stopPropagation();
+        if (roomSearchBar.classList.contains('hidden')) openRoomSearch();
+        else closeRoomSearch();
+      };
+      roomCall.onclick = (e) => e.stopPropagation();
+      roomMore.onclick = (e) => e.stopPropagation();
       q('roomSearchClose').onclick = closeRoomSearch;
       q('roomSearchPrev').onclick = () => updateRoomSearch(-1);
       q('roomSearchNext').onclick = () => updateRoomSearch(1);

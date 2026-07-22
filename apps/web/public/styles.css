@@ -3607,3 +3607,139 @@ html[data-theme="graphite"] .bubble.only-media > .meta,
 html[data-theme="graphite"] .date-divider span {
   background:var(--surface2);
 }
+
+/* Media navigation keeps a compact visual button but uses the whole screen edge as its hit area. */
+.lightbox-nav {
+  top:68px;
+  bottom:66px;
+  width:92px;
+  height:auto;
+  border-radius:0;
+  background:transparent!important;
+  transform:none!important;
+  display:flex;
+  align-items:center;
+}
+.lightbox-nav.prev { left:0; justify-content:flex-start; padding-left:18px; }
+.lightbox-nav.next { right:0; justify-content:flex-end; padding-right:18px; }
+.lightbox-nav::before {
+  content:'';
+  position:absolute;
+  top:50%;
+  width:44px;
+  height:58px;
+  border-radius:14px;
+  background:rgba(17,23,30,.74);
+  transform:translateY(-50%);
+  transition:background-color .15s ease,transform .15s var(--ease-out);
+}
+.lightbox-nav.prev::before { left:18px; }
+.lightbox-nav.next::before { right:18px; }
+.lightbox-nav svg { position:relative; z-index:1; }
+.lightbox-nav:hover::before { background:rgba(35,44,55,.96); }
+.lightbox-nav:active { transform:none!important; }
+.lightbox-nav:active::before { transform:translateY(-50%) scale(.96); }
+
+/* Keep message clusters compact while clearly separating authors and channel posts. */
+.msg + .msg:not(.grouped) { margin-top:9px; }
+.msg.grouped { margin-top:2px; }
+.message-views {
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  margin-right:5px;
+  font-variant-numeric:tabular-nums;
+}
+.message-views svg {
+  width:12px;
+  height:12px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.8;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+
+/* Room actions stay aligned and behave as one control group. */
+.room-head-actions { display:flex; align-items:center; gap:6px; flex:0 0 auto; }
+html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .room-head-actions .room-head-action {
+  width:40px;
+  height:40px;
+}
+
+/* Slightly lighter chat titles and denser Telegram-like context menus. */
+.panel[data-id="chat-list"] .chat-name { font-weight:600; }
+:where(.ctx-menu,.msg-menu) {
+  min-width:220px;
+  padding:5px;
+  border-radius:14px;
+  gap:0;
+}
+:where(.ctx-menu .ctx-item,.msg-menu .ctx-item) {
+  min-height:37px;
+  padding:6px 9px;
+  gap:10px;
+  border-radius:9px;
+  font-size:13.5px;
+}
+:where(.ctx-menu .ctx-item,.msg-menu .ctx-item) svg { width:18px; height:18px; }
+:where(.ctx-menu,.msg-menu) .ctx-sep { margin:4px 7px; }
+
+/* Surface bars morph into compact navigation glyphs without changing their hit boxes. */
+.workspace-surface-back i,
+.workspace-surface-close i,
+.account-dialog-close i,
+.profile-qr-close i {
+  height:4px!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  overflow:visible;
+}
+.workspace-surface-back i::before,
+.workspace-surface-back i::after,
+.workspace-surface-close i::before,
+.workspace-surface-close i::after,
+.account-dialog-close i::before,
+.account-dialog-close i::after,
+.profile-qr-close i::before,
+.profile-qr-close i::after {
+  content:'';
+  position:absolute;
+  top:0;
+  left:50%;
+  height:4px;
+  border-radius:999px;
+  transform:translateX(-50%) rotate(0deg);
+  transition:width .18s var(--ease-out),transform .18s var(--ease-out),background-color .15s ease;
+}
+.workspace-surface-back i::before,
+.workspace-surface-back i::after {
+  width:38px;
+  background:color-mix(in srgb,var(--accent) 78%,var(--grip));
+  transform-origin:left center;
+}
+.workspace-surface-back:hover i::before { width:27px; transform:translateX(-50%) rotate(11deg); background:var(--accent); }
+.workspace-surface-back:hover i::after { width:27px; transform:translateX(-50%) rotate(-11deg); background:var(--accent); }
+.workspace-surface-close i::before,
+.workspace-surface-close i::after,
+.account-dialog-close i::before,
+.account-dialog-close i::after,
+.profile-qr-close i::before,
+.profile-qr-close i::after {
+  width:40px;
+  background:color-mix(in srgb,var(--danger) 86%,#ff8b84);
+}
+.workspace-surface-close:hover i::before,
+.account-dialog-close:hover i::before,
+.profile-qr-close:hover i::before {
+  width:36px;
+  transform:translateX(-50%) rotate(8deg);
+  background:var(--danger);
+}
+.workspace-surface-close:hover i::after,
+.account-dialog-close:hover i::after,
+.profile-qr-close:hover i::after {
+  width:36px;
+  transform:translateX(-50%) rotate(-8deg);
+  background:var(--danger);
+}

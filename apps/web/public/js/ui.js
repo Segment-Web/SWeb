@@ -330,6 +330,7 @@ function attachSwipeReply(el, id, onReply) {
 export function renderMessage(feed, m, myName, options = {}) {
   const displayName = m.channelName || m.name || '';
   const mine = !m.channelName && (m.authorId && options.myId ? m.authorId === options.myId : m.name === myName);
+  const authorKey = m.channelName ? `channel:${m.channelName}` : `user:${m.authorId || displayName}`;
 
   const dateKey = new Date(m.ts).toDateString();
   const lastMsg = [...feed.querySelectorAll('.msg')].pop();
@@ -341,11 +342,16 @@ export function renderMessage(feed, m, myName, options = {}) {
     feed.appendChild(d);
   }
 
-  const grouped = !m.channelName && !m.system && !needDivider && lastMsg && lastMsg.dataset.name === displayName;
+  const previousTs = Number(lastMsg?.dataset.ts || 0);
+  const grouped = !m.channelName && !m.system && !needDivider && lastMsg
+    && lastMsg.dataset.author === authorKey
+    && Math.abs(Number(m.ts) - previousTs) <= 5 * 60 * 1000;
   const el = document.createElement('div');
   const anim = options.animate === false ? '' : ' appear';
   el.className = `msg${mine ? ' mine' : ''}${m.channelName ? ' channel-message' : ''}${grouped ? ' grouped' : ''}${m.deleted ? ' deleted' : ''}${options.isSelected?.(m.id) ? ' selected' : ''}${anim}`;
   el.dataset.name = displayName;
+  el.dataset.author = authorKey;
+  el.dataset.ts = String(Number(m.ts) || 0);
   el.dataset.date = dateKey;
   if (m.id) el.dataset.id = m.id;
   const time = new Date(m.ts).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
@@ -375,7 +381,11 @@ export function renderMessage(feed, m, myName, options = {}) {
     && !m.text && !m.replyTo && !forwardFrom;
   const link = m.deleted ? '' : linkCardHtml(m);
   const reactions = reactionsHtml(m, myName, options.myId);
-  const timeHtml = `<div class="time">${edited}${time}${mine && !m.deleted ? statusGlyph(m) : ''}</div>`;
+  const viewCount = Math.max(1, Number(m.views ?? m.viewCount ?? 1) || 1);
+  const views = options.showViews && !m.deleted
+    ? `<span class="message-views" aria-label="Просмотры"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></svg><span>${viewCount.toLocaleString('ru-RU')}</span></span>`
+    : '';
+  const timeHtml = `<div class="time">${edited}${views}${time}${mine && !m.deleted ? statusGlyph(m) : ''}</div>`;
   const messageFooter = mediaOnly && reactions
     ? `<div class="media-message-footer">${reactions}${timeHtml}</div>`
     : `${timeHtml}${reactions}`;
