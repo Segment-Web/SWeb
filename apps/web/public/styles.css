@@ -3621,8 +3621,8 @@ html[data-theme="graphite"] .date-divider span {
   display:flex;
   align-items:center;
 }
-.lightbox-nav.prev { left:0; justify-content:flex-start; padding-left:18px; }
-.lightbox-nav.next { right:0; justify-content:flex-end; padding-right:18px; }
+.lightbox-nav.prev { left:0; justify-content:flex-start; padding:0; }
+.lightbox-nav.next { right:0; justify-content:flex-end; padding:0; }
 .lightbox-nav::before {
   content:'';
   position:absolute;
@@ -3636,7 +3636,15 @@ html[data-theme="graphite"] .date-divider span {
 }
 .lightbox-nav.prev::before { left:18px; }
 .lightbox-nav.next::before { right:18px; }
-.lightbox-nav svg { position:relative; z-index:1; }
+.lightbox-nav svg {
+  position:absolute;
+  top:50%;
+  z-index:1;
+  transform:translateY(-50%);
+  pointer-events:none;
+}
+.lightbox-nav.prev svg { left:28px; }
+.lightbox-nav.next svg { right:28px; }
 .lightbox-nav:hover::before { background:rgba(35,44,55,.96); }
 .lightbox-nav:active { transform:none!important; }
 .lightbox-nav:active::before { transform:translateY(-50%) scale(.96); }
@@ -3714,7 +3722,7 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
 
 /* A single floating formatting capsule that stays clear of drafts and attachment menus. */
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .composer-format {
-  bottom:calc(100% + 4px);
+  bottom:calc(100% - 4px);
   min-height:44px;
   padding:5px 7px;
   gap:4px;
@@ -3733,7 +3741,7 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
   height:32px;
   border-radius:11px;
 }
-.composer.format-open .attach-menu { bottom:calc(100% + 70px); }
+.composer.format-open .attach-menu { bottom:calc(100% + 82px); }
 
 /* Attachment and create menus share the same compact desktop-menu language. */
 html[data-theme="graphite"] :is(.attach-menu,.fab-menu) {
