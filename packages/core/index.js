@@ -893,8 +893,16 @@ export class SegmentClient {
     return { mime, bytes: new TextEncoder().encode(decodeURIComponent(body)) };
   }
 
+  // A blob: url inherits the origin of the document that minted it, so the mime
+  // decides whether navigating to an attachment renders inert bytes or a live
+  // same-origin document. `mime` rides in on the wire inside the attachment
+  // reference, so anything outside the media types this app produces — text/html
+  // and image/svg+xml above all — degrades to an opaque download.
+  static SAFE_BLOB_MIME = /^(?:image\/(?:png|jpeg|gif|webp|avif)|audio\/[a-z0-9.+-]+|video\/[a-z0-9.+-]+)$/i;
+
   _bytesToUrl(bytes, mime) {
-    const type = mime || 'application/octet-stream';
+    const declared = String(mime || '').split(';')[0].trim();
+    const type = SegmentClient.SAFE_BLOB_MIME.test(declared) ? declared : 'application/octet-stream';
     if (typeof URL !== 'undefined' && URL.createObjectURL) {
       return URL.createObjectURL(new Blob([bytes], { type }));
     }

@@ -89,9 +89,13 @@ ok(claimedKey.status === 200 && claimedKey.data.room.historyKey === publicKey, '
 const forbiddenKey = await call('POST', '/api/rooms/history/public-key', { user: other, body: { roomId: channel.data.room.id, key: Buffer.alloc(32, 8).toString('base64') } });
 ok(forbiddenKey.status === 403, 'non-owner cannot replace a channel history key');
 const resolvedChannel = await call('GET', '/api/rooms/resolve?path=/c/dev-talk', { user: other });
-ok(resolvedChannel.data?.type === 'channel' && resolvedChannel.data.room.slug === 'dev-talk' && resolvedChannel.data.room.historyKey === publicKey && resolvedChannel.data.room.joined === false, 'resolve /c/dev-talk without silently subscribing');
+ok(resolvedChannel.data?.type === 'channel' && resolvedChannel.data.room.slug === 'dev-talk' && resolvedChannel.data.room.joined === false, 'resolve /c/dev-talk without silently subscribing');
+// Resolving a slug is discovery. The room key decrypts durable history and is
+// never rotated, so handing it out here made it unrevokable by leaving.
+ok(resolvedChannel.data.room.historyKey === '', 'resolve does not hand the history key to a non-subscriber');
 const subscribed = await call('POST', '/api/rooms/join-public', { user: other, body: { roomId: channel.data.room.id } });
 ok(subscribed.status === 200 && subscribed.data.room.joined === true && subscribed.data.room.joinedNow === true, 'subscribe to a public channel');
+ok(subscribed.data.room.historyKey === publicKey, 'subscribing delivers the channel history key');
 ok(rooms.canAccess(other.id, channel.data.room.id), 'subscriber gains public-channel access');
 const subscribedAgain = await call('POST', '/api/rooms/join-public', { user: other, body: { roomId: channel.data.room.id } });
 ok(subscribedAgain.status === 200 && subscribedAgain.data.room.joinedNow === false, 'public subscription is idempotent');

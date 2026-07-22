@@ -165,7 +165,8 @@ export async function createFiles(config, auth, rooms = null) {
   // uploads never sit fully in memory. The final name is the SHA-256 of the
   // (already encrypted) bytes, giving content-addressed dedup: identical
   // uploads collapse to one file. The size cap is enforced mid-stream.
-  const put = (req) => new Promise((resolve, reject) => {
+  const put = (req, limit = maxBytes) => new Promise((resolve, reject) => {
+    const cap = Math.max(0, Math.min(maxBytes, limit));
     const hash = createHash('sha256');
     const tmp = join(dir, `.tmp-${randomUUID()}`);
     const out = createWriteStream(tmp);
@@ -178,7 +179,7 @@ export async function createFiles(config, auth, rooms = null) {
     };
     req.on('data', (chunk) => {
       size += chunk.length;
-      if (size > maxBytes) { fail(Object.assign(new Error('FILE_TOO_LARGE'), { status: 413 })); return; }
+      if (size > cap) { fail(Object.assign(new Error(size > maxBytes ? 'FILE_TOO_LARGE' : 'STORAGE_QUOTA_EXCEEDED'), { status: 413 })); return; }
       hash.update(chunk);
       if (!out.write(chunk)) { req.pause(); out.once('drain', () => req.resume()); }
     });
@@ -334,9 +335,14 @@ export async function createFiles(config, auth, rooms = null) {
       if (req.method === 'POST' && url.pathname === '/api/files') {
         const roomId = String(url.searchParams.get('roomId') || '');
         if (rooms && (!roomId || !rooms.canAccess(user.id, roomId))) return json(res, 403, { error: 'ROOM_FORBIDDEN' });
+        // Carry the remaining quota INTO the stream. A chunked request sends no
+        // Content-Length, so the pre-check below cannot see it coming and the
+        // whole body used to land on disk before being measured and unlinked.
+        let remainingQuota = maxBytes;
         if (auth.pool?.query) {
           const incoming = Number(req.headers['content-length'] || 0);
           const used = await quotaUsed(user.id);
+          remainingQuota = Math.max(0, accountQuotaBytes - used);
           if (incoming > 0 && used + incoming > accountQuotaBytes) return json(res, 413, { error: 'STORAGE_QUOTA_EXCEEDED' });
         }
         const now = Date.now();
@@ -344,7 +350,7 @@ export async function createFiles(config, auth, rooms = null) {
         if (recent.length >= uploadLimit) return json(res, 429, { error: 'TOO_MANY_UPLOADS' });
         recent.push(now);
         uploadsByUser.set(user.id, recent);
-        const stored = await put(req);
+        const stored = await put(req, remainingQuota);
         if (auth.pool?.query) {
           const used = await quotaUsed(user.id);
           if (used + stored.size > accountQuotaBytes) {

@@ -16,7 +16,10 @@ export function loadConfig() {
     trustProxy: process.env.TRUST_PROXY === '1',
     maxConnections: int('MAX_CONNECTIONS', 2000, 2, 100000),
     maxConnectionsPerIp: int('MAX_CONNECTIONS_PER_IP', 20, 1, 1000),
-    maxWsPayload: int('MAX_WS_PAYLOAD', 16 * 1024 * 1024, 64 * 1024, 64 * 1024 * 1024),
+    // Only text frames and small key material cross the socket — attachments
+    // upload over HTTP — so this bounds the cost of parsing one inbound frame.
+    // `MAX_CIPHER_BYTES` caps ciphertext bodies independently and always wins.
+    maxWsPayload: int('MAX_WS_PAYLOAD', 1024 * 1024, 64 * 1024, 64 * 1024 * 1024),
     messagesPerMinute: int('MESSAGES_PER_MINUTE', 240, 10, 10000),
     heartbeatMs: int('WS_HEARTBEAT_MS', 30000, 5000, 120000),
     shutdownMs: int('SHUTDOWN_TIMEOUT_MS', 10000, 1000, 60000),

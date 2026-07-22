@@ -52,6 +52,12 @@ server.maxRequestsPerSocket = 1000;
 
 server.listen(config.port, config.host, () => {
   console.log(JSON.stringify({ level: 'info', event: 'server.started', host: config.host, port: config.port, production: config.production }));
+  // Behind a reverse proxy without TRUST_PROXY every request reports the proxy's
+  // address, so all per-IP limits (login codes, connection caps) silently
+  // collapse into one shared bucket. Say so loudly rather than fail quietly.
+  if (config.production && !config.trustProxy) {
+    console.warn(JSON.stringify({ level: 'warn', event: 'server.trust_proxy_disabled', message: 'TRUST_PROXY is not set: per-IP rate limits apply to the proxy address, not to clients' }));
+  }
 });
 
 let stopping = false;

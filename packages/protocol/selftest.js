@@ -9,7 +9,7 @@
 // Run: node packages/protocol/selftest.js
 
 import { SenderKey, DoubleRatchet, createPreKeyBundle, x3dhInitiate } from '@segment/crypto';
-import { isCipherFrame, MAX_IV_BYTES, parseLink, SLUG_RE, attachmentsWithinLimits } from './index.js';
+import { isCipherFrame, MAX_IV_BYTES, MAX_CIPHER_BYTES, parseLink, SLUG_RE, attachmentsWithinLimits } from './index.js';
 
 let pass = 0, fail = 0;
 const ok = (cond, label) => { if (cond) { pass++; console.log('ok   ' + label); } else { fail++; console.log('FAIL ' + label); } };
@@ -43,6 +43,13 @@ ok(!isCipherFrame({ n: -1, iv: [1], ct: [1], sig: [1] }, MAX_CT), 'negative sequ
 ok(!isCipherFrame({ n: 0, iv: [], ct: [1], sig: [1] }, MAX_CT), 'empty iv is rejected');
 ok(!isCipherFrame({ n: 0, iv: new Array(MAX_IV_BYTES + 1).fill(0), ct: [1], sig: [1] }, MAX_CT), 'oversized iv is rejected');
 ok(!isCipherFrame({ n: 0, iv: [1], ct: [1, 2, 3], sig: [1] }, 2), 'oversized ct is rejected');
+
+// `ct` is a JSON array of byte-sized integers, so a caller passing the raw
+// socket budget as a byte budget would let one frame carry millions of elements
+// to parse, validate and re-serialise per recipient. The ceiling always wins.
+const overCap = { n: 0, iv: [1], ct: new Array(MAX_CIPHER_BYTES + 1).fill(1), sig: [1] };
+ok(!isCipherFrame(overCap, 64 * 1024 * 1024), 'ct beyond MAX_CIPHER_BYTES is rejected even with a huge budget');
+ok(isCipherFrame({ ...overCap, ct: new Array(MAX_CIPHER_BYTES).fill(1) }, 64 * 1024 * 1024), 'ct exactly at the ceiling is accepted');
 ok(!isCipherFrame({ n: 0, iv: [1], ct: [1], sig: [256] }, MAX_CT), 'non-byte signature values are rejected');
 ok(!isCipherFrame(null, MAX_CT), 'null frame is rejected');
 

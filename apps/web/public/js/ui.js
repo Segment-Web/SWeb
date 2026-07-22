@@ -1,7 +1,7 @@
 
 
 
-import { esc, initials, previewOf, fmtSize } from './util.js';
+import { esc, initials, previewOf, fmtSize, safeMediaUrl } from './util.js';
 import { ICONS } from './icons.js';
 
 const revealedSpoilers = new Set();
@@ -9,16 +9,27 @@ const revealedSpoilers = new Set();
 
 
 
+// `hold` parks finished HTML behind these private-use sentinels, and the search
+// highlighter wraps hits in its own pair. Nothing stops a sender from typing
+// either, so each strips its own markers from untrusted text first: otherwise a
+// message could address held HTML by index, or fake <mark> runs.
+const SENTINELS = /[\uE000\uE001]/g;
+const HIGHLIGHT_MARKERS = /[\uE110\uE111]/g;
+
 export function formatText(raw) {
   const codes = [];
 
   const hold = (html) => `\uE000${codes.push(html) - 1}\uE001`;
-  let s = esc(raw);
+  let s = esc(String(raw ?? '').replace(SENTINELS, ''));
 
   s = s.replace(/```\n?([\s\S]+?)```/g, (_, c) => hold(`<pre class="code-block">${c.replace(/\n$/, '')}</pre>`));
   s = s.replace(/`([^`\n]+?)`/g, (_, c) => hold(`<code>${c}</code>`));
 
-  s = s.replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+  // Park the finished anchor instead of leaving its markup in the stream: the
+  // inline rules below rewrite anything that looks like a marker, and a `||`
+  // or `**` pair inside a URL used to inject tags *into the href attribute*,
+  // breaking out of the quoted value and emitting stray attributes.
+  s = s.replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g, (url) => hold(`<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`));
 
   s = s.replace(/\|\|([\s\S]+?)\|\|/g, '<span class="spoiler" data-spoiler>$1</span>');
 
@@ -33,7 +44,7 @@ export function formatText(raw) {
 }
 
 function highlightedFormattedText(raw, query) {
-  const text = String(raw || '');
+  const text = String(raw || '').replace(HIGHLIGHT_MARKERS, '');
   const needle = String(query || '').toLocaleLowerCase('ru');
   if (!needle) return formatText(text);
   const startToken = '\uE110';
@@ -118,7 +129,7 @@ function voiceHtml(v) {
     <button class="voice-play">${PLAY_SM}</button>
     <div class="voice-wave">${bars}</div>
     <span class="voice-time">${fmtDuration(v.duration)}</span>
-    <audio preload="metadata" src="${esc(v.data)}"></audio>
+    <audio preload="metadata" src="${esc(safeMediaUrl(v.data))}"></audio>
   </div>`;
 }
 
@@ -126,7 +137,7 @@ function voiceHtml(v) {
 function circleHtml(c) {
   const badge = c.duration ? `<span class="circle-time">${esc(fmtDuration(c.duration))}</span>` : '';
   return `<div class="msg-circle" data-circle>
-    <video class="circle-video" loop playsinline preload="metadata" poster="${esc(c.poster || '')}" src="${esc(c.data)}"></video>
+    <video class="circle-video" loop playsinline preload="metadata" poster="${esc(safeMediaUrl(c.poster))}" src="${esc(safeMediaUrl(c.data))}"></video>
     <span class="circle-play">${PLAY_GLYPH}</span>${badge}
   </div>`;
 }
@@ -142,7 +153,7 @@ const fmtDuration = (s) => {
 function mediaCellHtml(item, i) {
   if (item.kind === 'video') {
     const badge = item.duration ? `<span class="media-duration">${esc(fmtDuration(item.duration))}</span>` : '';
-    const poster = item.poster || item.data;
+    const poster = safeMediaUrl(item.poster) || safeMediaUrl(item.data);
     return `<div class="media-cell video" data-media="${i}">
       <img src="${esc(poster)}" alt="">
       <span class="media-play">${PLAY_GLYPH}</span>${badge}
@@ -150,7 +161,7 @@ function mediaCellHtml(item, i) {
   }
   const gif = item.mime === 'image/gif' ? '<span class="media-gif">GIF</span>' : '';
   return `<div class="media-cell" data-media="${i}">
-    <img src="${esc(item.data)}" alt="${esc(item.name || '')}">${gif}
+    <img src="${esc(safeMediaUrl(item.data))}" alt="${esc(item.name || '')}">${gif}
   </div>`;
 }
 
@@ -182,7 +193,7 @@ function attachmentsHtml(m) {
     html += `<div class="msg-media ${layout}"${style}>${cells}</div>`;
   }
   for (const f of files) {
-    html += `<a class="msg-file" href="${esc(f.data)}" download="${esc(f.name || 'file')}">
+    html += `<a class="msg-file" href="${esc(safeMediaUrl(f.data))}" download="${esc(f.name || 'file')}">
       <span class="msg-file-icon">${FILE_GLYPH}</span>
       <span class="msg-file-info"><b>${esc(f.name || 'Файл')}</b><span>${esc(fmtSize(f.size))}</span></span>
     </a>`;
@@ -343,7 +354,9 @@ export function renderMessage(feed, m, myName, options = {}) {
   const reply = replyItems.length ? `<div class="reply-quote${replyItems.some((q) => q.quote) ? ' fragment' : ''}${replyItems.length > 1 ? ' multiple' : ''}" data-reply="${esc(replyItems[0].id || '')}">${replyItems.map((q) => `<span class="reply-quote-item" data-reply-id="${esc(q.id || '')}"><b>${q.quote ? 'Цитата · ' : ''}${esc(q.name || '')}</b><span>${esc(q.text || '')}</span></span>`).join('')}</div>` : '';
   const forwardFrom = m.forwardFrom || null;
   const forward = forwardFrom ? `<div class="forward-label">Переслано${forwardFrom.name ? ` от ${esc(forwardFrom.name)}` : ''}${forwardFrom.chatName ? ` · ${esc(forwardFrom.chatName)}` : ''}</div>` : '';
-  const imageUrl = m.image || (m.text || '').match(IMAGE_URL_RE)?.[0] || '';
+  // `m.image` is peer-supplied; the second form is already anchored to http(s)
+  // by IMAGE_URL_RE, so only the first needs a scheme check.
+  const imageUrl = safeMediaUrl(m.image) || (m.text || '').match(IMAGE_URL_RE)?.[0] || '';
   const image = imageUrl ? `<img class="msg-image" src="${esc(imageUrl)}" alt="">` : '';
   const attachments = attachmentsHtml(m);
 
@@ -367,7 +380,7 @@ export function renderMessage(feed, m, myName, options = {}) {
     ? `<div class="media-message-footer">${reactions}${timeHtml}</div>`
     : `${timeHtml}${reactions}`;
   el.innerHTML = `
-    <div class="avatar" style="background:${color}">${m.channelIcon ? esc(m.channelIcon) : (m.avatar ? `<img src="${esc(m.avatar)}" alt="">` : initials(displayName))}</div>
+    <div class="avatar" style="background:${color}">${m.channelIcon ? esc(m.channelIcon) : (safeMediaUrl(m.avatar) ? `<img src="${esc(safeMediaUrl(m.avatar))}" alt="">` : initials(displayName))}</div>
     <div class="bubble${mediaOnly ? ' only-media' : ''}${circleOnly ? ' only-circle' : ''}${jumbo ? ' only-emoji' : ''}">
       <div class="meta" style="color:${color}">${esc(displayName)}</div>
       ${forward}
@@ -584,7 +597,7 @@ function mediaWord(m) {
 
 function previewBody(m) {
   const media = (m.attachments || []).find((x) => x.kind === 'photo' || x.kind === 'video' || x.kind === 'circle');
-  const src = media?.poster || media?.data || '';
+  const src = safeMediaUrl(media?.poster) || safeMediaUrl(media?.data);
   const thumb = src ? `<img class="chat-thumb" src="${esc(src)}" alt="">` : '';
   if (m.text) return thumb + formatText(m.text);
   if ((m.attachments || []).length) return `${thumb}<span class="chat-media">${esc(mediaWord(m))}</span>`;

@@ -34,8 +34,12 @@ const readJson = (req, limit = 1024 * 1024) => new Promise((resolve, reject) => 
   req.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); } catch { reject(Object.assign(new Error('INVALID_JSON'), { status: 400 })); } });
   req.on('error', reject);
 });
+// A malformed percent-escape ("Cookie: x=%") makes decodeURIComponent throw, and
+// this runs before any handler's try/catch on the WebSocket upgrade path. An
+// undecodable value simply is not one of our tokens, so pass it through raw.
+const decodeCookie = (value) => { try { return decodeURIComponent(value); } catch { return value; } };
 const parseCookies = (req) => Object.fromEntries((req.headers.cookie || '').split(';').map((part) => {
-  const at = part.indexOf('='); return at < 0 ? ['', ''] : [part.slice(0, at).trim(), decodeURIComponent(part.slice(at + 1))];
+  const at = part.indexOf('='); return at < 0 ? ['', ''] : [part.slice(0, at).trim(), decodeCookie(part.slice(at + 1))];
 }).filter(([key]) => key));
 const publicUser = (user) => user ? ({
   id: user.id, email: user.email, username: user.username, name: user.name,

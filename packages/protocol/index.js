@@ -90,6 +90,16 @@ export function isValidRoom(id) {
 
 /** Longest AES-GCM nonce we accept on the wire (the crypto layer emits 12 bytes). */
 export const MAX_IV_BYTES = 32;
+
+/**
+ * Hard ceiling on one ciphertext body, independent of the socket payload limit.
+ * `ct` travels as a JSON array of byte-sized integers, so a frame sized against
+ * the raw socket budget (megabytes) costs an order of magnitude more to parse,
+ * validate and re-serialise to every room member than its byte count suggests.
+ * Attachments upload out-of-band, so a real frame carries only message text and
+ * small blob references and stays far below this.
+ */
+export const MAX_CIPHER_BYTES = 256 * 1024;
 const isByteArray = (value, max) => Array.isArray(value) && value.length > 0 && value.length <= max
   && value.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255);
 
@@ -101,10 +111,11 @@ const isByteArray = (value, max) => Array.isArray(value) && value.length > 0 && 
  * for the wire shape so the relay and the crypto layer cannot drift apart.
  */
 export function isCipherFrame(message, maxCtBytes) {
+  const cap = Math.min(Number(maxCtBytes) || MAX_CIPHER_BYTES, MAX_CIPHER_BYTES);
   return Boolean(message)
     && Number.isSafeInteger(message.n) && message.n >= 0
     && isByteArray(message.iv, MAX_IV_BYTES)
-    && isByteArray(message.ct, maxCtBytes)
+    && isByteArray(message.ct, cap)
     && isByteArray(message.sig, 256);
 }
 

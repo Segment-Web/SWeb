@@ -6,7 +6,7 @@
 
 import { SegmentClient } from '/shared/core/index.js';
 import { webStorage } from './js/storage.js';
-import { $, esc } from './js/util.js';
+import { $, esc, safeMediaUrl } from './js/util.js';
 import { createRegistry } from './js/panels/registry.js';
 import { profilePanel, openProfileSurface } from './js/panels/profile.js';
 import { chatListPanel } from './js/panels/chat-list.js';
@@ -603,7 +603,10 @@ let lbIndex = 0;
 
 const lbNorm = (x) => (typeof x === 'string' ? { type: 'photo', src: x } : x);
 const lbRenderThumbs = () => {
-  lbThumbs.innerHTML = lbList.map((x, i) => `<button class="lightbox-thumb${i === lbIndex ? ' active' : ''}" data-index="${i}">${x.type === 'video' ? '<span>▶</span>' : ''}<img src="${x.poster || x.src || ''}" alt=""></button>`).join('');
+  // These urls come straight off a decrypted attachment: escape them (this was
+  // the one sink interpolating them raw) and hold them to the same schemes the
+  // message feed accepts.
+  lbThumbs.innerHTML = lbList.map((x, i) => `<button class="lightbox-thumb${i === lbIndex ? ' active' : ''}" data-index="${i}">${x.type === 'video' ? '<span>▶</span>' : ''}<img src="${esc(safeMediaUrl(x.poster) || safeMediaUrl(x.src))}" alt=""></button>`).join('');
   for (const btn of lbThumbs.querySelectorAll('[data-index]')) btn.onclick = (e) => { e.stopPropagation(); lbIndex = Number(btn.dataset.index); lbShow(); };
   lbThumbs.querySelector('.active')?.scrollIntoView({ inline: 'center', block: 'nearest' });
 };
@@ -619,14 +622,14 @@ const lbShow = () => {
     lightboxImg.src = '';
     vBuf.style.width = vFill.style.width = '0%';
     vCur.textContent = '0:00';
-    lightboxVideo.poster = item.poster || '';
-    lightboxVideo.src = item.src || '';
+    lightboxVideo.poster = safeMediaUrl(item.poster);
+    lightboxVideo.src = safeMediaUrl(item.src);
     lightboxVideo.play?.().catch(() => {});
     vSyncPlay();
   } else {
     lightboxVideo.pause?.();
     lightboxVideo.removeAttribute('src');
-    lightboxImg.src = item.src || '';
+    lightboxImg.src = safeMediaUrl(item.src);
     lightboxImg.onload = () => {
       const details = [item.caption || '', `${lightboxImg.naturalWidth}×${lightboxImg.naturalHeight}`, item.size ? `${Math.max(1, Math.round(item.size / 1024))} КБ` : ''].filter(Boolean);
       lbCaption.textContent = details.join(' · ');

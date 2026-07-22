@@ -35,11 +35,15 @@ const readJson = (req, limit = 64 * 1024) => new Promise((resolve, reject) => {
 const publicRoom = (row) => {
   const hasMemberCount = row.member_count != null;
   const memberCount = hasMemberCount ? Number(row.member_count) : undefined;
+  const joined = Boolean(row.joined || row.membership_role);
   return {
     id: row.id, type: row.type, slug: row.slug || '', title: row.title, icon: row.icon || '',
-    isPublic: row.is_public, ownerId: row.owner_id, historyKey: row.is_public ? (row.history_key || '') : '',
+    // The room key decrypts durable history, so it goes only to a caller who has
+    // actually joined. Resolving a channel by slug is discovery, not membership:
+    // handing the key to every passer-by made the key unrevokable by leaving.
+    isPublic: row.is_public, ownerId: row.owner_id, historyKey: row.is_public && joined ? (row.history_key || '') : '',
     historyVisibility: row.history_visibility || 'joined', membershipEpoch: Number(row.membership_epoch || 1),
-    joined: Boolean(row.joined || row.membership_role), role: row.membership_role || '',
+    joined, role: row.membership_role || '',
     ...(hasMemberCount ? { memberCount, members: memberCount, subscribers: row.type === ChatType.Channel ? memberCount : undefined } : {}),
   };
 };
@@ -250,7 +254,9 @@ export async function createRooms(config, auth) {
       if (!SLUG_RE.test(cleanSlug)) throw Object.assign(new Error('SLUG_INVALID'), { status: 400 });
       if (await one('SELECT 1 FROM rooms WHERE slug=$1', [cleanSlug])) throw Object.assign(new Error('SLUG_TAKEN'), { status: 409 });
     }
-    const id = `${kind}-${randomUUID().slice(0, 8)}`;
+    // 12 base64url chars (72 bits). The previous 8 hex chars carried 32 bits,
+    // which is guessable enough for `exists()` to answer as a room-id oracle.
+    const id = `${kind}-${randomBytes(9).toString('base64url')}`;
     const icon = cleanRoomIcon(requestedIcon, { [ChatType.DM]: '👤', [ChatType.Chat]: '💬', [ChatType.Channel]: '📢' }[kind]);
     const row = await one(
       `INSERT INTO rooms(id,type,slug,title,icon,is_public,owner_id) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
@@ -258,7 +264,7 @@ export async function createRooms(config, auth) {
     );
     await pool.query('INSERT INTO room_members(room_id,user_id,role) VALUES($1,$2,$3)', [id, owner.id, 'owner']);
     indexRoom(row); indexMember(id, owner.id);
-    return { ...publicRoom(row), joined: true, role: 'owner', memberCount: 1, members: 1, subscribers: kind === ChatType.Channel ? 1 : undefined };
+    return { ...publicRoom({ ...row, joined: true }), role: 'owner', memberCount: 1, members: 1, subscribers: kind === ChatType.Channel ? 1 : undefined };
   };
 
   const updateRoom = async (user, { roomId, title, icon }) => {
@@ -269,7 +275,9 @@ export async function createRooms(config, auth) {
     if (!cleanTitle) throw Object.assign(new Error('TITLE_REQUIRED'), { status: 400 });
     const cleanIcon = icon == null ? room.icon : cleanRoomIcon(icon, room.icon);
     const updated = await one('UPDATE rooms SET title=$2, icon=$3 WHERE id=$1 RETURNING *', [roomId, cleanTitle, cleanIcon]);
-    return publicRoom(updated);
+    // Ownership was just verified, so the caller is a member by definition; say
+    // so explicitly because this row carries no membership join.
+    return publicRoom({ ...updated, joined: true });
   };
 
   const createInvite = async (user, roomId) => {
@@ -302,7 +310,7 @@ export async function createRooms(config, auth) {
     if (!room) throw Object.assign(new Error('NOT_FOUND'), { status: 404 });
     if (!room.is_public || room.owner_id !== user.id) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
     const updated = await one('UPDATE rooms SET history_key=COALESCE(history_key,$2) WHERE id=$1 RETURNING *', [roomId, key]);
-    return publicRoom(updated);
+    return publicRoom({ ...updated, joined: true });
   };
 
   const roomForUser = async (roomId, userId) => {
@@ -524,9 +532,9 @@ export async function createRooms(config, auth) {
       const room = await one('SELECT * FROM rooms WHERE id=$1', [roomId]);
       if (!room) throw Object.assign(new Error('NOT_FOUND'), { status: 404 });
       if (room.owner_id !== user.id) throw Object.assign(new Error('FORBIDDEN'), { status: 403 });
-      return publicRoom(room); // already 'full' — idempotent
+      return publicRoom({ ...room, joined: true }); // already 'full' — idempotent
     }
-    return publicRoom(row);
+    return publicRoom({ ...row, joined: true });
   };
 
   const resolvePath = async (path, viewerId) => {

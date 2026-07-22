@@ -10,6 +10,26 @@ export function esc(str) {
 }
 
 
+/**
+ * Attachment urls arrive inside decrypted message payloads, so a peer running a
+ * patched client controls them completely: `_hydrateAttachment` only fills in
+ * `data` when the field is absent, and nothing else inspects it. Escaping alone
+ * keeps a value inside its attribute but says nothing about the SCHEME, which is
+ * what decides whether an `href` navigates or executes.
+ *
+ * Allow exactly the three shapes this app produces: our own `blob:` object urls,
+ * inline media data urls, and same-origin absolute paths (`//host` excluded).
+ * `image/svg+xml` is left out on purpose — inert in <img>, but scripted once a
+ * file link navigates to it.
+ */
+const SAFE_MEDIA_URL = /^(?:blob:|data:(?:image\/(?!svg)|audio\/|video\/)[a-z0-9.+-]+[;,]|\/(?!\/))/i;
+
+export function safeMediaUrl(value) {
+  const url = String(value ?? '').trim();
+  return SAFE_MEDIA_URL.test(url) ? url : '';
+}
+
+
 export function initials(name) {
   return (String(name ?? '').trim()[0] || '·').toUpperCase();
 }
