@@ -13,4 +13,10 @@ details.
 You should have received a copy of the GNU Affero General Public License along
 with this program. If not, see <https://www.gnu.org/licenses/agpl-3.0.html>.
 
+Additional permission under section 7 of the GNU Affero General Public License
+version 3 is granted for independent modules that interact with this program
+solely through its designated Plugin API. Such modules may be conveyed under
+terms of your choice. See LICENSE-EXCEPTION.md for the full text, definitions
+and limits of that permission.
+
 SPDX-License-Identifier: AGPL-3.0-only
