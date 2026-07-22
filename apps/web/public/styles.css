@@ -3430,25 +3430,25 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
   width:40px;
   height:40px;
   border-radius:50%;
-  background:color-mix(in srgb,var(--surface2) 78%,transparent);
+  background:var(--surface2);
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--stroke) 54%,transparent),0 6px 18px rgba(0,0,0,.14);
-  backdrop-filter:blur(10px);
+  backdrop-filter:none;
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .room-identity {
   max-width:min(390px,calc(100% - 52px));
   padding:4px 13px 4px 4px;
   border-radius:24px;
-  background:color-mix(in srgb,var(--surface2) 78%,transparent);
+  background:var(--surface2);
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--stroke) 54%,transparent),0 6px 18px rgba(0,0,0,.14);
-  backdrop-filter:blur(10px);
+  backdrop-filter:none;
   transition:background-color .16s ease,box-shadow .16s ease,transform .16s ease;
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .room-identity:hover {
-  background:color-mix(in srgb,var(--surface3) 90%,transparent);
+  background:var(--surface3);
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--stroke) 72%,transparent),0 8px 22px rgba(0,0,0,.18);
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .room-head-action:hover {
-  background:color-mix(in srgb,var(--surface3) 90%,transparent);
+  background:var(--surface3);
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--stroke) 72%,transparent),0 8px 22px rgba(0,0,0,.18);
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .feed {
@@ -3482,13 +3482,13 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
   padding-inline:7px;
   border:0;
   border-radius:25px;
-  background:color-mix(in srgb,var(--surface2) 48%,transparent);
+  background:var(--surface2);
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--stroke) 46%,transparent);
-  backdrop-filter:blur(10px);
+  backdrop-filter:none;
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .composer-field:focus-within {
   border:0;
-  background:color-mix(in srgb,var(--surface2) 62%,transparent);
+  background:var(--surface3);
   box-shadow:none;
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .composer-format {
@@ -3499,9 +3499,9 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
   gap:6px;
   border:0;
   border-radius:17px;
-  background:color-mix(in srgb,var(--surface2) 76%,transparent);
+  background:var(--surface2);
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--stroke) 38%,transparent),0 14px 34px rgba(0,0,0,.22);
-  backdrop-filter:blur(12px);
+  backdrop-filter:none;
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .composer-format .fmt-btn {
   width:32px;
@@ -3509,7 +3509,7 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
   border-radius:10px;
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .composer-format .fmt-btn:hover {
-  background:color-mix(in srgb,var(--surface3) 64%,transparent);
+  background:var(--surface3);
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .composer-format .fmt-btn.active {
   color:var(--accent);
@@ -3523,14 +3523,14 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
   gap:8px;
   border:0;
   border-radius:17px;
-  background:color-mix(in srgb,var(--surface2) 74%,transparent);
+  background:var(--surface2);
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--stroke) 36%,transparent),0 14px 34px rgba(0,0,0,.22);
-  backdrop-filter:blur(12px);
+  backdrop-filter:none;
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .attach-chip {
   border:0;
   border-radius:13px;
-  background:color-mix(in srgb,var(--surface3) 48%,transparent);
+  background:var(--surface3);
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--stroke) 32%,transparent);
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .attach-chip:is(.photo,.video) {
@@ -3554,21 +3554,21 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .room-search-field {
   border:0;
-  background:color-mix(in srgb,var(--surface2) 78%,transparent);
+  background:var(--surface2);
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--stroke) 54%,transparent),0 6px 18px rgba(0,0,0,.14);
-  backdrop-filter:blur(10px);
+  backdrop-filter:none;
   transition:background-color .16s ease,box-shadow .16s ease;
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .room-search-field:hover,
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .room-search-field:focus-within,
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .room-searchbar button:hover {
-  background:color-mix(in srgb,var(--surface3) 90%,transparent);
+  background:var(--surface3);
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--stroke) 72%,transparent),0 8px 22px rgba(0,0,0,.18);
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .room-searchbar button {
-  background:color-mix(in srgb,var(--surface2) 78%,transparent);
+  background:var(--surface2);
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--stroke) 54%,transparent),0 6px 18px rgba(0,0,0,.14);
-  backdrop-filter:blur(10px);
+  backdrop-filter:none;
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) :is(.room-searchbar,.room-search-field):focus-within {
   border-color:transparent;
@@ -3596,4 +3596,14 @@ html[data-theme="graphite"] .panel[data-id="profile"] .profile {
   width:100%;
   min-height:66px;
   box-sizing:border-box;
+}
+
+/* Graphite uses solid surfaces for now; background content must not bleed through UI chrome. */
+html[data-theme="graphite"] * {
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+}
+html[data-theme="graphite"] .bubble.only-media > .meta,
+html[data-theme="graphite"] .date-divider span {
+  background:var(--surface2);
 }
