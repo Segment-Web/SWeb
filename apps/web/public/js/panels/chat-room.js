@@ -72,7 +72,7 @@ export function chatRoomPanel(client) {
         <div class="room">
           <div class="room-top-overlay">
           <header class="room-head" data-el="head">
-            <div class="room-identity">
+            <div class="room-identity" role="button" tabindex="0">
             <div class="room-avatar" data-el="avatar">💬</div>
             <div class="room-headinfo">
               <div class="room-title" data-el="title">Общий</div>
@@ -1182,7 +1182,10 @@ export function chatRoomPanel(client) {
 
         sheet.innerHTML = `
           <div class="info-top">
-            <button class="info-close" data-act="close" aria-label="Закрыть">${ICONS.close}</button>
+            <div class="info-sheet-bars">
+              <button class="info-sheet-move" type="button" data-info-move aria-label="Переместить блок"><i></i></button>
+              <button class="info-sheet-close" type="button" data-act="close" aria-label="Закрыть"><i></i></button>
+            </div>
             <div class="info-avatar" style="background:${avatarColor(chat.id)}">${esc(chat.icon || chat.name[0].toUpperCase())}</div>
             <div class="info-title">${esc(chat.name)}</div>
             <div class="info-sub">${esc(subtitle || typeText)}</div>
@@ -1205,6 +1208,22 @@ export function chatRoomPanel(client) {
             <button class="ctx-item danger" data-act="clear"${info.media.length || client.messages[chat.id]?.length ? '' : ' disabled'}>${ICONS.broom}<span>Очистить историю</span></button>
             ${editable ? `<button class="ctx-item danger" data-act="leave">${ICONS.logout}<span>${leaveLabel}</span></button>` : ''}
           </div>`;
+
+        const infoMove = sheet.querySelector('[data-info-move]');
+        const panelHead = body.closest('.panel')?.querySelector(':scope > .panel-head');
+        infoMove.onpointerdown = (event) => {
+          if (!panelHead || event.button !== 0) return;
+          event.preventDefault();
+          panelHead.dispatchEvent(new PointerEvent('pointerdown', {
+            bubbles: true,
+            button: event.button,
+            buttons: event.buttons,
+            clientX: event.clientX,
+            clientY: event.clientY,
+            pointerId: event.pointerId,
+            pointerType: event.pointerType,
+          }));
+        };
 
         for (const t of sheet.querySelectorAll('.info-tab')) t.onclick = () => {
           infoTab = t.dataset.tab;
@@ -1432,7 +1451,13 @@ export function chatRoomPanel(client) {
       feed.addEventListener('scroll', () => { updateScrollDown(); if (currentChat && drafts[currentChat.id]) { drafts[currentChat.id].scrollTop = feed.scrollTop; persistDrafts(); } }, { passive: true });
       scrollDown.onclick = () => { awayCount = 0; scrollFeedToBottom(feed); updateScrollDown(); };
       replyCancel.onclick = () => setReply(null);
-      head.onclick = openChatSheet;
+      const roomIdentity = head.querySelector('.room-identity');
+      roomIdentity.onclick = openChatSheet;
+      roomIdentity.onkeydown = (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        openChatSheet();
+      };
       roomSearchOpen.onclick = (e) => {
         e.stopPropagation();
         if (roomSearchBar.classList.contains('hidden')) openRoomSearch();
