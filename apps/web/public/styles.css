@@ -962,7 +962,12 @@ html:not(.show-channel-avatars) .msg.channel-message .avatar { display: none; }
 .msg-status.sent { opacity: .62; }
 .msg-status.delivered { opacity: .78; }
 .msg-status.read { color: #79c7ff; opacity: 1; }
-.mention { display:inline; color:#8fd0ff; background:color-mix(in srgb,var(--accent) 14%,transparent); border-radius:5px; padding:0 2px; text-decoration:none; }
+.mention { display:inline; color:#8fd0ff; background:color-mix(in srgb,var(--accent) 14%,transparent); border-radius:5px; padding:0 2px; text-decoration:none; cursor:pointer; }
+.mention:hover { background:color-mix(in srgb,var(--accent) 26%,transparent); }
+/* The author of a message opens their profile, so say so on hover. */
+.msg .author-link { cursor:pointer; }
+.msg .meta.author-link:hover { text-decoration:underline; }
+.msg .avatar.author-link:hover { filter:brightness(1.12); }
 .composer-actions { position:relative; }
 .send-menu { position:absolute; right:0; bottom:52px; z-index:22; width:210px; padding:6px; border:1px solid var(--border); border-radius:12px; background:var(--surface2); box-shadow:var(--shadow-lg); }
 .send-menu.hidden,.send-schedule.hidden { display:none; }
@@ -1595,6 +1600,7 @@ html:not(.show-channel-avatars) .msg.channel-message .avatar { display: none; }
 .info-link:hover { background: var(--surface2); }
 .info-member { display: flex; align-items: center; gap: 11px; padding: 7px 10px; border-radius: 8px; }
 .info-member:hover { background: var(--surface2); }
+.info-member.is-openable { cursor: pointer; }
 .info-member .chat-icon { width: 40px; height: 40px; font-size: 16px; }
 .info-member-info { display: flex; flex-direction: column; }
 .info-member-info b { font-size: 14px; font-weight: 500; }
@@ -2842,6 +2848,8 @@ button, input, textarea { font: inherit; }
 .room-member-list { overflow:hidden; border-radius:13px; background:var(--surface2); }
 .room-member-row { display:flex; align-items:center; gap:11px; min-height:54px; padding:7px 12px; border-bottom:1px solid color-mix(in srgb,var(--stroke) 48%,transparent); }
 .room-member-row:last-child { border-bottom:0; }
+.room-member-row.is-openable { cursor:pointer; }
+.room-member-row.is-openable:hover { background:color-mix(in srgb,var(--accent) 8%,transparent); }
 .room-member-avatar { display:grid; width:38px; height:38px; flex:0 0 38px; place-items:center; overflow:hidden; border-radius:50%; color:#fff; font-size:14px; font-weight:650; }
 .room-member-avatar img { width:100%; height:100%; object-fit:cover; }
 .room-member-row>span:last-child { display:flex; min-width:0; flex-direction:column; gap:2px; }

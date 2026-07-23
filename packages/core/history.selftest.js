@@ -134,6 +134,30 @@ persistentA._seedHistoryKey('persisted-room');
 const persistentReload = new SegmentClient({ storage: persistentStorage });
 ok(JSON.stringify(persistentReload._historyKey('persisted-room')) === JSON.stringify(persistentA._historyKey('persisted-room')), 'history key survives a same-device reload');
 
+// The secure key store is read back asynchronously, so a reload that touches an
+// owned room before that read lands must WAIT instead of concluding the room has
+// no key: seeding a second one there orphaned every envelope written under the
+// first, and the room came back permanently unreadable.
+let secureState = null;
+const slowSecureStorage = {
+  ...mkStorage(),
+  getSecureHistoryState: async () => { await new Promise((r) => setTimeout(r, 30)); return secureState; },
+  setSecureHistoryState: async (_id, state) => { secureState = structuredClone(state); },
+};
+const secureOwner = new SegmentClient({ storage: slowSecureStorage });
+secureOwner.self.id = 'user-owner';
+const secureRoomId = 'chat-secure-reload';
+secureOwner._addServerRoom({ id: secureRoomId, title: 'Reload', type: 'chat', icon: 'R', ownerId: 'user-owner' });
+await secureOwner.ready();
+const originalKey = secureOwner._seedHistoryKey(secureRoomId);
+await secureOwner._persistHistoryKeys();
+await new Promise((r) => setTimeout(r, 60));
+const secureReload = new SegmentClient({ storage: slowSecureStorage });
+secureReload.self.id = 'user-owner';
+await secureReload._ensureOwnedRoomHistoryKey({ id: secureRoomId, ownerId: 'user-owner' });
+ok(JSON.stringify(secureReload._historyKey(secureRoomId)) === JSON.stringify(originalKey),
+  'a reload waits for the secure key store instead of seeding a second key over it');
+
 // Key rotation keeps new members/leavers on a fresh key while retaining the
 // bounded old-key archive needed to decrypt pre-rotation envelopes.
 const rotateRoom = 'chat-rotate';

@@ -10,10 +10,16 @@
 // the room owner can rotate its client-held history key after joins and leaves.
 
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
-import { ChatType, ROOMS, RETIRED_ROOM_IDS, SLUG_RE } from '@segment/protocol';
+import { ChatType, ROOMS, RETIRED_ROOM_IDS, SLUG_RE, cleanUsername } from '@segment/protocol';
 
 const ROOM_TYPES = new Set([ChatType.Chat, ChatType.Channel, ChatType.DM]);
 const hashToken = (value) => createHash('sha256').update(value).digest('hex');
+
+// A direct chat is addressed by its two members instead of a random id: both
+// sides must land in the same room whoever writes first, and re-opening it must
+// find that room rather than fork a second, half-empty history next to it. The
+// digest keeps member ids out of the id itself, which travels to every client.
+const directRoomId = (a, b) => `dm-${createHash('sha256').update([a, b].sort().join(':')).digest('base64url').slice(0, 22)}`;
 
 const json = (res, status, value) => {
   const body = JSON.stringify(value);
@@ -37,7 +43,10 @@ const publicRoom = (row) => {
   const memberCount = hasMemberCount ? Number(row.member_count) : undefined;
   const joined = Boolean(row.joined || row.membership_role);
   return {
-    id: row.id, type: row.type, slug: row.slug || '', title: row.title, icon: row.icon || '',
+    // A direct chat carries one stored title but two readings of it: each side
+    // must see the OTHER member, so the per-viewer peer wins when it is known.
+    id: row.id, type: row.type, slug: row.slug || '', title: row.peer?.name || row.title, icon: row.icon || '',
+    ...(row.peer ? { peer: row.peer } : {}),
     // The room key decrypts durable history, so it goes only to a caller who has
     // actually joined. Resolving a channel by slug is discovery, not membership:
     // handing the key to every passer-by made the key unrevokable by leaving.
@@ -237,6 +246,7 @@ export async function createRooms(config, auth) {
     )).rows;
     for (const row of rows) {
       row.member_count = Number((await one('SELECT COUNT(*)::int AS count FROM room_members WHERE room_id=$1', [row.id]))?.count || 0);
+      await withDirectPeer(row, userId);
     }
     return rows.map(publicRoom);
   };
@@ -313,6 +323,25 @@ export async function createRooms(config, auth) {
     return publicRoom({ ...updated, joined: true });
   };
 
+  // Attach the other member of a direct chat, seen from `userId`. Both members
+  // share a private room, so their avatar privacy already resolves to visible
+  // for each other ('members' scope); only 'nobody' still hides it.
+  const withDirectPeer = async (row, userId) => {
+    if (!row || row.type !== ChatType.DM) return row;
+    const peer = await one(
+      `SELECT u.id,u.name,u.username,u.avatar,u.color,u.privacy
+       FROM room_members m JOIN users u ON u.id=m.user_id
+       WHERE m.room_id=$1 AND m.user_id<>$2 ORDER BY m.joined_at LIMIT 1`,
+      [row.id, userId],
+    );
+    if (!peer) return row;
+    row.peer = {
+      id: peer.id, name: peer.name, username: peer.username, color: peer.color || '',
+      avatar: peer.avatar && profileFieldVisible(peer.privacy, 'avatar', false, true) ? `/api/auth/avatar/${peer.id}` : '',
+    };
+    return row;
+  };
+
   const roomForUser = async (roomId, userId) => {
     const room = await one(
       `SELECT r.*,m.role AS membership_role,(m.user_id IS NOT NULL) AS joined
@@ -321,7 +350,47 @@ export async function createRooms(config, auth) {
     );
     if (!room) return null;
     room.member_count = Number((await one('SELECT COUNT(*)::int AS count FROM room_members WHERE room_id=$1', [roomId]))?.count || 0);
-    return room;
+    return withDirectPeer(room, userId);
+  };
+
+  // Open (or reopen) the direct chat with a username. Idempotent by design: the
+  // second caller joins the room the first one created instead of making a new
+  // one, so a conversation started from either side stays a single history.
+  const openDirect = async (user, username) => {
+    const clean = cleanUsername(username);
+    if (!clean) throw Object.assign(new Error('USERNAME_INVALID'), { status: 400 });
+    const peer = await one('SELECT id,name FROM users WHERE username=$1', [clean]);
+    if (!peer) throw Object.assign(new Error('NOT_FOUND'), { status: 404 });
+    // Writing to yourself is Saved Messages, not a two-member room.
+    if (peer.id === user.id) {
+      const saved = await ensureSavedRoom(user.id);
+      return { ...publicRoom({ ...saved, joined: true, member_count: 1 }), createdNow: false };
+    }
+    const id = directRoomId(user.id, peer.id);
+    // Ask before inserting instead of reading it back off ON CONFLICT: whether
+    // the room is new decides who seeds its history key and whether the other
+    // side is notified, and that answer must not depend on how a driver chooses
+    // to report a suppressed conflict.
+    const before = await one('SELECT id FROM rooms WHERE id=$1', [id]);
+    if (!before) {
+      await pool.query(
+        `INSERT INTO rooms(id,type,title,icon,is_public,owner_id) VALUES($1,$2,$3,'👤',FALSE,$4)
+         ON CONFLICT (id) DO NOTHING`,
+        [id, ChatType.DM, String(peer.name || clean).slice(0, 64), user.id],
+      );
+    }
+    // Both rows carry join_seq 0: a direct chat has no history that predates
+    // either member, so neither of them starts out with a hidden past.
+    await pool.query(`INSERT INTO room_members(room_id,user_id,role,join_seq) VALUES($1,$2,'owner',0)
+      ON CONFLICT (room_id,user_id) DO NOTHING`, [id, user.id]);
+    await pool.query(`INSERT INTO room_members(room_id,user_id,role,join_seq) VALUES($1,$2,'member',0)
+      ON CONFLICT (room_id,user_id) DO NOTHING`, [id, peer.id]);
+    const row = await one('SELECT * FROM rooms WHERE id=$1', [id]);
+    indexRoom(row); indexMember(id, user.id); indexMember(id, peer.id);
+    // Tell the addressee about a room they never asked to join, so the chat
+    // appears for them without a reload.
+    if (!before) emitMembership({ roomId: id, userId: peer.id, action: 'joined', epoch: roomEpoch(id) });
+    return { ...publicRoom(await roomForUser(id, user.id)), createdNow: !before };
   };
 
   const joinPublicRoom = async (user, roomId) => {
@@ -605,6 +674,10 @@ export async function createRooms(config, auth) {
         const body = await readJson(req);
         const room = await redeemInvite(user, body.token);
         return json(res, 200, { room });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/rooms/direct') {
+        const body = await readJson(req);
+        return json(res, 200, { room: await openDirect(user, body.username) });
       }
       if (req.method === 'POST' && url.pathname === '/api/rooms/join-public') {
         const body = await readJson(req);

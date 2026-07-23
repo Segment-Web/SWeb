@@ -1174,7 +1174,7 @@ export function chatRoomPanel(client) {
             : '<div class="info-empty">Нет ссылок</div>';
         } else if (infoTab === 'members') {
           content = info.members.length ? info.members.map((mem) => `
-            <div class="info-member">
+            <div class="info-member${mem.username ? ' is-openable' : ''}"${mem.username ? ` data-member-username="${esc(mem.username)}"` : ''}>
               <div class="chat-icon" style="background:${esc(mem.color || avatarColor(mem.id || mem.name))}">${mem.avatar ? `<img src="${esc(mem.avatar)}" alt="">` : esc((mem.name || '?')[0].toUpperCase())}</div>
               <div class="info-member-info"><b>${esc(mem.name || mem.username || 'Пользователь')}</b><span>${mem.username ? `@${esc(mem.username)} · ` : ''}${mem.me ? 'вы' : (mem.role === 'owner' ? 'владелец' : (chat.type === 'channel' ? 'подписчик' : 'участник'))}</span></div>
             </div>`).join('') : '<div class="info-empty">Участников пока нет</div>';
@@ -1233,6 +1233,9 @@ export function chatRoomPanel(client) {
         const mediaData = info.media.map((a) => ({ type: a.kind === 'photo' ? 'photo' : 'video', src: a.data, poster: a.poster, name: a.name, size: a.size, author: a.author, color: a.color, avatar: a.avatar, avatarText: a.avatarText }));
         for (const cell of sheet.querySelectorAll('.info-cell')) {
           cell.onclick = () => window.Segment?.openMedia?.(mediaData, Number(cell.dataset.media) || 0);
+        }
+        for (const row of sheet.querySelectorAll('[data-member-username]')) {
+          row.onclick = () => { hideMenus(); window.Segment?.openUser?.(row.dataset.memberUsername); };
         }
         for (const btn of sheet.querySelectorAll('[data-act]')) {
           btn.onclick = () => {

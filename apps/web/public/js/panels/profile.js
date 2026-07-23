@@ -1,6 +1,7 @@
 import { mountSettings } from '../settings.js';
 import { esc } from '../util.js';
 import { ICONS } from '../icons.js';
+import { LINK } from '/shared/protocol/index.js';
 
 const BADGES = {
   early: { icon: '⚡', title: 'Ранний участник', text: 'С аккаунтом с раннего этапа Segment' },
@@ -246,9 +247,18 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
     root.querySelector('.profile-cover-menu').onclick = own ? () => coverInput?.click() : () => {
       const popover = root.querySelector('.profile-detail-popover');
       popover.classList.add('is-menu');
-      popover.innerHTML = `<div class="profile-quick-menu"><button data-copy-profile type="button">${ICONS.copy}<span>Скопировать ссылку</span></button><button data-profile-safety type="button">${ICONS.settings}<span>Номер безопасности</span></button><button data-close-profile type="button">${ICONS.close}<span>Закрыть профиль</span></button></div>`;
+      popover.innerHTML = `<div class="profile-quick-menu"><button data-copy-profile type="button">${ICONS.copy}<span>Скопировать ссылку</span></button><button data-write-profile type="button">${ICONS.open}<span>Написать сообщение</span></button><button data-profile-safety type="button">${ICONS.settings}<span>Номер безопасности</span></button><button data-close-profile type="button">${ICONS.close}<span>Закрыть профиль</span></button></div>`;
       popover.classList.remove('hidden');
-      popover.querySelector('[data-copy-profile]').onclick = () => root.querySelector('.profile-cover-code').click();
+      popover.querySelector('[data-copy-profile]').onclick = async () => {
+        popover.classList.add('hidden');
+        if (!user.username) { window.Segment?.toast?.('У пользователя нет имени пользователя'); return; }
+        const link = `${location.origin}${LINK.profile(user.username)}`;
+        window.Segment?.toast?.(await copyProfileText(link) ? 'Ссылка на профиль скопирована' : 'Не удалось скопировать ссылку');
+      };
+      popover.querySelector('[data-write-profile]').onclick = () => {
+        if (user.username) window.Segment?.messageUser?.(user.username);
+        else window.Segment?.toast?.('У пользователя нет имени пользователя');
+      };
       popover.querySelector('[data-profile-safety]').onclick = async () => {
         const numbers = await client.safetyNumbersForUser?.(user.id) || [];
         popover.classList.remove('is-menu');
@@ -275,7 +285,13 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
     const action = (name, handler) => root.querySelector(`[data-profile-action="${name}"]`)?.addEventListener('click', handler);
     action('photo',()=>avatarInput?.click()); action('edit',()=>openSettings?.('profile')); action('settings',()=>openSettings?.('home'));
     action('copy',()=>root.querySelector('.profile-cover-code').click());
-    for (const id of ['message','sound','call','block']) action(id,()=>window.Segment?.toast?.('Функция будет подключена к профилям следующим этапом'));
+    // Writing to someone needs a username: it is what addresses the account in
+    // the direct-chat lookup, and a profile reached by id alone has none.
+    action('message',()=>{
+      if(user.username)window.Segment?.messageUser?.(user.username);
+      else window.Segment?.toast?.('У пользователя нет имени пользователя');
+    });
+    for (const id of ['sound','call','block']) action(id,()=>window.Segment?.toast?.('Функция будет подключена к профилям следующим этапом'));
   };
   render();
 }

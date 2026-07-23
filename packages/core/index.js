@@ -1,7 +1,7 @@
 // Platform-independent Segment client core. It owns the WebSocket lifecycle,
 // chat state, update stream and encrypted session setup without depending on DOM.
 
-import { MessageType, PROTOCOL_VERSION, ChatType, attachmentsWithinLimits } from '../protocol/index.js';
+import { MessageType, PROTOCOL_VERSION, ChatType, attachmentsWithinLimits, cleanUsername } from '../protocol/index.js';
 import {
   createPreKeyBundle, createOneTimePreKeys, x3dhInitiate, x3dhRespond, SenderKey, SenderKeyView,
   randomFileKey, sealBytes, openBytes,
@@ -204,6 +204,7 @@ export class SegmentClient {
       existing.ownerId = room.ownerId || existing.ownerId;
       existing.historyKey = room.historyKey || existing.historyKey || '';
       existing.historyVisibility = room.historyVisibility || existing.historyVisibility;
+      if (room.peer) existing.peer = room.peer;
       existing.membershipEpoch = Number(this._serverRoomEpochs.get(room.id) || room.membershipEpoch || existing.membershipEpoch || 1);
       if (Number.isFinite(Number(room.memberCount))) existing.memberCount = existing.members = Number(room.memberCount);
       if (room.type === ChatType.Channel && Number.isFinite(Number(room.subscribers))) existing.subscribers = Number(room.subscribers);
@@ -212,6 +213,7 @@ export class SegmentClient {
       this.chats.push({
         id: room.id, name: room.title, icon: room.icon || '💬', type: room.type, slug: room.slug || '',
         ownerId: room.ownerId || '', isPublic: Boolean(room.isPublic), historyKey: room.historyKey || '', historyVisibility: room.historyVisibility || 'joined', membershipEpoch: Number(this._serverRoomEpochs.get(room.id) || room.membershipEpoch || 1),
+        peer: room.peer || null,
         memberCount: Number(room.memberCount || 0), members: Number(room.memberCount || 0),
         subscribers: room.type === ChatType.Channel ? Number(room.subscribers ?? room.memberCount ?? 0) : undefined,
         roomMembers: Array.isArray(room.roomMembers) ? room.roomMembers : [],
@@ -293,6 +295,11 @@ export class SegmentClient {
 
   async _ensureOwnedRoomHistoryKey(room) {
     if (!room?.id || room.ownerId !== this.self.id) return;
+    // Never decide "this room has no key yet" before the encrypted local state
+    // has been read back. Seeding against a half-loaded map mints a second key
+    // that then wins over the restored one — and every envelope written under
+    // the first key stops decrypting for good.
+    await this.ready();
     const key = this._historyKey(room.id) || this._seedHistoryKey(room.id);
     if (!room.isPublic || room.historyKey) return;
     try {
@@ -311,6 +318,7 @@ export class SegmentClient {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const { room } = await this._roomsApi('POST', '/api/rooms', payload);
+        await this.ready(); // the key map must be whole before anything is seeded
         this._seedHistoryKey(room.id); // creator seeds the room's history key
         await this._ensureOwnedRoomHistoryKey(room);
         return this._addServerRoom(room, { open: true });
@@ -354,6 +362,27 @@ export class SegmentClient {
     await this._advanceRoomEpoch(room.id, Number(room.membershipEpoch || 1), false);
     await this.loadRoomMembers(room.id).catch(() => {});
     return roomId;
+  }
+
+  // Open the direct chat with a username and show it right away. The room may
+  // already exist (either side could have started it), so this never assumes it
+  // is new; only the account that actually created it seeds the history key,
+  // the other one asks its peer for the key over the encrypted channel.
+  async openDirectChat(username) {
+    const clean = cleanUsername(username);
+    if (!clean) return null;
+    const { room } = await this._roomsApi('POST', '/api/rooms/direct', { username: clean });
+    this._serverRoomEpochs.set(room.id, Number(room.membershipEpoch || 1));
+    // Only the account the server recorded as the creator seeds the key: two
+    // sides opening the chat at the same moment must not seed two of them.
+    if (room.createdNow && room.ownerId === this.self.id) {
+      await this.ready(); // see _ensureOwnedRoomHistoryKey: never seed over a half-loaded map
+      this._seedHistoryKey(room.id);
+    }
+    const id = this._addServerRoom(room, { open: true });
+    await this._advanceRoomEpoch(room.id, Number(room.membershipEpoch || 1), false);
+    await this.loadRoomMembers(room.id).catch(() => {});
+    return id;
   }
 
   async joinPublicRoom(roomId) {
@@ -1598,6 +1627,10 @@ export class SegmentClient {
         break;
 
       case MessageType.RoomMembersChanged:
+        // Someone can add us to a room we have never seen — a direct chat the
+        // other side opened. Pull the room list first, or every step below
+        // would be applied to a chat this client does not know about yet.
+        if (!this.chatById(msg.room)) await this.loadRooms();
         await this._advanceRoomEpoch(msg.room, msg.epoch, msg.rotateHistory);
         if (msg.action === 'joined') {
           for (const peerId of this.peers.keys()) await this._shareSenderKeyWith(peerId, msg.room);

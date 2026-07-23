@@ -4,7 +4,7 @@ import { esc } from './util.js';
 const ROOM_TYPES = {
   channel: { label: 'Канал', title: 'Новый канал', icon: '📢', placeholder: 'Название канала', hint: 'Публичные публикации для подписчиков' },
   chat: { label: 'Группа', title: 'Новая группа', icon: '💬', placeholder: 'Название группы', hint: 'Общение и обмен файлами для участников' },
-  dm: { label: 'Личный чат', title: 'Новое сообщение', icon: '👤', placeholder: 'Имя собеседника', hint: 'Приватный диалог один на один' },
+  dm: { label: 'Личный чат', title: 'Новое сообщение', icon: '👤', placeholder: 'username', hint: 'Приватный диалог один на один' },
 };
 
 const roomTypeLabel = (type) => ({ channel: 'Канал', chat: 'Групповой чат', dm: 'Личный чат', saved: 'Избранное' }[type] || 'Чат');
@@ -18,6 +18,9 @@ export function openRoomCreator(client, sourceId = 'chat-list', initialType = 'c
     mount(root, close) {
       const render = () => {
         const preset = ROOM_TYPES[type];
+        // A direct chat is not created but addressed: it belongs to two
+        // accounts, so the form asks for the other one instead of a title.
+        const direct = type === 'dm';
         root.innerHTML = `<div class="room-manager room-creator">
           <header class="room-manager-head"><div><span>Создание</span><h2>${preset.title}</h2></div></header>
           <div class="room-type-switch" role="tablist">
@@ -25,16 +28,16 @@ export function openRoomCreator(client, sourceId = 'chat-list', initialType = 'c
           </div>
           <form class="room-manager-form">
             <div class="room-create-identity">
-              <label class="room-icon-field"><span>Значок</span><input name="icon" maxlength="16" value="${preset.icon}" aria-label="Значок"></label>
-              <label class="room-main-field"><span>Название</span><input name="name" maxlength="64" placeholder="${preset.placeholder}" autocomplete="off" required></label>
+              ${direct ? '' : `<label class="room-icon-field"><span>Значок</span><input name="icon" maxlength="16" value="${preset.icon}" aria-label="Значок"></label>`}
+              <label class="room-main-field"><span>${direct ? 'Имя пользователя' : 'Название'}</span><input name="name" maxlength="${direct ? 25 : 64}" placeholder="${preset.placeholder}" autocomplete="off" ${direct ? 'spellcheck="false" ' : ''}required></label>
             </div>
-            <p class="room-manager-hint">${preset.hint}</p>
+            <p class="room-manager-hint">${direct ? 'Введите @username собеседника. Чат откроется у обеих сторон и останется одним, кто бы ни написал первым.' : preset.hint}</p>
             ${type === 'channel' ? `<div class="room-manager-card room-channel-address"><span>Публичная ссылка</span><b>${esc(location.host)}/c/<i data-channel-slug>channel</i></b><small>Адрес создаётся из названия и позже остаётся постоянным.</small></div>` : ''}
             <div class="room-manager-card room-create-summary">
-              <div>${ICONS.info}<span><b>${type === 'channel' ? 'Публичный канал' : 'Закрытое пространство'}</b><small>${type === 'channel' ? 'Канал виден по ссылке, публиковать может владелец.' : 'Войти смогут только приглашённые участники.'}</small></span></div>
+              <div>${ICONS.info}<span><b>${type === 'channel' ? 'Публичный канал' : direct ? 'Диалог один на один' : 'Закрытое пространство'}</b><small>${type === 'channel' ? 'Канал виден по ссылке, публиковать может владелец.' : direct ? 'Собеседник увидит чат сразу, приглашение не нужно.' : 'Войти смогут только приглашённые участники.'}</small></span></div>
               <div>${ICONS.image}<span><b>Медиа и файлы</b><small>История и вложения синхронизируются между устройствами.</small></span></div>
             </div>
-            <div class="room-manager-actions"><button type="button" class="room-secondary" data-cancel>Отмена</button><button type="submit" class="room-primary">Создать</button></div>
+            <div class="room-manager-actions"><button type="button" class="room-secondary" data-cancel>Отмена</button><button type="submit" class="room-primary">${direct ? 'Написать' : 'Создать'}</button></div>
           </form>
         </div>`;
         const form = root.querySelector('form');
@@ -46,6 +49,14 @@ export function openRoomCreator(client, sourceId = 'chat-list', initialType = 'c
         form.onsubmit = async (event) => {
           event.preventDefault();
           const submit = form.querySelector('[type="submit"]');
+          if (direct) {
+            submit.disabled = true; submit.textContent = 'Открываем…';
+            // messageUser closes this surface itself once the chat is open.
+            if (!await window.Segment?.messageUser?.(name.value)) {
+              submit.disabled = false; submit.textContent = 'Написать'; name.focus();
+            }
+            return;
+          }
           submit.disabled = true; submit.textContent = 'Создаём…';
           const chat = await client.createChat({ name: name.value, icon: form.elements.icon.value, type });
           if (chat) { close(); window.Segment?.toast?.(`${ROOM_TYPES[type].label} создан${type === 'channel' ? '' : type === 'chat' ? 'а' : ''}`); }
@@ -107,7 +118,7 @@ export function openRoomSettings(client, roomId, sourceId = 'chat-room') {
         const archived = client.isArchived(roomId);
         const roomMembers = Array.isArray(current.roomMembers) ? current.roomMembers : [];
         const membersLabel = current.type === 'channel' ? 'Подписчики' : 'Участники';
-        const memberRows = roomMembers.map((member) => `<div class="room-member-row">
+        const memberRows = roomMembers.map((member) => `<div class="room-member-row${member.username ? ' is-openable' : ''}"${member.username ? ` data-member-username="${esc(member.username)}"` : ''}>
           <span class="room-member-avatar" style="background:${esc(member.color || 'var(--accent)')}">${member.avatar ? `<img src="${esc(member.avatar)}" alt="">` : esc((member.name || member.username || '?')[0].toUpperCase())}</span>
           <span><b>${esc(member.name || member.username || 'Пользователь')}</b><small>${member.username ? `@${esc(member.username)} · ` : ''}${member.me ? 'вы' : (member.role === 'owner' ? 'владелец' : (current.type === 'channel' ? 'подписчик' : 'участник'))}</small></span>
         </div>`).join('');
@@ -137,6 +148,9 @@ export function openRoomSettings(client, roomId, sourceId = 'chat-room') {
           </div></section>
         </div>`;
 
+        for (const row of root.querySelectorAll('[data-member-username]')) {
+          row.onclick = () => window.Segment?.openUser?.(row.dataset.memberUsername);
+        }
         const form = root.querySelector('.room-identity-form');
         if (form) form.onsubmit = (event) => {
           event.preventDefault();

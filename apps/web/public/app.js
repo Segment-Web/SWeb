@@ -5,6 +5,7 @@
 
 
 import { SegmentClient } from '/shared/core/index.js';
+import { LINK, cleanUsername } from '/shared/protocol/index.js';
 import { webStorage } from './js/storage.js';
 import { $, esc, safeMediaUrl } from './js/util.js';
 import { createRegistry } from './js/panels/registry.js';
@@ -918,6 +919,45 @@ const enterApp = (user) => {
   if (!connected) { connected = true; client.connect(); }
   bootRooms();
 };
+
+// Everything that addresses an account by username — @mentions, member rows,
+// profile links, the profile "Чат" button — routes through these two. Keeping
+// them here means a username opens a surface inside the workspace instead of
+// reloading the page through the /@user deep link.
+const openUser = async (username) => {
+  const clean = cleanUsername(username);
+  if (!clean) return false;
+  if (clean === client.self.username) { openProfileSurface(client, client.self, { sourceId: 'profile' }); return true; }
+  const target = await client.resolveLink(LINK.profile(clean));
+  if (!target?.user) { segmentApi.toast('Профиль не найден'); return false; }
+  openProfileSurface(client, target.user, { sourceId: 'profile' });
+  return true;
+};
+const messageUser = async (username) => {
+  const clean = cleanUsername(username);
+  if (!clean) { segmentApi.toast('Некорректное имя пользователя'); return false; }
+  try {
+    const roomId = await client.openDirectChat(clean);
+    if (roomId) { workspace?.closeSurface(); return true; }
+    segmentApi.toast('Не удалось открыть чат');
+  } catch (error) {
+    segmentApi.toast(error?.code === 'NOT_FOUND' ? 'Пользователь не найден' : 'Не удалось открыть чат');
+  }
+  return false;
+};
+segmentApi.openUser = openUser;
+segmentApi.messageUser = messageUser;
+
+// A rendered @mention is a real <a href="/@user"> so it stays copyable and
+// keyboard-navigable; intercept the plain click so it resolves in place.
+document.addEventListener('click', (event) => {
+  const link = event.target.closest?.('a.mention, a[data-profile-link]');
+  if (!link || event.metaKey || event.ctrlKey || event.shiftKey || event.button) return;
+  const username = cleanUsername(new URL(link.href, location.origin).pathname.replace(/^\/@/, ''));
+  if (!username) return;
+  event.preventDefault();
+  openUser(username);
+});
 
 // After sign-in: load the account's rooms, then act on any deep link the user
 // opened the app with (/j/ invite, /c/ channel, /@ profile).

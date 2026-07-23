@@ -114,6 +114,35 @@ ok(badSlug.status === 400, 'invalid slug -> 400');
 const profile = await call('GET', '/api/rooms/resolve?path=/@owner_u', { user: other });
 ok(profile.data?.type === 'profile' && profile.data.user.username === 'owner_u', 'resolve /@owner_u');
 
+// --- Direct chats: addressed by username, one room per pair, both members ---
+const directMembershipBefore = membershipChanges.length;
+const direct = await call('POST', '/api/rooms/direct', { user: owner, body: { username: '@Other_U' } });
+ok(direct.status === 200 && direct.data.room?.type === 'dm' && direct.data.room.createdNow === true, 'open a direct chat by username (case and @ tolerated)');
+const directId = direct.data.room.id;
+ok(rooms.canAccess(owner.id, directId) && rooms.canAccess(other.id, directId), 'both accounts are members of the direct chat');
+ok(direct.data.room.title === 'other_u' && direct.data.room.peer?.username === 'other_u', 'the opener sees the other account, not a room title');
+ok(membershipChanges.length > directMembershipBefore && membershipChanges.at(-1)?.roomId === directId, 'the addressee is told about a chat they never joined');
+// Whoever writes first, the conversation must stay one room with one history.
+const directAgain = await call('POST', '/api/rooms/direct', { user: other, body: { username: 'owner_u' } });
+ok(directAgain.status === 200 && directAgain.data.room.id === directId && directAgain.data.room.createdNow === false, 'the other side reopens the same room instead of forking one');
+ok(directAgain.data.room.title === 'owner_u' && directAgain.data.room.peer?.username === 'owner_u', 'each side sees the other one as the chat title');
+const directReopen = await call('POST', '/api/rooms/direct', { user: owner, body: { username: 'other_u' } });
+ok(directReopen.data.room.id === directId, 'reopening from the original side is idempotent too');
+const directMine = await call('GET', '/api/rooms/mine', { user: other });
+ok(directMine.data.rooms.some((r) => r.id === directId && r.title === 'owner_u'), '/mine carries the direct chat with the peer-side title');
+// A direct chat has no past that predates either member (join_seq 0 for both).
+await call('POST', '/api/rooms/history', { user: owner, body: { roomId: directId, ...({ iv: 'iv-d', ct: 'cipher-d' }) } });
+ok((await call('GET', `/api/rooms/history?roomId=${directId}`, { user: other })).data.envelopes.length === 1, 'the addressee reads history written before they opened the chat');
+// Writing to yourself is Saved Messages, not a room with one member twice over.
+const directSelf = await call('POST', '/api/rooms/direct', { user: owner, body: { username: 'owner_u' } });
+ok(directSelf.status === 200 && directSelf.data.room.type === 'saved', 'addressing yourself lands in Saved Messages');
+const directMissing = await call('POST', '/api/rooms/direct', { user: owner, body: { username: 'nobody_here' } });
+ok(directMissing.status === 404, 'unknown username -> 404');
+const directInvalid = await call('POST', '/api/rooms/direct', { user: owner, body: { username: 'no' } });
+ok(directInvalid.status === 400, 'malformed username -> 400');
+const directOutsider = await call('GET', `/api/rooms/history?roomId=${directId}`, { user: third });
+ok(directOutsider.status === 403, 'a third account cannot read a direct chat');
+
 // Non-member cannot mint an invite.
 const forbidden = await call('POST', '/api/rooms/invite', { user: other, body: { roomId } });
 ok(forbidden.status === 403, 'non-member invite -> 403');

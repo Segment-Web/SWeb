@@ -400,6 +400,18 @@ export function renderMessage(feed, m, myName, options = {}) {
       ${image}
       ${messageFooter}
     </div>`;
+  // The author is a way into their profile, like the @mentions in the text: the
+  // avatar and the name above the bubble are where people click first. Channel
+  // posts speak for the channel, not for an account, so they stay inert.
+  const authorUsername = !m.channelName && /^[a-z0-9_]{3,24}$/i.test(String(m.username || '')) ? String(m.username) : '';
+  if (authorUsername) {
+    for (const node of [el.querySelector('.avatar'), el.querySelector('.meta')]) {
+      if (!node) continue;
+      node.classList.add('author-link');
+      node.title = `@${authorUsername}`;
+      node.addEventListener('click', (e) => { e.stopPropagation(); window.Segment?.openUser?.(authorUsername); });
+    }
+  }
   if (options.onMessageClick && options.selectionMode) {
     el.addEventListener('click', (e) => {
       e.preventDefault();

@@ -62,6 +62,19 @@ export const MessageType = {
 /** Shape a room slug: lowercase, url-safe, 3..32 chars. */
 export const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/;
 
+/**
+ * Shape a username: lowercase, 3..24 chars. It addresses an account in three
+ * places at once — the profile link, the @mention and the direct-chat lookup —
+ * so all of them read the rule from here instead of restating it.
+ */
+export const USERNAME_RE = /^[a-z0-9_]{3,24}$/;
+
+/** Normalize user input ("@Name", " name ") to a comparable username, or ''. */
+export function cleanUsername(input) {
+  const value = String(input ?? '').trim().replace(/^@/, '').toLowerCase();
+  return USERNAME_RE.test(value) ? value : '';
+}
+
 /** Client/link routing prefixes for profiles, channels and invites. */
 export const LINK = {
   profile: (username) => `/@${username}`,

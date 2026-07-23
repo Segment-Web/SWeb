@@ -9,7 +9,7 @@
 // Run: node packages/protocol/selftest.js
 
 import { SenderKey, DoubleRatchet, createPreKeyBundle, x3dhInitiate } from '@segment/crypto';
-import { isCipherFrame, MAX_IV_BYTES, MAX_CIPHER_BYTES, parseLink, SLUG_RE, attachmentsWithinLimits } from './index.js';
+import { isCipherFrame, MAX_IV_BYTES, MAX_CIPHER_BYTES, parseLink, SLUG_RE, attachmentsWithinLimits, cleanUsername, LINK } from './index.js';
 
 let pass = 0, fail = 0;
 const ok = (cond, label) => { if (cond) { pass++; console.log('ok   ' + label); } else { fail++; console.log('FAIL ' + label); } };
@@ -58,6 +58,15 @@ ok(parseLink('/@Alice')?.username === 'alice', 'parseLink lowercases a profile')
 ok(parseLink('/c/dev-talk')?.slug === 'dev-talk', 'parseLink reads a channel slug');
 ok(parseLink('/nope') === null, 'parseLink rejects an unknown path');
 ok(SLUG_RE.test('dev-talk') && !SLUG_RE.test('-bad'), 'slug rule accepts valid and rejects invalid');
+
+// A username reaches the direct-chat lookup from a mention, a link and a typed
+// field, so all three normalize the same way before anything is looked up.
+ok(cleanUsername('@Alice') === 'alice', 'cleanUsername strips the @ and lowercases');
+ok(cleanUsername('  bob_1 ') === 'bob_1', 'cleanUsername trims surrounding space');
+ok(cleanUsername('ab') === '' && cleanUsername('a'.repeat(25)) === '', 'cleanUsername rejects lengths outside 3..24');
+ok(cleanUsername('bad name') === '' && cleanUsername('drop;table') === '', 'cleanUsername rejects anything but [a-z0-9_]');
+ok(cleanUsername(null) === '' && cleanUsername(undefined) === '', 'cleanUsername survives missing input');
+ok(parseLink(LINK.profile('alice'))?.username === 'alice', 'a minted profile link parses back to its username');
 
 ok(attachmentsWithinLimits(Array.from({ length: 100 }, () => ({ kind: 'photo' }))), '100 photos fit in one message');
 ok(!attachmentsWithinLimits(Array.from({ length: 101 }, () => ({ kind: 'file' }))), '101 files are rejected');
