@@ -30,8 +30,23 @@ export function safeMediaUrl(value) {
 }
 
 
+// Avatars never show an emoji or a chosen icon — only the name's initials:
+// one letter for a single word, the first letters of the first two words
+// otherwise, always uppercase so they read as a monogram.
 export function initials(name) {
-  return (String(name ?? '').trim()[0] || '·').toUpperCase();
+  const words = String(name ?? '').trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return '·';
+  const letters = words.length > 1 ? words[0][0] + words[1][0] : words[0].slice(0, 1);
+  return letters.toLocaleUpperCase('ru');
+}
+
+// Fill an avatar with a soft diagonal gradient derived from its base colour
+// instead of a flat block. Accepts a hex colour or a CSS variable; anything
+// else falls back to the brand accent.
+export function avatarFill(color) {
+  const raw = String(color ?? '').trim();
+  const base = /^#[0-9a-f]{6}$/i.test(raw) || raw.startsWith('var(') ? raw : '#7c5cff';
+  return `linear-gradient(145deg, color-mix(in srgb, ${base} 88%, #fff), color-mix(in srgb, ${base} 74%, #000))`;
 }
 
 

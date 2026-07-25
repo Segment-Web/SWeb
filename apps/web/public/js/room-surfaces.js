@@ -1,5 +1,5 @@
 import { ICONS } from './icons.js';
-import { esc } from './util.js';
+import { esc, initials, avatarFill } from './util.js';
 
 const ROOM_TYPES = {
   channel: { label: 'Канал', title: 'Новый канал', icon: '📢', placeholder: 'Название канала', hint: 'Публичные публикации для подписчиков' },
@@ -9,7 +9,11 @@ const ROOM_TYPES = {
 
 const roomTypeLabel = (type) => ({ channel: 'Канал', chat: 'Групповой чат', dm: 'Личный чат', saved: 'Избранное' }[type] || 'Чат');
 const slugify = (value) => String(value || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32) || 'ch-generated';
-const roomAvatar = (chat, className = 'room-surface-avatar') => `<div class="${className}">${esc(chat.icon || chat.name?.[0] || '💬')}</div>`;
+const roomAvatar = (chat, className = 'room-surface-avatar') => {
+  const peerAvatar = chat.type === 'dm' ? chat.peer?.avatar : '';
+  const fill = avatarFill(chat.type === 'dm' && chat.peer?.color ? chat.peer.color : 'var(--accent)');
+  return `<div class="${className}" style="background:${fill}">${peerAvatar ? `<img src="${esc(peerAvatar)}" alt="">` : esc(initials(chat.name))}</div>`;
+};
 
 export function openRoomCreator(client, sourceId = 'chat-list', initialType = 'chat') {
   let type = ROOM_TYPES[initialType] ? initialType : 'chat';
@@ -119,7 +123,7 @@ export function openRoomSettings(client, roomId, sourceId = 'chat-room') {
         const roomMembers = Array.isArray(current.roomMembers) ? current.roomMembers : [];
         const membersLabel = current.type === 'channel' ? 'Подписчики' : 'Участники';
         const memberRows = roomMembers.map((member) => `<div class="room-member-row${member.username ? ' is-openable' : ''}"${member.username ? ` data-member-username="${esc(member.username)}"` : ''}>
-          <span class="room-member-avatar" style="background:${esc(member.color || 'var(--accent)')}">${member.avatar ? `<img src="${esc(member.avatar)}" alt="">` : esc((member.name || member.username || '?')[0].toUpperCase())}</span>
+          <span class="room-member-avatar" style="background:${avatarFill(member.color || 'var(--accent)')}">${member.avatar ? `<img src="${esc(member.avatar)}" alt="">` : esc(initials(member.name || member.username))}</span>
           <span><b>${esc(member.name || member.username || 'Пользователь')}</b><small>${member.username ? `@${esc(member.username)} · ` : ''}${member.me ? 'вы' : (member.role === 'owner' ? 'владелец' : (current.type === 'channel' ? 'подписчик' : 'участник'))}</small></span>
         </div>`).join('');
         root.innerHTML = `<div class="room-manager room-settings">

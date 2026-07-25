@@ -1,5 +1,5 @@
 import { renderFeed, renderMessage, renderSystem } from '../ui.js';
-import { esc, placeFloatingMenu } from '../util.js';
+import { esc, placeFloatingMenu, initials, avatarFill } from '../util.js';
 import { ICONS } from '../icons.js';
 
 let seq = 0;
@@ -38,7 +38,7 @@ export function chatViewPanel(client, chat) {
           <div class="room-top-overlay">
           <header class="room-head" data-el="head">
             <div class="room-identity">
-            <div class="room-avatar" data-el="avatar">${esc(chat.icon || chat.name?.[0] || '')}</div>
+            <div class="room-avatar" data-el="avatar" style="background:${avatarFill(chat.type === 'dm' && chat.peer?.color ? chat.peer.color : 'var(--accent)')}">${chat.type === 'dm' && chat.peer?.avatar ? `<img src="${esc(chat.peer.avatar)}" alt="">` : esc(initials(chat.name))}</div>
             <div class="room-headinfo">
               <div class="room-title" data-el="title">${esc(chat.name)}</div>
               <div class="room-status" data-el="status"></div>
@@ -265,7 +265,7 @@ export function chatViewPanel(client, chat) {
         const typeText = { saved: 'Избранное', dm: 'Личный чат', chat: 'Группа', channel: 'Канал' }[c.type] || 'Чат';
         sheet.innerHTML = `
           <div class="sheet-head">
-            <div class="room-avatar">${esc(c.icon || '')}</div>
+            <div class="room-avatar" style="background:${avatarFill(c.type === 'dm' && c.peer?.color ? c.peer.color : 'var(--accent)')}">${c.type === 'dm' && c.peer?.avatar ? `<img src="${esc(c.peer.avatar)}" alt="">` : esc(initials(c.name))}</div>
             <div><b>${esc(c.name)}</b><span>${esc(subtitle || typeText)}</span></div>
             <button data-act="close">×</button>
           </div>
@@ -296,7 +296,10 @@ export function chatViewPanel(client, chat) {
         const c = current();
         if (!c) { selected.clear(); renderSelectionBar(); feed.innerHTML = '<div class="empty">чат удалён</div>'; return; }
         titleEl.textContent = c.name;
-        avatarEl.textContent = c.icon;
+        const viewPeerAvatar = c.type === 'dm' ? c.peer?.avatar : '';
+        avatarEl.style.background = avatarFill(c.type === 'dm' && c.peer?.color ? c.peer.color : 'var(--accent)');
+        avatarEl.innerHTML = viewPeerAvatar ? `<img src="${esc(viewPeerAvatar)}" alt="">` : '';
+        if (!viewPeerAvatar) avatarEl.textContent = initials(c.name);
         const status = chatStatus(c, client);
         statusEl.textContent = status.text;
         statusEl.classList.toggle('online', status.online);

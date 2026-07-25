@@ -1,7 +1,7 @@
 
 
 
-import { esc, initials, previewOf, fmtSize, safeMediaUrl } from './util.js';
+import { esc, initials, avatarFill, previewOf, fmtSize, safeMediaUrl } from './util.js';
 import { ICONS } from './icons.js';
 
 const revealedSpoilers = new Set();
@@ -388,7 +388,7 @@ export function renderMessage(feed, m, myName, options = {}) {
     ? `<div class="media-message-footer">${reactions}${timeHtml}</div>`
     : `${timeHtml}${reactions}`;
   el.innerHTML = `
-    <div class="avatar" style="background:${color}">${m.channelIcon ? esc(m.channelIcon) : (safeMediaUrl(m.avatar) ? `<img src="${esc(safeMediaUrl(m.avatar))}" alt="">` : initials(displayName))}</div>
+    <div class="avatar" style="background:${avatarFill(color)}">${safeMediaUrl(m.avatar) ? `<img src="${esc(safeMediaUrl(m.avatar))}" alt="">` : initials(displayName)}</div>
     <div class="bubble${mediaOnly ? ' only-media' : ''}${circleOnly ? ' only-circle' : ''}${jumbo ? ' only-emoji' : ''}">
       <div class="meta" style="color:${color}">${esc(displayName)}</div>
       ${forward}
@@ -435,8 +435,8 @@ export function renderMessage(feed, m, myName, options = {}) {
     .map((x) => ({
       type: x.kind, src: x.data, poster: x.poster, name: x.name, size: x.size, duration: x.duration,
       author: m.channelName || m.name, color: m.color,
-      avatar: safeMediaUrl(m.channelIcon) || safeMediaUrl(m.avatar),
-      avatarText: m.channelIcon || '',
+      avatar: safeMediaUrl(m.avatar),
+      avatarText: initials(m.channelName || m.name),
     }));
   for (const cell of el.querySelectorAll('.media-cell')) {
     cell.onclick = (e) => {
@@ -593,6 +593,14 @@ function avatarColor(id) {
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
 }
 
+// One avatar for a chat-list row. A direct chat shows the peer's photo when it
+// has one; everything else is initials on a gradient, never the room emoji.
+function chatAvatarHtml(c) {
+  const peerAvatar = c.type === 'dm' ? safeMediaUrl(c.peer?.avatar) : '';
+  const fill = avatarFill(c.type === 'dm' && c.peer?.color ? c.peer.color : avatarColor(c.id));
+  return `<div class="chat-icon" style="background:${fill}">${peerAvatar ? `<img src="${esc(peerAvatar)}" alt="">` : initials(c.name)}</div>`;
+}
+
 
 function chatDate(ts) {
   const d = new Date(ts);
@@ -672,7 +680,7 @@ function chatItemHtml(c, state, selected = false) {
   return `
     <div class="chat-item ${c.id === state.currentRoom ? 'active' : ''} ${pinned ? 'pinned' : ''} ${selected ? 'selected' : ''}" data-room="${esc(c.id)}" draggable="${pinned}">
       <span class="chat-select">${selected ? '✓' : ''}</span>
-      <div class="chat-icon" style="background:${avatarColor(c.id)}">${esc(c.icon || initials(c.name))}</div>
+      ${chatAvatarHtml(c)}
       <div class="chat-info">
         <div class="chat-row">
           <div class="chat-name">${chatTypeMark(c.type)}<span>${esc(c.name)}</span>${mute}</div>
@@ -701,7 +709,7 @@ function searchResultHtml(c, m, q) {
   const snippet = m.text ? highlightedFormattedText(text, q) : esc(text);
   return `
     <div class="chat-item search-hit" data-room="${esc(c.id)}" data-msg="${esc(m.id)}">
-      <div class="chat-icon" style="background:${avatarColor(c.id)}">${esc(c.icon || initials(c.name))}</div>
+      ${chatAvatarHtml(c)}
       <div class="chat-info">
         <div class="chat-row">
           <div class="chat-name">${chatTypeMark(c.type)}<span>${esc(c.name)}</span></div>

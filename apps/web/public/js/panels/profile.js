@@ -1,21 +1,15 @@
 import { mountSettings } from '../settings.js';
-import { esc } from '../util.js';
+import { esc, initials, avatarFill } from '../util.js';
 import { ICONS } from '../icons.js';
 import { LINK } from '/shared/protocol/index.js';
 
-const BADGES = {
-  early: { icon: '⚡', title: 'Ранний участник', text: 'С аккаунтом с раннего этапа Segment' },
-  creator: { icon: '◆', title: 'Создатель', text: 'Развивает собственные сообщества' },
-  mods: { icon: '🧩', title: 'Модификатор', text: 'Настраивает Segment под себя' },
-  supporter: { icon: '♥', title: 'Поддержка', text: 'Поддерживает развитие проекта' },
-};
 let activeAccountModal = null;
 
 const safeColor = (value) => /^#[0-9a-f]{6}$/i.test(String(value || '')) ? value : 'var(--accent)';
 const safeImageUrl = (value) => /^(?:data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+|blob:https?:\/\/[^\s]+|\/api\/(?:auth\/avatar|files)\/[^\s]+)$/i.test(String(value || '')) ? value : '';
 const avatarHtml = (user, className) => {
   const avatar = safeImageUrl(user.avatar);
-  return `<div class="${className}" style="background:${safeColor(user.color)}">${avatar ? `<img src="${esc(avatar)}" alt="">` : esc(user.name?.trim()[0]?.toUpperCase() || 'S')}</div>`;
+  return `<div class="${className}" style="background:${avatarFill(safeColor(user.color))}">${avatar ? `<img src="${esc(avatar)}" alt="">` : esc(initials(user.name))}</div>`;
 };
 const profileApi = async (patch) => {
   const response = await fetch('/api/auth/profile', { method:'PATCH', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify(patch) });
@@ -98,7 +92,7 @@ function openProfileQrModal(user, root) {
       <button class="profile-qr-close" type="button" data-qr-close aria-label="Закрыть"><i></i></button>
     </div>
     <header><div><b>QR-код профиля</b><span>@${esc(user.username)}</span></div></header>
-    <div class="profile-qr-preview"><img data-qr-image alt="QR-код профиля"><span class="profile-qr-avatar">${user.avatar ? `<img src="${esc(user.avatar)}" alt="">` : esc(user.name?.trim()[0]?.toUpperCase() || 'S')}</span></div>
+    <div class="profile-qr-preview"><img data-qr-image alt="QR-код профиля"><span class="profile-qr-avatar">${user.avatar ? `<img src="${esc(user.avatar)}" alt="">` : esc(initials(user.name))}</span></div>
     <div class="profile-qr-actions">
       <label class="profile-qr-action profile-qr-color"><span class="profile-qr-color-dot" style="--qr-color:#0b1320"></span><b>Цвет</b><input type="color" value="#0b1320" data-qr-color></label>
       <button class="profile-qr-action" type="button" data-qr-download>${ICONS.image}<b>Скачать</b></button>
@@ -188,9 +182,6 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
   if (own || (!content.media.length && content.posts.length)) tab = 'posts';
   const render = () => {
     const meta = user.profile || {};
-    const pinnedBadges = (meta.pinnedBadges || []).filter((id) => BADGES[id]).slice(0,1);
-    const pinnedBadge = pinnedBadges[0] ? BADGES[pinnedBadges[0]] : null;
-    const community = meta.pinnedCommunity;
     const cover = safeImageUrl(meta.cover || content.media[0]?.poster || content.media[0]?.data || '');
     const music = meta.music;
     const game = meta.game;
@@ -207,9 +198,7 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
         <button class="profile-cover-menu" type="button" aria-label="${own ? 'Изменить баннер' : 'Меню'}">${own ? ICONS.image : ICONS.more}</button>
       </div>
       <div class="profile-card-identity">
-        ${pinnedBadge ? `<button class="profile-chip profile-achievements" type="button"><span>${pinnedBadge.icon}</span><b>${esc(pinnedBadge.title)}</b></button>` : ''}
         ${avatarHtml(user,'profile-card-avatar')}
-        ${community ? `<button class="profile-chip profile-community" type="button"><span>${esc(community.icon || '◇')}</span><b>${esc(community.name)}</b></button>` : ''}
         <div class="profile-card-name"><h2>${esc(user.name)}</h2><small class="profile-last-seen">${esc(lastSeen)}</small></div>
       </div>
       <div class="profile-card-actions ${own ? 'own-actions' : ''}">
@@ -266,20 +255,6 @@ function mountProfileView(root, close, client, user, { own = false, openSettings
         popover.querySelector('.profile-detail-head button').onclick = () => popover.classList.add('hidden');
       };
       popover.querySelector('[data-close-profile]').onclick = close;
-    };
-    root.querySelector('.profile-community')?.addEventListener('click', () => { if (community?.id && client.chatById(community.id)) { close(); client.openRoom(community.id); } });
-    const achievements = root.querySelector('.profile-achievements');
-    if (achievements) achievements.onclick = () => {
-      const popover = root.querySelector('.profile-detail-popover');
-      popover.classList.remove('is-menu');
-      const badgeEntries = own ? Object.entries(BADGES) : Object.entries(BADGES).filter(([id]) => pinnedBadges.includes(id));
-      popover.innerHTML = `<div class="profile-detail-head"><button type="button" aria-label="Закрыть"></button><div><b>Достижение</b><span>${own ? 'Выберите одно закреплённое достижение' : pinnedBadge.title}</span></div></div><div class="profile-badge-list">${badgeEntries.map(([id,badge]) => `<label class="${pinnedBadges.includes(id) ? 'active' : ''}">${own ? `<input type="radio" name="pinnedBadge" value="${id}" ${pinnedBadges.includes(id) ? 'checked' : ''}>` : ''}<i>${badge.icon}</i><span><b>${badge.title}</b><small>${badge.text}</small></span></label>`).join('')}</div>${own ? '<button class="profile-badge-save" type="button">Сохранить</button>' : ''}`;
-      popover.classList.remove('hidden');
-      popover.querySelector('.profile-detail-head button').onclick = () => popover.classList.add('hidden');
-      popover.querySelector('.profile-badge-save')?.addEventListener('click', async () => {
-        const selected = popover.querySelector('input:checked')?.value;
-        try { const updated = await profileApi({ profile:{ pinnedBadges:selected ? [selected] : [] } }); Object.assign(client.self,updated); Object.assign(user,updated); client._emit('identity',{name:updated.name,user:updated}); window.Segment?.toast?.('Достижение закреплено'); render(); } catch { window.Segment?.toast?.('Не удалось сохранить'); }
-      });
     };
     for (const item of root.querySelectorAll('[data-profile-media]')) item.onclick = () => window.Segment?.openMedia?.(content.media.map((entry) => ({type:entry.kind === 'photo' ? 'photo' : 'video',src:entry.data,poster:entry.poster,name:entry.name,author:user.name})),Number(item.dataset.profileMedia));
     const action = (name, handler) => root.querySelector(`[data-profile-action="${name}"]`)?.addEventListener('click', handler);
@@ -372,7 +347,7 @@ export function profilePanel(client) {
     mount(body){
       body.innerHTML=`<div class="profile-shell"><div class="profile" role="button" tabindex="0" aria-label="Открыть профиль"><div class="profile-avatar"></div><div class="profile-info"><div class="profile-name">гость</div><div class="profile-status"><span class="status-dot"></span><span class="profile-state">не в сети</span></div></div><button class="profile-settings" aria-label="Настройки">${ICONS.settings}</button></div><div class="profile-panel-details"><div class="profile-account-carousel" aria-label="Переключение аккаунтов"></div><div class="profile-account-menu hidden"><button data-account-settings type="button">${ICONS.settings}<span>Настройки аккаунта</span></button><button class="danger" data-account-remove type="button">${ICONS.logout}<span>Удалить с устройства</span></button></div></div></div>`;
       const avatar=body.querySelector('.profile-avatar');const name=body.querySelector('.profile-name');const state=body.querySelector('.profile-state');const dot=body.querySelector('.status-dot');
-      const renderIdentity=()=>{name.textContent=client.self.name||'гость';const safeAvatar=safeImageUrl(client.self.avatar);avatar.innerHTML=safeAvatar?`<img src="${esc(safeAvatar)}" alt="">`:'';if(!safeAvatar)avatar.textContent=client.self.name?.trim()[0]?.toUpperCase()||'·';avatar.style.background=client.self.color;};
+      const renderIdentity=()=>{name.textContent=client.self.name||'гость';const safeAvatar=safeImageUrl(client.self.avatar);avatar.innerHTML=safeAvatar?`<img src="${esc(safeAvatar)}" alt="">`:'';if(!safeAvatar)avatar.textContent=initials(client.self.name);avatar.style.background=avatarFill(safeColor(client.self.color));};
       const offs=[client.on('identity',renderIdentity),client.on('connection',({connected})=>{dot.classList.toggle('off',!connected);state.textContent=connected?'в сети':'не в сети';})];
       const openSettings=(page='home')=>window.Segment?.workspace?.openSurface({id:'settings',sourceId:'profile',minWidth:400,maxWidth:720,className:'settings-surface',mount(settings,close){return mountSettings(settings,close,client,renderIdentity,page);}});
       const openProfile=()=>openProfileSurface(client,client.self,{sourceId:'profile',openSettings});

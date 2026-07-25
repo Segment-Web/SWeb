@@ -1702,6 +1702,16 @@ html:not(.show-channel-avatars) .msg.channel-message .avatar { display: none; }
 .profile-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .msg .avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 
+/* Every avatar surface: a monogram of initials — uppercase, centred — that a
+   photo covers edge to edge when one exists. Keeps the fallback consistent
+   wherever an avatar can appear. */
+:is(.chat-icon,.room-avatar,.info-avatar,.room-surface-avatar,.room-member-avatar,.avatar,.chat-icon) {
+  overflow: hidden; text-transform: uppercase; text-align: center;
+}
+:is(.chat-icon,.room-avatar,.info-avatar,.room-surface-avatar) img {
+  width: 100%; height: 100%; object-fit: cover; border-radius: inherit;
+}
+
 
 @keyframes msg-appear { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .msg.appear { animation: msg-appear .22s ease-out; }
@@ -2515,30 +2525,23 @@ body.is-moving-surface { cursor: grabbing; user-select: none; }
 .profile-view-surface .workspace-surface-body::-webkit-scrollbar { width:0; height:0; }
 .profile-card-view { position:relative; min-height:100%; padding:14px 12px 0; color:var(--text); background:var(--surface); }
 .profile-card-inner { width:100%; max-width:820px; margin:0 auto; }
-.profile-card-cover { position:relative; height:163px; border-radius:20px; background:linear-gradient(145deg,color-mix(in srgb,var(--profile-color) 66%,var(--surface3)),color-mix(in srgb,var(--profile-color) 24%,var(--surface))); background-position:center; background-size:cover; }
+.profile-card-cover { position:relative; height:118px; border-radius:20px; background:linear-gradient(145deg,color-mix(in srgb,var(--profile-color) 66%,var(--surface3)),color-mix(in srgb,var(--profile-color) 24%,var(--surface))); background-position:center; background-size:cover; }
 .profile-card-cover button { position:absolute; top:10px; display:grid; place-items:center; width:50px; height:50px; border:0; border-radius:20px; color:#d9e4ed; background:rgba(23,33,43,.7); backdrop-filter:blur(10px); cursor:pointer; transition:background .16s,transform .16s; }
 .profile-card-cover button:hover { background:rgba(14,25,35,.9); transform:translateY(-1px); }
 .profile-card-cover button svg { width:26px; height:26px; }
 .profile-cover-code { left:10px; }
 .profile-cover-menu { right:10px; }
-.profile-card-identity { position:relative; min-height:137px; padding-top:63px; text-align:center; }
-.profile-card-identity.has-status { min-height:168px; }
-.profile-card-avatar { position:absolute; top:-45px; left:50%; display:grid; place-items:center; width:104px; height:104px; overflow:hidden; border:7px solid var(--surface); border-radius:50%; color:#fff; background:var(--accent); box-shadow:none; font-size:34px; font-weight:700; transform:translateX(-50%); }
+.profile-card-identity { position:relative; min-height:104px; padding-top:52px; text-align:center; }
+.profile-card-identity.has-status { min-height:134px; }
+.profile-card-avatar { position:absolute; top:-52px; left:50%; display:grid; place-items:center; width:104px; height:104px; overflow:hidden; border:7px solid var(--surface); border-radius:50%; color:#fff; background:var(--accent); box-shadow:none; font-size:34px; font-weight:700; transform:translateX(-50%); }
 .profile-card-avatar img { width:100%; height:100%; object-fit:cover; }
-.profile-chip { position:absolute; top:11px; display:flex; align-items:center; gap:9px; max-width:35%; height:41px; padding:6px 11px; overflow:hidden; border:2px solid color-mix(in srgb,var(--stroke) 80%,transparent); border-radius:15px; color:var(--text); background:var(--surface2); cursor:pointer; transition:background .15s,border-color .15s; }
-.profile-chip:hover { border-color:color-mix(in srgb,var(--accent) 42%,var(--stroke)); background:var(--surface3); }
-.profile-chip span { flex:none; font-style:normal; }
-.profile-chip b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
-.profile-chip.is-empty { color:var(--muted); cursor:default; }
-.profile-achievements { left:0; }
-.profile-community { right:0; }
 .profile-card-name { transform:translateY(-4px); }
 .profile-card-name h2 { margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:text; user-select:text; font-size:20px; line-height:25px; }
 .profile-card-name button { display:block; margin:3px auto 0; padding:0; border:0; color:var(--muted); background:transparent; cursor:pointer; user-select:text; font-size:13px; line-height:17px; }
 .profile-card-name button:hover { color:var(--accent); }
 .profile-card-name small { display:inline-block; margin-top:4px; padding:2px 9px; border-radius:999px; color:var(--muted); background:var(--surface2); font-size:11px; line-height:16px; }
 .profile-card-name .profile-last-seen { padding:0; background:transparent; }
-.profile-card-view.is-own .profile-card-identity { min-height:116px; padding-top:65px; }
+.profile-card-view.is-own .profile-card-identity { min-height:100px; padding-top:54px; }
 .profile-card-actions { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; height:70px; margin:0; }
 .profile-card-actions.own-actions { grid-template-columns:repeat(3,minmax(0,1fr)); }
 .profile-card-actions button { display:grid; place-items:center; align-content:center; gap:5px; min-width:0; height:70px; padding:7px 4px; border:0; border-radius:18px; color:var(--text); background:var(--surface2); cursor:pointer; transition:background .15s,transform .15s; }
@@ -3426,12 +3429,12 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .room-top-overlay {
   top:0;
   padding-bottom:24px;
-  background:linear-gradient(180deg,color-mix(in srgb,var(--surface) 62%,transparent),color-mix(in srgb,var(--surface) 26%,transparent) 72%,transparent);
+  background:linear-gradient(180deg,var(--feed-bg),color-mix(in srgb,var(--feed-bg) 55%,transparent) 72%,transparent);
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .room-bottom-overlay {
   bottom:0;
   padding-top:30px;
-  background:linear-gradient(0deg,color-mix(in srgb,var(--surface) 62%,transparent),color-mix(in srgb,var(--surface) 25%,transparent) 68%,transparent);
+  background:linear-gradient(0deg,var(--feed-bg),color-mix(in srgb,var(--feed-bg) 55%,transparent) 68%,transparent);
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) :is(.room-head,.room-searchbar,.pinned-bar,.selection-bar,.typing,.composer) {
   pointer-events:auto;
@@ -3441,15 +3444,15 @@ html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:
   padding:34px 18px 18px;
   border:0;
   background:linear-gradient(180deg,
-    color-mix(in srgb,var(--surface2) 42%,transparent) 0%,
-    color-mix(in srgb,var(--surface) 32%,transparent) 68%,
+    var(--feed-bg) 0%,
+    color-mix(in srgb,var(--feed-bg) 62%,transparent) 68%,
     transparent 100%);
   backdrop-filter:none;
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .room-head:hover {
   background:linear-gradient(180deg,
-    color-mix(in srgb,var(--surface2) 42%,transparent) 0%,
-    color-mix(in srgb,var(--surface) 32%,transparent) 68%,
+    var(--feed-bg) 0%,
+    color-mix(in srgb,var(--feed-bg) 62%,transparent) 68%,
     transparent 100%);
 }
 html[data-theme="graphite"] .panel:is([data-id="chat-room"],[data-id^="chatview:"]) .room-head-action {

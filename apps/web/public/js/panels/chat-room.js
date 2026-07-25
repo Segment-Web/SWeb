@@ -1,5 +1,5 @@
 import { renderFeed, renderMessage, renderSystem, showTyping, scrollFeedToBottom } from '../ui.js';
-import { esc, attachLabel, fmtSize, placeFloatingMenu } from '../util.js';
+import { esc, attachLabel, fmtSize, placeFloatingMenu, initials, avatarFill } from '../util.js';
 import { ICONS } from '../icons.js';
 import { chatViewPanel } from './chat-view.js';
 import { openRoomSettings } from '../room-surfaces.js';
@@ -73,7 +73,7 @@ export function chatRoomPanel(client) {
           <div class="room-top-overlay">
           <header class="room-head" data-el="head">
             <div class="room-identity" role="button" tabindex="0">
-            <div class="room-avatar" data-el="avatar">💬</div>
+            <div class="room-avatar" data-el="avatar"></div>
             <div class="room-headinfo">
               <div class="room-title" data-el="title">Общий</div>
               <div class="room-status" data-el="status">подключение...</div>
@@ -441,7 +441,7 @@ export function chatRoomPanel(client) {
           const q2 = mt[2].toLowerCase();
           acToken = { node, start: caret - mt[2].length - 1, end: caret };
           acItems = chatMembers().filter((u) => u.username.toLowerCase().startsWith(q2) || u.name.toLowerCase().startsWith(q2)).slice(0, 6).map((u) => ({
-            icon: u.name[0].toUpperCase(), label: u.name, hint: `@${u.username}`, value: `@${u.username} `,
+            icon: initials(u.name), label: u.name, hint: `@${u.username}`, value: `@${u.username} `,
           }));
         } else if ((mt = /(^|\s):([a-z0-9_+]{2,30})$/.exec(before))) {
           const q2 = mt[2].toLowerCase();
@@ -1120,8 +1120,8 @@ export function chatRoomPanel(client) {
               ...a,
               author: m.channelName || m.name,
               color: m.color,
-              avatar: m.channelIcon || m.avatar || '',
-              avatarText: m.channelIcon || '',
+              avatar: m.avatar || '',
+              avatarText: initials(m.channelName || m.name),
             });
             else if (a.kind === 'file') files.push({ a, m });
           }
@@ -1175,7 +1175,7 @@ export function chatRoomPanel(client) {
         } else if (infoTab === 'members') {
           content = info.members.length ? info.members.map((mem) => `
             <div class="info-member${mem.username ? ' is-openable' : ''}"${mem.username ? ` data-member-username="${esc(mem.username)}"` : ''}>
-              <div class="chat-icon" style="background:${esc(mem.color || avatarColor(mem.id || mem.name))}">${mem.avatar ? `<img src="${esc(mem.avatar)}" alt="">` : esc((mem.name || '?')[0].toUpperCase())}</div>
+              <div class="chat-icon" style="background:${avatarFill(mem.color || avatarColor(mem.id || mem.name))}">${mem.avatar ? `<img src="${esc(mem.avatar)}" alt="">` : esc(initials(mem.name || mem.username))}</div>
               <div class="info-member-info"><b>${esc(mem.name || mem.username || 'Пользователь')}</b><span>${mem.username ? `@${esc(mem.username)} · ` : ''}${mem.me ? 'вы' : (mem.role === 'owner' ? 'владелец' : (chat.type === 'channel' ? 'подписчик' : 'участник'))}</span></div>
             </div>`).join('') : '<div class="info-empty">Участников пока нет</div>';
         }
@@ -1186,7 +1186,7 @@ export function chatRoomPanel(client) {
               <button class="info-sheet-move" type="button" data-info-move aria-label="Переместить блок"><i></i></button>
               <button class="info-sheet-close" type="button" data-act="close" aria-label="Закрыть"><i></i></button>
             </div>
-            <div class="info-avatar" style="background:${avatarColor(chat.id)}">${esc(chat.icon || chat.name[0].toUpperCase())}</div>
+            <div class="info-avatar" style="background:${avatarFill(chat.type === 'dm' && chat.peer?.color ? chat.peer.color : avatarColor(chat.id))}">${chat.type === 'dm' && chat.peer?.avatar ? `<img src="${esc(chat.peer.avatar)}" alt="">` : esc(initials(chat.name))}</div>
             <div class="info-title">${esc(chat.name)}</div>
             <div class="info-sub">${esc(subtitle || typeText)}</div>
             <div class="info-actions">
@@ -1277,7 +1277,10 @@ export function chatRoomPanel(client) {
           statusEl.textContent = '';
           return;
         }
-        avatarEl.textContent = chat.icon;
+        const headPeerAvatar = chat.type === 'dm' ? chat.peer?.avatar : '';
+        avatarEl.style.background = avatarFill(chat.type === 'dm' && chat.peer?.color ? chat.peer.color : avatarColor(chat.id));
+        avatarEl.innerHTML = headPeerAvatar ? `<img src="${esc(headPeerAvatar)}" alt="">` : '';
+        if (!headPeerAvatar) avatarEl.textContent = initials(chat.name);
         titleEl.textContent = chat.name;
         const status = chatStatus(chat, client);
         statusEl.textContent = status.text;

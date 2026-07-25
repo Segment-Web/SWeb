@@ -1,13 +1,8 @@
 import { THEME_PRESETS, THEME_SCHEMA, normalizeThemePack } from './appearance.js';
+import { initials, avatarFill } from './util.js';
 
 const PALETTE = ['#7c5cff', '#00d4ff', '#ff5c8a', '#3ddc84', '#ffb347', '#ff6b6b', '#4facfe', '#a166ff'];
 const FEATURES = { 'compact-bubbles': 'Компактные сообщения', 'square-media': 'Меньше скругления медиа', 'hide-reactions': 'Скрыть реакции' };
-const PROFILE_BADGES = {
-  early: { icon: '⚡', title: 'Ранний участник', text: 'С аккаунтом с раннего этапа Segment' },
-  creator: { icon: '◆', title: 'Создатель', text: 'Создаёт собственные сообщества' },
-  mods: { icon: '🧩', title: 'Модификатор', text: 'Использует модификации интерфейса' },
-  supporter: { icon: '♥', title: 'Поддержка', text: 'Поддерживает развитие проекта' },
-};
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const safeProfileImage = (value) => /^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(String(value || '')) ? value : '';
 const api = async (path, options = {}) => {
@@ -106,7 +101,7 @@ export function mountSettings(root, close, client, renderIdentity, initialPage =
     leavePage = null;
     const self = client.self;
     root.innerHTML = `<div class="settings-shell">
-      <div class="settings-hero"><div class="settings-hero-avatar">${safeProfileImage(self.avatar) ? `<img src="${escapeHtml(self.avatar)}" alt="">` : escapeHtml(self.name?.[0]?.toUpperCase() || 'S')}</div><div><h2>${escapeHtml(self.name)}</h2><p>@${escapeHtml(self.username || '')}</p></div></div>
+      <div class="settings-hero"><div class="settings-hero-avatar" style="background:${avatarFill(self.color)}">${safeProfileImage(self.avatar) ? `<img src="${escapeHtml(self.avatar)}" alt="">` : escapeHtml(initials(self.name))}</div><div><h2>${escapeHtml(self.name)}</h2><p>@${escapeHtml(self.username || '')}</p></div></div>
       <div class="settings-nav">
         ${[['profile','Аккаунт','Имя, username, фото и информация'],['appearance','Настройки чатов','Темы, масштаб и анимации'],['privacy','Конфиденциальность','Видимость профиля и данные'],['chats','Сообщения и медиа','Отправка и отображение'],['storage','Данные и память','Хранилище и локальные данные'],['devices','Устройства','Активные сеансы и перенос ключей'],['language','Язык и доступность','Русский язык и контраст'],['mods','Модификации','Безопасные дополнения интерфейса']].map(([id,title,desc]) => `<button class="settings-nav-item" data-page="${id}"><i>${icon(id)}</i><span><b>${title}</b><small>${desc}</small></span><em>›</em></button>`).join('')}
       </div><button class="settings-logout" data-action="logout">Выйти из аккаунта</button>
@@ -121,16 +116,13 @@ export function mountSettings(root, close, client, renderIdentity, initialPage =
   const profile = () => {
     const self = client.self; const links = [...(self.links || []), {}, {}, {}].slice(0, 3); const meta = self.profile || {};
     const safeAvatar = safeProfileImage(self.avatar); const safeCover = safeProfileImage(meta.cover);
-    const rooms = client.chats.filter((chat) => chat.type !== 'saved' && !chat.local);
     shell('Профиль', 'Эти данные будут видны другим пользователям', `<form class="settings-stack settings-profile-editor" data-profile>
       <div class="settings-profile-media">
         <div class="settings-cover-editor" style="${safeCover ? `background-image:url('${safeCover}')` : ''}"><label class="settings-media-camera settings-banner-camera" aria-label="Изменить баннер">${icon('camera')}<input data-cover-file type="file" accept="image/*"></label>${safeCover ? '<button class="settings-cover-remove" type="button" data-cover-remove>Убрать</button>' : ''}</div>
-        <div class="settings-avatar-editor"><div class="settings-avatar-preview">${safeAvatar ? `<img src="${safeAvatar}" alt="">` : escapeHtml(self.name?.[0] || 'S')}</div><label class="settings-media-camera settings-avatar-camera" aria-label="Изменить фото">${icon('camera')}<input data-avatar-file type="file" accept="image/*"></label></div>
+        <div class="settings-avatar-editor"><div class="settings-avatar-preview" style="background:${avatarFill(self.color)}">${safeAvatar ? `<img src="${safeAvatar}" alt="">` : escapeHtml(initials(self.name))}</div><label class="settings-media-camera settings-avatar-camera" aria-label="Изменить фото">${icon('camera')}<input data-avatar-file type="file" accept="image/*"></label></div>
         <div class="settings-media-caption">Изменить фото и баннер</div>
       </div>
       <div class="settings-profile-fields">${field('Имя','name',self.name,'maxlength="40"')}${field('Имя пользователя','username',self.username,'maxlength="24"')}${field('О себе','bio',self.bio,'maxlength="160"')}</div>
-      <div class="settings-card"><b>Закреплённое сообщество</b><p>В профиле будет показано одно сообщество, участником которого вы являетесь.</p><select name="pinnedCommunity"><option value="">Не показывать</option>${rooms.map((chat) => `<option value="${escapeHtml(chat.id)}" ${meta.pinnedCommunity?.id === chat.id ? 'selected' : ''}>${escapeHtml(chat.icon || '💬')} ${escapeHtml(chat.name)}</option>`).join('')}</select></div>
-      <div class="settings-card"><b>Закреплённое достижение</b><p>Выберите одно достижение, которое будет показано в профиле.</p><div class="settings-badge-grid">${Object.entries(PROFILE_BADGES).map(([id,badge]) => `<label><input type="radio" name="badge" value="${id}" ${(meta.pinnedBadges || [])[0] === id ? 'checked' : ''}><span><i>${badge.icon}</i><b>${badge.title}</b><small>${badge.text}</small></span></label>`).join('')}</div></div>
       <div class="settings-card"><b>Ссылки</b>${links.map((link, index) => `<div class="settings-link-row"><input name="linkLabel${index}" placeholder="Название" value="${escapeHtml(link.label)}"><input name="linkUrl${index}" placeholder="https://" value="${escapeHtml(link.url)}"></div>`).join('')}</div>
       <div class="settings-card settings-integrations"><b>Интеграции активности</b><div><span>Spotify</span><small>Подключение появится после настройки OAuth</small><button type="button" disabled>Скоро</button></div><div><span>Steam</span><small>Игровая активность будет показываться здесь</small><button type="button" disabled>Скоро</button></div></div>
       <div class="settings-card"><b>Цвет профиля</b><div class="settings-colors">${PALETTE.map((color) => `<button type="button" class="settings-color${color === self.color ? ' active' : ''}" data-color="${color}" style="background:${color}"></button>`).join('')}</div></div>
@@ -146,7 +138,7 @@ export function mountSettings(root, close, client, renderIdentity, initialPage =
     leavePage = async () => {
       if (!dirty) return;
       const data = new FormData(form); const links = [0,1,2].map((i) => ({ label: data.get(`linkLabel${i}`), url: data.get(`linkUrl${i}`) })).filter((item) => item.url.trim());
-      try { const result = await api('/api/auth/profile', { method:'PATCH', body:JSON.stringify({ name:data.get('name'), username:data.get('username'), bio:data.get('bio'), avatar, color, links, profile:{cover,pinnedBadges:data.getAll('badge'),pinnedCommunityId:data.get('pinnedCommunity')} }) }); client.self = { ...client.self, ...result.user }; client.storage.setName(result.user.name); client.storage.setUsername?.(result.user.username); client.storage.setAvatar?.(result.user.avatar); client.storage.setColor(result.user.color); client._emit('identity', { name: result.user.name, user: result.user }); renderIdentity(); toast('Изменения сохранены'); } catch (error) { toast(error.message === 'USERNAME_TAKEN' ? 'Username уже занят' : 'Не удалось сохранить профиль'); }
+      try { const result = await api('/api/auth/profile', { method:'PATCH', body:JSON.stringify({ name:data.get('name'), username:data.get('username'), bio:data.get('bio'), avatar, color, links, profile:{cover} }) }); client.self = { ...client.self, ...result.user }; client.storage.setName(result.user.name); client.storage.setUsername?.(result.user.username); client.storage.setAvatar?.(result.user.avatar); client.storage.setColor(result.user.color); client._emit('identity', { name: result.user.name, user: result.user }); renderIdentity(); toast('Изменения сохранены'); } catch (error) { toast(error.message === 'USERNAME_TAKEN' ? 'Username уже занят' : 'Не удалось сохранить профиль'); }
     };
   };
   const privacy = () => {
