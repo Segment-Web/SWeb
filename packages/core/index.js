@@ -759,6 +759,22 @@ export class SegmentClient {
     return true;
   }
 
+  // Dismiss a system notice for this client only. It lives nowhere but this
+  // session's memory — there is no history envelope and nothing to sync — so
+  // removing it from the list and repainting is the whole operation.
+  dismissSystemMessage(roomId, messageId) {
+    const list = this.messages[roomId];
+    if (!list) return false;
+    const index = list.findIndex((m) => m.system && m.id === messageId);
+    if (index === -1) return false;
+    list.splice(index, 1);
+    const last = list[list.length - 1];
+    this.lastText[roomId] = last ? (last.system ? last.text : preview(last)) : '';
+    if (roomId === this.currentRoom) this._emit('room', { chat: this.chatById(roomId), messages: list });
+    this._emit('chats');
+    return true;
+  }
+
   toggleMessagePin(roomId, messageId) {
     const message = this._messageById(roomId, messageId);
     if (!message || message.deleted) return false;
@@ -1652,11 +1668,22 @@ export class SegmentClient {
         await this._onCipher(msg);
         break;
 
-      case MessageType.System:
+      case MessageType.System: {
         if (Array.isArray(msg.online)) this.online = msg.online;
-        if (this.currentRoom && this.currentRoom !== SAVED_ID) this._addMessage(this.currentRoom, { system: true, text: msg.text });
+        // A join/leave notice belongs to a group or channel, where membership is
+        // a shared fact. A direct chat has exactly two known people, so the same
+        // notice there is only noise — skip it (and Saved Messages entirely).
+        const room = this.currentRoom && this.chatById(this.currentRoom);
+        const notesRoom = !room || room.type === ChatType.DM || room.type === ChatType.Saved || this.currentRoom === SAVED_ID;
+        if (room && !notesRoom) {
+          this._addMessage(this.currentRoom, {
+            system: true, text: msg.text,
+            event: msg.event || '', authorId: msg.userId || '', name: msg.name || '', username: msg.username || '',
+          });
+        }
         this._emit('status', this._statusText());
         break;
+      }
 
       case MessageType.Typing:
         this._setTyping(msg.room, msg.name);
@@ -1669,7 +1696,8 @@ export class SegmentClient {
     const list = this.messages[roomId];
     if (!list || !m) return;
     const wasEmpty = !list.length;
-    if (!m.id && !m.system) m.id = mid();
+    // System notices get an id too, so a member can reply to or dismiss one.
+    if (!m.id) m.id = mid();
     if (!m.ts) m.ts = Date.now();
     if (!m.system) m.reactions ||= {};
     list.push(m);

@@ -191,7 +191,7 @@ export function attachGateway(server, config, auth, rooms) {
         });
         send(ws, { type: MessageType.Roster, self: { id: client.id }, members, online: online(), roomEpochs, historyRecoveryRooms });
         broadcast({ type: MessageType.Peer, ...publicOf(client) }, ws);
-        broadcast({ type: MessageType.System, text: `${client.name} в чате` }, ws);
+        broadcast({ type: MessageType.System, event: 'joined', userId: client.userId, name: client.name, username: client.username, text: `${client.name} в чате` }, ws);
         schedulePresence();
         return;
       }
@@ -257,7 +257,7 @@ export function attachGateway(server, config, auth, rooms) {
       if (remaining > 0) ipCounts.set(ip, remaining); else ipCounts.delete(ip);
       if (client.joined) {
         broadcast({ type: MessageType.PeerLeft, id: client.id });
-        broadcast({ type: MessageType.System, text: `${client.name} вышел` });
+        broadcast({ type: MessageType.System, event: 'left', userId: client.userId, name: client.name, username: client.username, text: `${client.name} вышел` });
         schedulePresence();
       }
     });

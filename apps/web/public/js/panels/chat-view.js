@@ -313,7 +313,7 @@ export function chatViewPanel(client, chat) {
         client.on('append', ({ roomId, message, wasEmpty }) => {
           if (roomId !== chat.id) return;
           if (wasEmpty) feed.innerHTML = '';
-          if (message.system) renderSystem(feed, message.text);
+          if (message.system) renderSystem(feed, message, options());
           else renderMessage(feed, message, client.self.name, options());
           feed.scrollTop = feed.scrollHeight;
           const ws = window.Segment?.workspace;

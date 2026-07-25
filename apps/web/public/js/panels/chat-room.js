@@ -819,7 +819,7 @@ export function chatRoomPanel(client) {
       const feedOptions = () => ({
         myId: client.self.id || '',
         showViews: !!currentChat && currentChat.id !== 'saved' && currentChat.type !== 'saved' && currentChat.type !== 'dm',
-        onMessageContext: openMessageMenu,
+        onMessageContext: (id, x, y) => (messageById(id)?.system ? openSystemMenu(id, x, y) : openMessageMenu(id, x, y)),
         onReaction: (id, emoji) => client.toggleReaction(currentChat.id, id, emoji),
         onQuickReaction: (id, emoji) => client.toggleReaction(currentChat.id, id, emoji),
         onVote: (id, opt) => client.votePoll(currentChat.id, id, opt),
@@ -1108,6 +1108,28 @@ export function chatRoomPanel(client) {
         }
       }
 
+      // A join/leave notice is not an encrypted message, so it gets a small menu
+      // of its own: reply to it, or dismiss it for yourself. It never leaves on
+      // its own — only this removes it.
+      function openSystemMenu(id, x, y) {
+        const message = messageById(id);
+        if (!currentChat || !message || !message.system) return;
+        msgMenu.innerHTML = `<div class="ctx-list">
+          <button class="ctx-item" data-act="reply">${ICONS.reply}<span>Ответить</span></button>
+          <button class="ctx-item danger" data-act="dismiss">${ICONS.trash}<span>Удалить</span></button>
+        </div>`;
+        hideMenus();
+        msgMenu.classList.remove('hidden');
+        placeFloatingMenu(msgMenu, x, y, roomEl);
+        for (const btn of msgMenu.querySelectorAll('.ctx-item')) {
+          btn.onclick = () => {
+            if (btn.dataset.act === 'reply') setReply(message);
+            else if (btn.dataset.act === 'dismiss') client.dismissSystemMessage(currentChat.id, id);
+            hideMenus();
+          };
+        }
+      }
+
 
       const collectInfo = () => {
         const msgs = client.messages[currentChat.id] || [];
@@ -1140,6 +1162,19 @@ export function chatRoomPanel(client) {
         client.loadRoomMembers?.(currentChat.id).then(() => {
           if (!sheet.classList.contains('hidden')) renderInfo();
         }).catch(() => {});
+      };
+
+      // The header opens a profile, matching what a name/avatar does elsewhere.
+      // A direct chat has a real person behind it, so it opens that person's
+      // profile; a group or channel opens its own info surface in the same place.
+      const openHeaderProfile = () => {
+        if (!currentChat) return;
+        if (currentChat.type === 'dm' && currentChat.peer?.username) {
+          hideMenus();
+          window.Segment?.openUser?.(currentChat.peer.username);
+          return;
+        }
+        openChatSheet();
       };
 
       const renderInfo = () => {
@@ -1320,7 +1355,7 @@ export function chatRoomPanel(client) {
 
           const stick = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80 || wasEmpty;
           if (wasEmpty) feed.innerHTML = '';
-          if (message.system) renderSystem(feed, message.text);
+          if (message.system) renderSystem(feed, message, feedOptions());
           else renderMessage(feed, message, client.self.name, feedOptions());
           if (stick) scrollFeedToBottom(feed);
 
@@ -1458,11 +1493,11 @@ export function chatRoomPanel(client) {
       scrollDown.onclick = () => { awayCount = 0; scrollFeedToBottom(feed); updateScrollDown(); };
       replyCancel.onclick = () => setReply(null);
       const roomIdentity = head.querySelector('.room-identity');
-      roomIdentity.onclick = openChatSheet;
+      roomIdentity.onclick = openHeaderProfile;
       roomIdentity.onkeydown = (event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
-        openChatSheet();
+        openHeaderProfile();
       };
       roomSearchOpen.onclick = (e) => {
         e.stopPropagation();

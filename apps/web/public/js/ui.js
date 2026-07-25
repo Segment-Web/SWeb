@@ -493,10 +493,30 @@ export function renderMessage(feed, m, myName, options = {}) {
   feed.appendChild(el);
 }
 
-export function renderSystem(feed, text) {
+export function renderSystem(feed, m, options = {}) {
+  // Accept either a bare string (legacy) or a full system message object.
+  const message = typeof m === 'string' ? { text: m } : (m || {});
+  const text = String(message.text || '');
   const el = document.createElement('div');
   el.className = 'system';
-  el.textContent = text;
+  if (message.id) el.dataset.id = message.id;
+  const username = /^[a-z0-9_]{3,24}$/i.test(String(message.username || '')) ? String(message.username) : '';
+  if (username && message.name && text.startsWith(message.name)) {
+    // Make the name inside the notice a link to its author's profile, leaving
+    // the rest ("… в чате") as plain text.
+    const rest = text.slice(message.name.length);
+    const link = document.createElement('button');
+    link.type = 'button';
+    link.className = 'system-author';
+    link.textContent = message.name;
+    link.addEventListener('click', (e) => { e.stopPropagation(); window.Segment?.openUser?.(username); });
+    el.append(link, document.createTextNode(rest));
+  } else {
+    el.textContent = text;
+  }
+  if (message.id && options.onMessageContext) {
+    el.oncontextmenu = (e) => { e.preventDefault(); options.onMessageContext(message.id, e.clientX, e.clientY); };
+  }
   feed.appendChild(el);
 }
 
@@ -546,7 +566,7 @@ export function renderFeed(feed, chat, list, myName, options = {}) {
       div.innerHTML = '<span>Непрочитанные сообщения</span>';
       feed.appendChild(div);
     }
-    m.system ? renderSystem(feed, m.text) : renderMessage(feed, m, myName, opts);
+    m.system ? renderSystem(feed, m, opts) : renderMessage(feed, m, myName, opts);
   });
 
   if (mode === 'bottom') {
@@ -783,7 +803,7 @@ export function renderChatList(el, state, opts = {}) {
         <div class="chat-icon archive-ico">${ICONS.archive}</div>
         <div class="chat-info"><div class="chat-row"><div class="chat-name"><span>Архив</span></div>
           ${unread ? `<span class="chat-meta"><span class="badge">${unread}</span></span>` : ''}</div>
-          <div class="chat-preview">${esc(archivePreview)}</div></div>
+          <div class="chat-last archive-preview">${esc(archivePreview)}</div></div>
       </div>`;
   }
 
