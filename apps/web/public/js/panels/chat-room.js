@@ -1,5 +1,5 @@
 import { renderFeed, renderMessage, renderSystem, showTyping, scrollFeedToBottom } from '../ui.js';
-import { esc, attachLabel, fmtSize, placeFloatingMenu, initials, avatarFill } from '../util.js';
+import { esc, attachLabel, fmtSize, placeFloatingMenu, initials, avatarFill, safeMediaUrl } from '../util.js';
 import { ICONS } from '../icons.js';
 import { chatViewPanel } from './chat-view.js';
 import { openRoomSettings } from '../room-surfaces.js';
@@ -765,6 +765,7 @@ export function chatRoomPanel(client) {
       const hideMenus = () => {
         msgMenu.classList.add('hidden');
         sheet.classList.add('hidden');
+        sheet.classList.remove('is-profile');
         emojiMenu.classList.add('hidden');
         pinnedManager.classList.add('hidden');
       };
@@ -819,6 +820,10 @@ export function chatRoomPanel(client) {
       const feedOptions = () => ({
         myId: client.self.id || '',
         showViews: !!currentChat && currentChat.id !== 'saved' && currentChat.type !== 'saved' && currentChat.type !== 'dm',
+        // A member tapped inside a message opens their profile here in the block;
+        // a channel post speaks for the channel, so it opens the channel's card.
+        onOpenProfile: (username) => openUserProfile(username),
+        onOpenRoomProfile: () => openChatSheet(),
         onMessageContext: (id, x, y) => (messageById(id)?.system ? openSystemMenu(id, x, y) : openMessageMenu(id, x, y)),
         onReaction: (id, emoji) => client.toggleReaction(currentChat.id, id, emoji),
         onQuickReaction: (id, emoji) => client.toggleReaction(currentChat.id, id, emoji),
@@ -1154,137 +1159,134 @@ export function chatRoomPanel(client) {
       };
 
       let infoTab = 'media';
-      const openChatSheet = () => {
+      // The profile opens IN this chat block (not a docked side panel): a direct
+      // chat shows the person, a group or channel shows itself, and a member
+      // tapped inside a message shows that member — all the same banner card.
+      let sheetEntity = null; // { kind:'dm'|'room'|'user', chat?, user? }
+      const showSheet = () => { sheet.classList.add('is-profile'); sheet.classList.remove('hidden'); };
+      const userOnline = (user) => !!user && (client.online || []).some((e) => e && (e.id === user.id || (user.username && e.username === user.username)));
+
+      const openChatSheet = async () => {
         if (!currentChat) return;
         infoTab = 'media';
-        renderInfo();
-        sheet.classList.remove('hidden');
-        client.loadRoomMembers?.(currentChat.id).then(() => {
-          if (!sheet.classList.contains('hidden')) renderInfo();
-        }).catch(() => {});
-      };
-
-      // The header opens a profile, matching what a name/avatar does elsewhere.
-      // A direct chat has a real person behind it, so it opens that person's
-      // profile; a group or channel opens its own info surface in the same place.
-      const openHeaderProfile = () => {
-        if (!currentChat) return;
-        if (currentChat.type === 'dm' && currentChat.peer?.username) {
-          hideMenus();
-          window.Segment?.openUser?.(currentChat.peer.username);
-          return;
-        }
-        openChatSheet();
-      };
-
-      const renderInfo = () => {
-        if (!currentChat) return;
         const chat = currentChat;
-        const info = collectInfo();
-        const subtitle = chatStatus(chat, client).text;
-        const typeText = { saved: 'Избранное', dm: 'Личный чат', chat: 'Группа', channel: 'Канал' }[chat.type] || 'Чат';
-        const muted = client.isMuted(chat.id);
-        const chatPinned = client.pinned.has(chat.id);
-        const editable = client.canEditChat(chat.id);
-        const owner = Boolean(chat.ownerId && chat.ownerId === client.self.id);
-        const showMembers = !chat.local;
+        if (chat.type === 'dm') {
+          const resolved = chat.peer?.username ? (await client.resolveLink(`/@${chat.peer.username}`).catch(() => null))?.user : null;
+          sheetEntity = { kind: 'dm', chat, user: resolved || { ...(chat.peer || { name: chat.name }) } };
+        } else {
+          sheetEntity = { kind: 'room', chat };
+        }
+        renderSheet();
+        showSheet();
+        if (chat.type !== 'dm') client.loadRoomMembers?.(chat.id).then(() => { if (!sheet.classList.contains('hidden')) renderSheet(); }).catch(() => {});
+      };
+      const openHeaderProfile = openChatSheet;
+
+      // Open any member's profile in this same block, from a name or avatar
+      // tapped inside a message.
+      const openUserProfile = async (username) => {
+        const clean = String(username || '').trim().replace(/^@/, '');
+        if (!clean) return;
+        const resolved = (await client.resolveLink(`/@${clean}`).catch(() => null))?.user;
+        if (!resolved) { window.Segment?.toast?.('Профиль не найден'); return; }
+        infoTab = 'media';
+        sheetEntity = { kind: 'user', user: resolved };
+        renderSheet();
+        showSheet();
+      };
+
+      const renderSheet = () => {
+        if (!sheetEntity) return;
+        const { kind } = sheetEntity;
+        const chat = sheetEntity.chat || null;
+        const user = sheetEntity.user || null;
+        const isRoom = kind === 'room';
+        const hasChatContext = kind === 'room' || kind === 'dm';
+        const info = chat ? collectInfo() : { media: [], files: [], links: [], members: [] };
+
+        const color = isRoom ? avatarColor(chat.id) : (/^#[0-9a-f]{6}$/i.test(String(user?.color || '')) ? user.color : '#7c5cff');
+        const name = isRoom ? chat.name : (user?.name || chat?.name || '');
+        const avatarUrl = !isRoom && user?.avatar ? safeMediaUrl(user.avatar) : '';
+        const typeName = { channel: 'Канал', chat: 'Группа' };
+        const sub = isRoom
+          ? `${typeName[chat.type] || 'Чат'}${info.members.length ? ` · ${info.members.length}` : (Number.isFinite(Number(chat.memberCount)) && chat.memberCount ? ` · ${chat.memberCount}` : '')}`
+          : (userOnline(user) ? 'в сети' : (chat ? (chatStatus(chat, client).text || 'был(а) недавно') : 'был(а) недавно'));
+
+        const muted = chat ? client.isMuted(chat.id) : false;
+        const editable = chat ? client.canEditChat(chat.id) : false;
+        const owner = chat ? Boolean(chat.ownerId && chat.ownerId === client.self.id) : false;
         const leaveLabel = owner
-          ? ({ channel: 'Удалить канал', chat: 'Удалить группу', dm: 'Удалить чат' }[chat.type] || 'Удалить чат')
-          : ({ channel: 'Выйти из канала', chat: 'Выйти из группы', dm: 'Удалить чат' }[chat.type] || 'Удалить чат');
+          ? ({ channel: 'Удалить канал', chat: 'Удалить группу', dm: 'Удалить чат' }[chat?.type] || 'Удалить чат')
+          : ({ channel: 'Выйти из канала', chat: 'Выйти из группы', dm: 'Удалить чат' }[chat?.type] || 'Удалить чат');
+
+        const actionList = isRoom
+          ? [['mute', muted ? 'Вкл. звук' : 'Без звука', muted ? ICONS.bell : ICONS.bellOff], ['settings', 'Настройки', ICONS.settings], ['open-block', 'В блок', ICONS.newBlock]]
+          : kind === 'dm'
+            ? [['mute', muted ? 'Вкл. звук' : 'Без звука', muted ? ICONS.bell : ICONS.bellOff], ['search', 'Поиск', ICONS.search], ['open-block', 'В блок', ICONS.newBlock]]
+            : (user?.username ? [['write', 'Написать', ICONS.open]] : []);
+        const actions = actionList.map(([act, label, icon]) => `<button data-act="${act}">${icon}<span>${label}</span></button>`).join('');
+
+        const bio = !isRoom ? String(user?.bio || '') : '';
+        const username = !isRoom ? String(user?.username || '') : '';
+        const slug = isRoom && chat.type === 'channel' ? String(chat.slug || '') : '';
+        let about = '';
+        if (username || bio) {
+          about = `<section class="profile-about">${username ? `<button class="profile-about-username" type="button" data-open-user="${esc(username)}">@${esc(username)}</button><span>Имя пользователя</span>` : ''}${username && bio ? '<i class="profile-about-divider" aria-hidden="true"></i>' : ''}${bio ? `<p>${esc(bio)}</p><span>О себе</span>` : ''}</section>`;
+        } else if (slug) {
+          about = `<section class="profile-about"><button class="profile-about-username" type="button" data-copy-link="${esc(slug)}">${esc(location.host)}/c/${esc(slug)}</button><span>Публичная ссылка</span></section>`;
+        }
 
         const tab = (id, label, n) => `<button class="info-tab ${infoTab === id ? 'active' : ''}" data-tab="${id}">${label}${n ? ` <span>${n}</span>` : ''}</button>`;
-        let content = '';
-        if (infoTab === 'media') {
-          content = info.media.length
-            ? `<div class="info-media">${info.media.map((a, i) =>
-                `<button class="info-cell ${a.kind !== 'photo' ? 'has-play' : ''}" data-media="${i}"><img src="${esc(a.poster || a.data)}" alt="">${a.kind !== 'photo' ? '<span class="info-play">▶</span>' : ''}</button>`).join('')}</div>`
-            : '<div class="info-empty">Нет медиа</div>';
-        } else if (infoTab === 'files') {
-          content = info.files.length
-            ? info.files.map(({ a }) => `<a class="info-file" href="${esc(a.data)}" download="${esc(a.name || 'file')}"><span class="info-file-ico">📎</span><span class="info-file-info"><b>${esc(a.name || 'Файл')}</b><span>${esc(fmtSize(a.size))}</span></span></a>`).join('')
-            : '<div class="info-empty">Нет файлов</div>';
-        } else if (infoTab === 'links') {
-          content = info.links.length
-            ? info.links.map(({ u }) => `<a class="info-link" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(u)}</a>`).join('')
-            : '<div class="info-empty">Нет ссылок</div>';
-        } else if (infoTab === 'members') {
-          content = info.members.length ? info.members.map((mem) => `
-            <div class="info-member${mem.username ? ' is-openable' : ''}"${mem.username ? ` data-member-username="${esc(mem.username)}"` : ''}>
-              <div class="chat-icon" style="background:${avatarFill(mem.color || avatarColor(mem.id || mem.name))}">${mem.avatar ? `<img src="${esc(mem.avatar)}" alt="">` : esc(initials(mem.name || mem.username))}</div>
-              <div class="info-member-info"><b>${esc(mem.name || mem.username || 'Пользователь')}</b><span>${mem.username ? `@${esc(mem.username)} · ` : ''}${mem.me ? 'вы' : (mem.role === 'owner' ? 'владелец' : (chat.type === 'channel' ? 'подписчик' : 'участник'))}</span></div>
-            </div>`).join('') : '<div class="info-empty">Участников пока нет</div>';
+        let tabsHtml = '';
+        if (hasChatContext) {
+          let content = '';
+          if (infoTab === 'media') content = info.media.length ? `<div class="info-media">${info.media.map((a, i) => `<button class="info-cell ${a.kind !== 'photo' ? 'has-play' : ''}" data-media="${i}"><img src="${esc(a.poster || a.data)}" alt="">${a.kind !== 'photo' ? '<span class="info-play">▶</span>' : ''}</button>`).join('')}</div>` : '<div class="info-empty">Нет медиа</div>';
+          else if (infoTab === 'files') content = info.files.length ? info.files.map(({ a }) => `<a class="info-file" href="${esc(a.data)}" download="${esc(a.name || 'file')}"><span class="info-file-ico">📎</span><span class="info-file-info"><b>${esc(a.name || 'Файл')}</b><span>${esc(fmtSize(a.size))}</span></span></a>`).join('') : '<div class="info-empty">Нет файлов</div>';
+          else if (infoTab === 'links') content = info.links.length ? info.links.map(({ u }) => `<a class="info-link" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(u)}</a>`).join('') : '<div class="info-empty">Нет ссылок</div>';
+          else if (infoTab === 'members') content = info.members.length ? info.members.map((mem) => `<div class="info-member${mem.username ? ' is-openable' : ''}"${mem.username ? ` data-member-username="${esc(mem.username)}"` : ''}><div class="chat-icon" style="background:${avatarFill(mem.color || avatarColor(mem.id || mem.name))}">${mem.avatar ? `<img src="${esc(mem.avatar)}" alt="">` : esc(initials(mem.name || mem.username))}</div><div class="info-member-info"><b>${esc(mem.name || mem.username || 'Пользователь')}</b><span>${mem.username ? `@${esc(mem.username)} · ` : ''}${mem.me ? 'вы' : (mem.role === 'owner' ? 'владелец' : (chat.type === 'channel' ? 'подписчик' : 'участник'))}</span></div></div>`).join('') : '<div class="info-empty">Участников пока нет</div>';
+          tabsHtml = `<nav class="info-tabs">${tab('media', 'Медиа', info.media.length)}${tab('files', 'Файлы', info.files.length)}${tab('links', 'Ссылки', info.links.length)}${isRoom ? tab('members', 'Участники', info.members.length) : ''}</nav><div class="info-body">${content}</div>`;
         }
 
-        sheet.innerHTML = `
-          <div class="info-top">
-            <div class="info-sheet-bars">
-              <button class="info-sheet-move" type="button" data-info-move aria-label="Переместить блок"><i></i></button>
-              <button class="info-sheet-close" type="button" data-act="close" aria-label="Закрыть"><i></i></button>
-            </div>
-            <div class="info-avatar" style="background:${avatarFill(chat.type === 'dm' && chat.peer?.color ? chat.peer.color : avatarColor(chat.id))}">${chat.type === 'dm' && chat.peer?.avatar ? `<img src="${esc(chat.peer.avatar)}" alt="">` : esc(initials(chat.name))}</div>
-            <div class="info-title">${esc(chat.name)}</div>
-            <div class="info-sub">${esc(subtitle || typeText)}</div>
-            <div class="info-actions">
-              <button class="info-act" data-act="mute">${muted ? ICONS.bell : ICONS.bellOff}<span>${muted ? 'Вкл. звук' : 'Без звука'}</span></button>
-              <button class="info-act" data-act="pin-chat">${chatPinned ? ICONS.unpin : ICONS.pin}<span>${chatPinned ? 'Открепить' : 'Закрепить'}</span></button>
-              <button class="info-act" data-act="open-block">${ICONS.newBlock}<span>В блок</span></button>
-              ${editable ? `<button class="info-act" data-act="rename">${ICONS.rename}<span>Название</span></button>` : ''}
-              <button class="info-act" data-act="settings">${ICONS.info}<span>Настройки</span></button>
-            </div>
-          </div>
-          <div class="info-tabs">
-            ${tab('media', 'Медиа', info.media.length)}
-            ${tab('files', 'Файлы', info.files.length)}
-            ${tab('links', 'Ссылки', info.links.length)}
-            ${showMembers ? tab('members', 'Участники', info.members.length) : ''}
-          </div>
-          <div class="info-body">${content}</div>
-          <div class="info-foot">
-            <button class="ctx-item danger" data-act="clear"${info.media.length || client.messages[chat.id]?.length ? '' : ' disabled'}>${ICONS.broom}<span>Очистить историю</span></button>
-            ${editable ? `<button class="ctx-item danger" data-act="leave">${ICONS.logout}<span>${leaveLabel}</span></button>` : ''}
-          </div>`;
+        const foot = (hasChatContext && chat)
+          ? `<div class="info-foot"><button class="ctx-item danger" data-act="clear"${client.messages[chat.id]?.length ? '' : ' disabled'}>${ICONS.broom}<span>Очистить историю</span></button>${editable ? `<button class="ctx-item danger" data-act="leave">${ICONS.logout}<span>${leaveLabel}</span></button>` : ''}</div>`
+          : '';
 
-        const infoMove = sheet.querySelector('[data-info-move]');
-        const panelHead = body.closest('.panel')?.querySelector(':scope > .panel-head');
-        infoMove.onpointerdown = (event) => {
-          if (!panelHead || event.button !== 0) return;
-          event.preventDefault();
-          panelHead.dispatchEvent(new PointerEvent('pointerdown', {
-            bubbles: true,
-            button: event.button,
-            buttons: event.buttons,
-            clientX: event.clientX,
-            clientY: event.clientY,
-            pointerId: event.pointerId,
-            pointerType: event.pointerType,
-          }));
-        };
+        sheet.innerHTML = `
+          <div class="profile-card-view is-inplace"><div class="profile-card-inner">
+            <div class="profile-card-cover" style="--profile-color:${color}">
+              <button class="profile-cover-close" type="button" data-act="close" aria-label="Закрыть">${ICONS.close}</button>
+            </div>
+            <div class="profile-card-identity">
+              <div class="profile-card-avatar" style="background:${avatarFill(color)}">${avatarUrl ? `<img src="${esc(avatarUrl)}" alt="">` : esc(initials(name))}</div>
+              <div class="profile-card-name"><h2>${esc(name)}</h2><small class="profile-last-seen">${esc(sub)}</small></div>
+            </div>
+            ${actions ? `<div class="profile-card-actions" style="grid-template-columns:repeat(${actionList.length},minmax(0,1fr))">${actions}</div>` : ''}
+            ${about}
+            ${tabsHtml}
+            ${foot}
+          </div></div>`;
 
         for (const t of sheet.querySelectorAll('.info-tab')) t.onclick = () => {
           infoTab = t.dataset.tab;
-          renderInfo();
-          if (infoTab === 'members') client.loadRoomMembers?.(chat.id).then(renderInfo).catch(() => {});
+          renderSheet();
+          if (infoTab === 'members' && chat) client.loadRoomMembers?.(chat.id).then(renderSheet).catch(() => {});
         };
         const mediaData = info.media.map((a) => ({ type: a.kind === 'photo' ? 'photo' : 'video', src: a.data, poster: a.poster, name: a.name, size: a.size, author: a.author, color: a.color, avatar: a.avatar, avatarText: a.avatarText }));
-        for (const cell of sheet.querySelectorAll('.info-cell')) {
-          cell.onclick = () => window.Segment?.openMedia?.(mediaData, Number(cell.dataset.media) || 0);
-        }
-        for (const row of sheet.querySelectorAll('[data-member-username]')) {
-          row.onclick = () => { hideMenus(); window.Segment?.openUser?.(row.dataset.memberUsername); };
-        }
-        for (const btn of sheet.querySelectorAll('[data-act]')) {
-          btn.onclick = () => {
-            const act = btn.dataset.act;
-            if (act === 'close') hideMenus();
-            else if (act === 'open-block') { window.Segment?.workspace?.addPanel(chatViewPanel(client, chat)); hideMenus(); }
-            else if (act === 'pin-chat') { client.togglePin(chat.id); renderInfo(); }
-            else if (act === 'mute') { client.toggleMute(chat.id); renderInfo(); }
-            else if (act === 'settings') { hideMenus(); openRoomSettings(client, chat.id, 'chat-room'); }
-            else if (act === 'clear') { if (confirm(`Очистить историю чата «${chat.name}»?`)) { client.clearHistory(chat.id); renderInfo(); } }
-            else if (act === 'rename') { hideMenus(); openRoomSettings(client, chat.id, 'chat-room'); }
-            else if (act === 'leave') { client.removeChat(chat.id); hideMenus(); }
-          };
-        }
+        for (const cell of sheet.querySelectorAll('.info-cell')) cell.onclick = () => window.Segment?.openMedia?.(mediaData, Number(cell.dataset.media) || 0);
+        for (const row of sheet.querySelectorAll('[data-member-username]')) row.onclick = () => openUserProfile(row.dataset.memberUsername);
+        sheet.querySelector('[data-open-user]')?.addEventListener('click', (e) => openUserProfile(e.currentTarget.dataset.openUser));
+        sheet.querySelector('[data-copy-link]')?.addEventListener('click', async (e) => { try { await navigator.clipboard.writeText(`${location.origin}/c/${e.currentTarget.dataset.copyLink}`); window.Segment?.toast?.('Ссылка скопирована'); } catch {} });
+        for (const btn of sheet.querySelectorAll('[data-act]')) btn.onclick = () => {
+          const act = btn.dataset.act;
+          if (act === 'close') hideMenus();
+          else if (act === 'mute' && chat) { client.toggleMute(chat.id); renderSheet(); }
+          else if (act === 'settings' && chat) { hideMenus(); openRoomSettings(client, chat.id, 'chat-room'); }
+          else if (act === 'open-block' && chat) { window.Segment?.workspace?.addPanel(chatViewPanel(client, chat)); hideMenus(); }
+          else if (act === 'search') { hideMenus(); openRoomSearch(); }
+          else if (act === 'write' && user?.username) { hideMenus(); window.Segment?.messageUser?.(user.username); }
+          else if (act === 'clear' && chat) { if (confirm(`Очистить историю чата «${chat.name}»?`)) { client.clearHistory(chat.id); renderSheet(); } }
+          else if (act === 'leave' && chat) { client.removeChat(chat.id); hideMenus(); }
+        };
       };
 
       const renderRoom = (chat, messages) => {
@@ -1489,6 +1491,16 @@ export function chatRoomPanel(client) {
         if (document.activeElement === input) syncFormatState();
       };
       document.addEventListener('selectionchange', syncComposerFormat);
+      // A @mention typed inside a message opens the profile here in the block
+      // too — intercept before the app-wide handler routes it to a side panel.
+      feed.addEventListener('click', (event) => {
+        const mention = event.target.closest?.('a.mention');
+        if (!mention) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const username = (mention.getAttribute('href') || '').replace(/^\/@/, '');
+        if (username) openUserProfile(username);
+      }, true);
       feed.addEventListener('scroll', () => { updateScrollDown(); if (currentChat && drafts[currentChat.id]) { drafts[currentChat.id].scrollTop = feed.scrollTop; persistDrafts(); } }, { passive: true });
       scrollDown.onclick = () => { awayCount = 0; scrollFeedToBottom(feed); updateScrollDown(); };
       replyCancel.onclick = () => setReply(null);

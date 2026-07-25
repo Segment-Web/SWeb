@@ -1538,6 +1538,11 @@ html:not(.show-channel-avatars) .msg.channel-message .avatar { display: none; }
   background: var(--surface);
 }
 .chat-sheet.hidden { display: none; }
+/* When the sheet hosts a profile card it scrolls as one block, filling the chat
+   panel in place instead of docking a separate surface to the side. */
+.chat-sheet.is-profile { display: block; overflow-y: auto; scrollbar-width: thin; }
+.chat-sheet.is-profile .profile-card-view { min-height: 100%; }
+.profile-cover-close { right: 10px; }
 .info-top {
   position: relative; flex: 0 0 auto;
   display: flex; flex-direction: column; align-items: center;
@@ -2556,7 +2561,7 @@ body.is-moving-surface { cursor: grabbing; user-select: none; }
 .profile-card-identity.has-status { min-height:120px; }
 .profile-card-avatar { position:absolute; top:-46px; left:50%; display:grid; place-items:center; width:92px; height:92px; overflow:hidden; border:6px solid var(--surface); border-radius:50%; color:#fff; background:var(--accent); box-shadow:none; font-size:30px; font-weight:700; transform:translateX(-50%); }
 .profile-card-avatar img { width:100%; height:100%; object-fit:cover; }
-.profile-card-name { transform:translateY(-6px); }
+.profile-card-name { margin-top:8px; }
 .profile-card-name h2 { margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:text; user-select:text; font-size:20px; line-height:25px; }
 .profile-card-name button { display:block; margin:3px auto 0; padding:0; border:0; color:var(--muted); background:transparent; cursor:pointer; user-select:text; font-size:13px; line-height:17px; }
 .profile-card-name button:hover { color:var(--accent); }
